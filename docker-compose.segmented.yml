@@ -1,0 +1,63 @@
+# Productization v0.1.1 — illustrative Segmented-deployment example, NOT a
+# full production guide (see docs/deployment.md#segmented and
+# docs/adr/0011-user-admin-listener-separation.md). Additive: layer this on
+# top of docker-compose.yml to run two backend *instances* of the exact
+# same image, one per listener mode, alongside (not instead of) the
+# existing combined "backend" service:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.segmented.yml \
+#     up -d backend-user backend-admin
+#
+# What this deliberately does NOT do:
+#   - stop/replace the base "backend" service (a real deployment would
+#     choose Compact *or* Segmented, not run all three — left to the
+#     operator, not automated here)
+#   - add a second reverse-proxy vhost/listener for admin.internal vs.
+#     browser.example.org routing — that's a real DNS/TLS-cert/ops
+#     decision, documented as an example in docs/deployment.md, not wired
+#     up as running config here
+#   - change networks, volumes, the database, or the Session Agent in any
+#     way — both instances are exactly the existing backend image, only
+#     OPENRBI_LISTENER_MODE differs
+services:
+  backend-user:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      OPENRBI_LISTENER_MODE: user
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on: [postgres, redis]
+    # KNOWN LIMITATION (documented, not fixed here — see docs/deployment.md
+    # #segmented and docs/security-model.md): the noVNC display relay needs
+    # to open a *new* connection into browser-plane, and
+    # scripts/setup-network-isolation.sh's exemption is hardcoded to the
+    # original "backend" service's pinned 172.30.0.2 — NOT this address.
+    # A real Segmented deployment running the display relay from
+    # backend-user instead of backend would need that script updated to
+    # exempt 172.30.0.4 too. Deliberately not changed here — this task's
+    # scope explicitly excludes touching browser-plane/iptables without a
+    # concrete need, and no test in this repo currently exercises a live
+    # display relay from this service.
+    networks:
+      control-plane:
+      browser-plane:
+        ipv4_address: 172.30.0.4
+    volumes:
+      - quarantine-staging:/app/data
+
+  backend-admin:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      OPENRBI_LISTENER_MODE: admin
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on: [postgres, redis]
+    networks: [control-plane]
+    volumes:
+      - quarantine-staging:/app/data
