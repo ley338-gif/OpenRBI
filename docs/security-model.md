@@ -13,14 +13,30 @@ Each browser session runs in its own container (see [ADR 0010](adr/0010-docker-s
 - seccomp/AppArmor profiles appropriate to a browser workload
 - a dedicated temporary browser-profile path, destroyed at session end (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md))
 
-## Known interim gaps (tracked, not silent)
-
-Phases 6–8 built real sandbox lifecycle and remote-display mechanics ahead of Phase 9's network isolation. Until Phase 9 lands:
-
-- Browser sandboxes join the same docker network as the control plane (backend, Postgres, Redis) rather than an isolated network — there is currently no egress filtering at all for a running sandbox, and no barrier between it and the control-plane network segment. This is not a regression introduced by Phase 8; no egress restriction existed before it either. Phase 9 replaces this with a dedicated, egress-filtered browser-plane network plus a narrow, display-only path back to the control plane.
-- The VNC server inside each sandbox (x11vnc) runs without its own password (`-nopw`), relying entirely on network-level access control (only the backend's display relay can reach it) rather than VNC authentication. Once Phase 9's segmentation exists, this remains an intentional choice — the actual authorization boundary is the backend's session-ownership check on `/display/{id}/ws` (itself still pending full enforcement until Phase 10/11's BrowserSession model exists), not VNC's own weak auth.
-
 ## Network isolation
+
+### Topology
+
+Two docker networks (`docker-compose.yml`, pinned subnets so firewall rules can reference them directly):
+
+- `control-plane` (`172.28.0.0/16`) — postgres, redis, clamav, session-agent, backend, frontend, reverse-proxy.
+- `browser-plane` (`172.30.0.0/24`, IPv6 disabled outright rather than replicating the IPv4 blocklist for it) — every browser sandbox container, and *only* the backend additionally, at a pinned address (`172.30.0.2`). The backend needs this for the Phase 8 display relay (a plain outbound TCP connection to a sandbox's VNC port — not a privileged operation, ADR 0005 is unaffected).
+
+`scripts/setup-network-isolation.sh` applies the actual enforcement to the Docker host's `DOCKER-USER` iptables chain (the chain Docker itself reserves for user rules, safe from being clobbered by Docker's own chain regeneration) — run once after `docker compose up` on the deployment host. It is idempotent (a comment-tag marker lets it safely re-run after any config change) and:
+
+- Blocks `browser-plane` from reaching the full static IPv4 list (§10): `0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4, 240.0.0.0/4`.
+- Blocks `browser-plane` from reaching itself (sandbox-to-sandbox / session isolation) and every *other* docker network on the host, discovered dynamically at run time — not hardcoded, so it also covers unrelated docker-compose projects sharing the same host, and Docker Desktop's own internal management subnets in dev.
+- Blocks `browser-plane` from reaching the host's own IP addresses, discovered dynamically at run time (`ip -4 addr show`).
+- Allows `ESTABLISHED,RELATED` return traffic for control-plane-initiated connections, and a plain `ACCEPT` for new connections specifically from the backend's pinned `172.30.0.2` — otherwise indistinguishable from a sandbox by subnet alone. Every other address in `browser-plane` (every real sandbox) still cannot open a *new* connection into the control plane; only the backend can initiate.
+- Logs every blocked packet via the `LOG` target (`openrbi-blocked:` prefix) immediately ahead of its matching `DROP` rule — order matters here, since `DROP` is a terminating target and would otherwise prevent the `LOG` rule below it from ever being reached.
+
+Verified end-to-end on the actual running stack (not just written and assumed correct): a container on `browser-plane` reaches the public internet (`HTTP 200`) but times out against Postgres's real container IP, the network gateway, `10.0.0.1`, and `169.254.169.254`; the backend still gets a real VNC banner back from a live sandbox; a sandbox cannot reach another sandbox. Two real bugs were caught and fixed during this verification: the backend's own leg on `browser-plane` was being caught by the same DROP rules meant for sandboxes (fixed by pinning its address and exempting exactly that address), and the `LOG` rules were silently never firing because they were inserted *after* their matching `DROP` rule instead of before it.
+
+### Known interim gaps (tracked, not silent)
+
+- **No automatic `NETWORK_ACCESS_BLOCKED` security event yet.** Blocked attempts are visible via the kernel log (`dmesg`/`journalctl -k`, the `openrbi-blocked:` prefix) but nothing yet ships those lines into the application's audit log — a small log-shipper is a tracked follow-up, not built in Phase 9. (Log-line *visibility* itself was verified via packet counters incrementing correctly on this project's Windows/Docker Desktop dev environment, since Docker Desktop's virtualized kernel didn't expose `dmesg` output through `docker run --net=host`; this should be re-confirmed on the actual Linux deployment target where `dmesg` behaves normally.)
+- **No dedicated DNS-rebinding-aware resolver.** The project brief allows "implement or plan" one; this blocklist already defeats DNS rebinding at the connection level regardless of how a destination address was obtained (a resolved-then-dialed blocked IP is dropped exactly like a hardcoded one), which is the required *outcome*. A dedicated resolver that rejects a malicious DNS *answer* before any connection attempt — cleaner audit signal, no wasted connect — remains planned, not built.
+- **The VNC server inside each sandbox (x11vnc) runs without its own password** (`-nopw`), relying entirely on this network-level access control (only the backend's pinned address can reach it at all) rather than VNC authentication. The actual authorization boundary is the backend's session check on `/display/{id}/ws`; full per-session *ownership* enforcement there is still pending Phase 10/11's real `BrowserSession` model.
 
 Browser sandboxes may reach the public internet only. Blocked by default, at minimum:
 

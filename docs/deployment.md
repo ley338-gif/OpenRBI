@@ -12,6 +12,12 @@ docker compose up -d --build
 # spawns per-session containers from it directly. Build it once (and
 # whenever docker/browser/ changes) before starting any Secure Browser session:
 ./scripts/build-browser-image.sh
+
+# Apply the browser-plane network egress blocklist (docs/security-model.md
+# #network-isolation) — requires root, and must be re-run after any change
+# to which docker networks exist on the host. Real Linux server only (not
+# meaningfully testable through Docker Desktop's own VM indirection).
+sudo ./scripts/setup-network-isolation.sh
 ```
 
 This brings up the scaffolded services for local development only. It is **not** a production-ready deployment yet — hardening (Phase 20), network isolation (Phase 9), and the full security test suite (Phase 21) must land first.

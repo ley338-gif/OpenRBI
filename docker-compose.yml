@@ -25,7 +25,18 @@ services:
     restart: unless-stopped
     env_file: .env
     depends_on: [postgres, redis]
-    networks: [control-plane]
+    # Multi-homed deliberately: backend needs a route to a sandbox's VNC
+    # port for the Phase 8 display relay. Pinned to a static address on
+    # browser-plane because scripts/setup-network-isolation.sh must be able
+    # to tell "backend's own leg on this network" apart from an actual
+    # sandbox by IP alone — both otherwise live in the same subnet. The
+    # script exempts exactly this address for NEW connections; every other
+    # address on browser-plane (i.e. every real sandbox) still cannot open
+    # a NEW connection into the control plane, only backend can initiate.
+    networks:
+      control-plane:
+      browser-plane:
+        ipv4_address: 172.30.0.2
     # Deliberately no volume mount of /var/run/docker.sock — see
     # docs/adr/0005-no-docker-socket-in-backend.md. All sandbox lifecycle
     # operations go through session-agent's internal API instead.
@@ -57,11 +68,23 @@ services:
     networks: [control-plane]
 
 networks:
-  # Single network for MVP 1 scaffolding. Phase 9 (network isolation)
-  # introduces a dedicated, egress-filtered browser-plane network that
-  # browser sandboxes join instead — never this one.
   control-plane:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+  # Browser sandboxes join only this network (session-agent/app/config.py),
+  # never control-plane. scripts/setup-network-isolation.sh blocks it from
+  # reaching RFC1918/link-local/loopback/etc, every other docker network on
+  # the host, and the host's own IPs — see docs/security-model.md.
+  # enable_ipv6 is deliberately omitted (disabled): rather than replicate
+  # the IPv4 blocklist for IPv6, no IPv6 connectivity exists for sandboxes
+  # at all, which is the strictly more restrictive choice.
+  browser-plane:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   postgres-data:
