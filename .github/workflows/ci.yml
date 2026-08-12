@@ -139,7 +139,7 @@ jobs:
         # GitHub-hosted ubuntu-latest runners run real Docker with a real
         # DOCKER-USER iptables chain (not nested/rootless), same as the
         # bare-metal/VM host this script targets in docs/deployment.md.
-        run: sudo ./scripts/setup-network-isolation.sh
+        run: sudo sh scripts/setup-network-isolation.sh
       - name: Run host-level security regression tests
         run: sh scripts/run-security-tests.sh
       - name: Dump logs on failure
