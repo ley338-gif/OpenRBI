@@ -16,6 +16,10 @@ class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
 
     __tablename__ = "browser_nodes"
 
+    # The Session Agent's configured OPENRBI_AGENT_NODE_NAME, not a literal
+    # OS hostname — using the container's actual hostname here caused a
+    # real bug (Phase 18): it's ephemeral and changes on every container
+    # recreation, silently orphaning a new BrowserNode row each time.
     hostname: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     status: Mapped[BrowserNodeStatus] = mapped_column(
         Enum(BrowserNodeStatus, name="browser_node_status"), nullable=False,

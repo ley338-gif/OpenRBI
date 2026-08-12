@@ -1,3 +1,14 @@
 # API
 
-> Status: placeholder. No public API surface exists yet beyond the health-check scaffolding (see [development.md](development.md)). This document will cover authentication, endpoints, error codes, and the internal-vs-public API split (control plane ↔ Session Agent vs. control plane ↔ frontend) once the corresponding phases land.
+> Status: no OpenAPI/Swagger doc generation is wired up yet beyond FastAPI's automatic `/docs` — this page summarizes the internal-vs-public split and the audit surface. Full endpoint reference is deferred to a later pass; see [development.md](development.md).
+
+## Internal vs. public
+
+- **Public** (through the reverse proxy, `/api/*`): everything under `app/api/` in the backend — auth, sessions, display, admin/*, files, policies.
+- **Internal-only** (never exposed publicly, `docs/adr/0004`/`0005`): the Session Agent's entire API (`/v1/sandboxes/*`, `/v1/nodes/self`), authenticated by a shared token (`X-Openrbi-Agent-Token`) distinct from any user-facing credential.
+
+## Audit / Security Events (Phase 18)
+
+`GET /admin/security-events` (ADMIN/SECURITY_REVIEWER) — filterable by `event_type`, `user_id`, `session_id`; paginated (`limit`, default 100, max 500; `offset`). Deliberately **read-only**: there is no `PUT`/`DELETE` anywhere in this router, and nowhere in the codebase issues an `UPDATE`/`DELETE` against the `security_events` table — that absence is the append-only enforcement (docs/security-model.md#audit). The only place a `SecurityEvent` row is ever constructed is `app/services/security_events.py`'s `record_security_event`; verified via a full-codebase search that nothing bypasses it.
+
+Every `metadata_json` payload across the codebase was reviewed end-to-end: every single one is limited to IDs, hashes, filenames, MIME types, and short reason strings — never a password, MFA secret, complete token, or file content, matching the project brief's explicit prohibition.

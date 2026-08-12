@@ -77,7 +77,12 @@ async def select_node(db: AsyncSession) -> BrowserNode:
         node = BrowserNode(hostname=status.hostname)
         db.add(node)
 
-    node.status = BrowserNodeStatus(status.status)
+    # DRAINING is an admin-set scheduling gate (project brief §23), not
+    # something the Session Agent itself knows about or reports — it will
+    # always self-report ONLINE. Don't let this heartbeat refresh silently
+    # undo an admin's drain; only overwrite status when it isn't DRAINING.
+    if node.status != BrowserNodeStatus.DRAINING:
+        node.status = BrowserNodeStatus(status.status)
     node.capacity = status.capacity
     node.active_sessions = status.active_sessions
     node.runtime = status.runtime

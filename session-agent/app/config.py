@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     api_token: str = ""
     docker_base_url: str = "unix:///var/run/docker.sock"
 
+    # Stable node identity for the control plane's BrowserNode row —
+    # deliberately NOT the container's own hostname, which is ephemeral and
+    # changes on every container recreation. Using it caused a real bug
+    # (caught in Phase 18 testing): each rebuild created a new orphaned
+    # BrowserNode row, and draining one had no effect on the live node
+    # select_node() actually looks up. In a real multi-node deployment,
+    # each node's agent is configured with its own distinct, stable name.
+    node_name: str = "default-node"
+
     # Hardened Firefox+Xvfb+x11vnc image built from docker/browser/ (Phase
     # 7). Its own ENTRYPOINT starts everything, so no command override is
     # needed. Kept configurable per docs/adr/0003 — swapping browser image

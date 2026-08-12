@@ -19,7 +19,8 @@ from app.db.session import get_db
 from app.models.browser_session import BrowserSession
 from app.models.role import Role
 from app.models.user import User
-from app.services.groups import GroupServiceError, create_group, list_groups_with_member_counts
+from app.models.group import Group
+from app.services.groups import GroupServiceError, create_group, delete_group, list_groups_with_member_counts
 from app.services.users import (
     UserServiceError,
     change_role,
@@ -182,6 +183,17 @@ async def create_group_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await db.commit()
     return GroupSummary(id=group.id, name=group.name, description=group.description, member_count=0)
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group_endpoint(
+    group_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> None:
+    group = await db.get(Group, group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    await delete_group(db, group, actor_id=current_user.id)
+    await db.commit()
 
 
 @router.get("/users/{user_id}/sessions", response_model=list[AdminSessionResponse])
