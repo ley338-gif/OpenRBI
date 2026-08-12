@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@shared/components/StatusBadge";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
+import { PageHeader } from "@shared/components/PageHeader";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { BrowserNodeDto, SystemHealthDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+
+const STATUS_PRIORITY: Record<string, number> = { UNAVAILABLE: 0, DEGRADED: 1, HEALTHY: 2 };
 
 /**
  * Real GET /admin/health / GET /admin/nodes only — no hardcoded green
@@ -23,6 +26,7 @@ export function System() {
   const [busy, setBusy] = useState(false);
 
   function load() {
+    setError(null);
     Promise.all([adminApi.getHealth(), adminApi.listNodes()])
       .then(([h, n]) => {
         setHealth(h);
@@ -48,16 +52,28 @@ export function System() {
     }
   }
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!health || !nodes) return <LoadingBlock label="Loading system status…" />;
+
+  const sortedComponents = [...health.components].sort(
+    (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9),
+  );
 
   return (
     <div className="page">
-      <h1>System</h1>
+      <PageHeader title="System" subtitle="Live health of every backend dependency and browser node." />
 
       <div className="card">
-        <div className="flex-between" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Overall status</h2>
+        <div className="section-header">
+          <h2>Overall status</h2>
           <StatusBadge value={health.status} />
         </div>
         <table className="data-table">
@@ -69,7 +85,7 @@ export function System() {
             </tr>
           </thead>
           <tbody>
-            {health.components.map((c) => (
+            {sortedComponents.map((c) => (
               <tr key={c.name}>
                 <td>{c.name}</td>
                 <td><StatusBadge value={c.status} /></td>
@@ -81,9 +97,9 @@ export function System() {
       </div>
 
       <div className="card">
-        <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Browser nodes</h2>
+        <div className="section-header"><h2>Browser nodes</h2></div>
         {nodes.length === 0 ? (
-          <p className="text-muted">No nodes reporting.</p>
+          <EmptyState title="No nodes reporting">A browser node reports in once the Session Agent starts.</EmptyState>
         ) : (
           <table className="data-table">
             <thead>

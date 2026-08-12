@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
+import { ConfirmDialog } from "@shared/components/ConfirmDialog";
+import { PageHeader } from "@shared/components/PageHeader";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { FileAction, FileRuleType, PolicyDetailDto } from "@shared/api/types";
@@ -29,6 +31,7 @@ export function PolicyDetail() {
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<RuleRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [pendingRollback, setPendingRollback] = useState<{ id: string; versionNumber: number } | null>(null);
 
   function load() {
     if (!id) return;
@@ -84,33 +87,37 @@ export function PolicyDetail() {
     }
   }
 
-  async function rollback(versionId: string) {
-    if (!id) return;
-    if (!window.confirm("Roll back to this version? It becomes the current published version immediately.")) return;
+  async function confirmRollback() {
+    if (!id || !pendingRollback) return;
     setBusy(true);
     try {
-      await adminApi.rollback(id, versionId);
+      await adminApi.rollback(id, pendingRollback.id);
       notify("Rolled back");
       load();
     } catch {
       notify("Could not roll back", "error");
     } finally {
       setBusy(false);
+      setPendingRollback(null);
     }
   }
 
   return (
     <div className="page">
       <p><Link to="/policies">← Policies</Link></p>
-      <h1>{policy.name}</h1>
-      <p className="text-muted">
-        Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when multiple
-        matching rules apply across a user's groups.
-      </p>
+      <PageHeader
+        title={policy.name}
+        subtitle={
+          <>
+            Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
+            multiple matching rules apply across a user's groups.
+          </>
+        }
+      />
 
       <div className="card">
-        <div className="flex-between" style={{ marginBottom: 0 }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Versions</h2>
+        <div className="section-header">
+          <h2>Versions</h2>
           {!editing && (
             <button type="button" className="btn btn-secondary btn-sm" onClick={startEditing}>
               {draft ? "Edit draft" : "New draft version"}
@@ -149,14 +156,19 @@ export function PolicyDetail() {
                 </button>
               )}
               {v.status === "SUPERSEDED" && (
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void rollback(v.id)} disabled={busy}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setPendingRollback({ id: v.id, versionNumber: v.version_number })}
+                  disabled={busy}
+                >
                   Roll back to this version
                 </button>
               )}
             </div>
           </div>
           {v.file_rules.length === 0 ? (
-            <p className="text-muted">No file rules in this version.</p>
+            <EmptyState title="No file rules in this version" />
           ) : (
             <table className="data-table">
               <thead>
@@ -181,6 +193,17 @@ export function PolicyDetail() {
           )}
         </div>
       ))}
+
+      {pendingRollback && (
+        <ConfirmDialog
+          title={`Roll back to v${pendingRollback.versionNumber}?`}
+          description="This version becomes the current published version immediately, replacing whatever is published now."
+          confirmLabel="Roll back"
+          busy={busy}
+          onConfirm={() => void confirmRollback()}
+          onCancel={() => setPendingRollback(null)}
+        />
+      )}
     </div>
   );
 }

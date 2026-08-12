@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, EmptyState, ErrorState } from "@shared/components/States";
 import { ErrorBanner, FormField } from "@shared/components/FormField";
+import { PageHeader } from "@shared/components/PageHeader";
+import { TableToolbar } from "@shared/components/TableToolbar";
 import { useToast } from "@shared/components/Toast";
 import { ApiError } from "@shared/api/client";
 import type { GroupSummaryDto, Role, UserSummaryDto } from "@shared/api/types";
@@ -14,8 +16,11 @@ export function Users() {
   const [groups, setGroups] = useState<GroupSummaryDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
 
   function load() {
+    setError(null);
     Promise.all([adminApi.listUsers(), adminApi.listGroups()])
       .then(([u, g]) => {
         setUsers(u);
@@ -36,17 +41,39 @@ export function Users() {
     }
   }
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  // Client-side only — GET /admin/users has no search/filter params today
+  // (a documented gap, same as Sessions' filter bar).
+  const filtered = useMemo(() => {
+    if (!users) return [];
+    return users.filter((u) => {
+      if (roleFilter && u.role !== roleFilter) return false;
+      if (search && !u.username.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [users, search, roleFilter]);
+
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!users) return <LoadingBlock label="Loading users…" />;
 
   return (
     <div className="page">
-      <div className="flex-between">
-        <h1 style={{ marginBottom: 0 }}>Users</h1>
-        <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          Create User
-        </button>
-      </div>
+      <PageHeader
+        title="Users"
+        subtitle="Manage accounts, roles, and MFA across the organization."
+        actions={
+          <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            Create User
+          </button>
+        }
+      />
 
       {showCreate && (
         <CreateUserForm
@@ -61,40 +88,60 @@ export function Users() {
       )}
 
       {users.length === 0 ? (
-        <EmptyState>No users yet.</EmptyState>
+        <EmptyState title="No users yet">Create the first account to get started.</EmptyState>
       ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Groups</th>
-                <th>MFA</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <Link to={`/users/${u.id}`}>{u.username}</Link>
-                  </td>
-                  <td>{u.role}</td>
-                  <td><StatusBadge value={u.is_active ? "ACTIVE" : "DISABLED"} /></td>
-                  <td>{u.groups.join(", ") || "—"}</td>
-                  <td><StatusBadge value={u.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /></td>
-                  <td>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => void toggleActive(u)}>
-                      {u.is_active ? "Disable" : "Enable"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <TableToolbar
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by username…"
+            filters={
+              <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role">
+                <option value="">All roles</option>
+                <option value="USER">USER</option>
+                <option value="SECURITY_REVIEWER">SECURITY_REVIEWER</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+            }
+            onRefresh={load}
+          />
+          {filtered.length === 0 ? (
+            <EmptyState title="No matching users">Try a different search or filter.</EmptyState>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Groups</th>
+                    <th>MFA</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id}>
+                      <td>
+                        <Link to={`/users/${u.id}`}>{u.username}</Link>
+                      </td>
+                      <td>{u.role}</td>
+                      <td><StatusBadge value={u.is_active ? "ACTIVE" : "DISABLED"} /></td>
+                      <td>{u.groups.join(", ") || "—"}</td>
+                      <td><StatusBadge value={u.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /></td>
+                      <td>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => void toggleActive(u)}>
+                          {u.is_active ? "Disable" : "Enable"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -1,5 +1,7 @@
 import { useAuth } from "@shared/auth/AuthContext";
 import { StatusBadge } from "@shared/components/StatusBadge";
+import { PageHeader } from "@shared/components/PageHeader";
+import { DefinitionList } from "@shared/components/DefinitionList";
 
 /**
  * Identity + MFA status only. Unlike the User Portal's Profile page,
@@ -15,24 +17,15 @@ export function Profile() {
 
   return (
     <div className="page">
-      <h1>Profile</h1>
+      <PageHeader title="Profile" subtitle="Your administrator account identity and MFA status." />
       <div className="card">
-        <dl className="detail-grid">
-          <div>
-            <dt>Username</dt>
-            <dd>{user.username}</dd>
-          </div>
-          <div>
-            <dt>Role</dt>
-            <dd>{user.role}</dd>
-          </div>
-          <div>
-            <dt>MFA</dt>
-            <dd>
-              <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} />
-            </dd>
-          </div>
-        </dl>
+        <DefinitionList
+          items={[
+            { label: "Username", value: user.username },
+            { label: "Role", value: user.role },
+            { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
+          ]}
+        />
         <p className="text-muted" style={{ marginBottom: 0 }}>
           To reset your MFA, ask another administrator to use the Reset MFA action on your account.
         </p>

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, EmptyState, ErrorState } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { TableToolbar } from "@shared/components/TableToolbar";
+import { Icons } from "@shared/components/Icons";
 import { formatBytes, formatDateTime } from "@shared/format";
 import type { QuarantineFileDto, QuarantineStatus } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
@@ -14,6 +17,7 @@ export function Quarantine() {
   const [statusFilter, setStatusFilter] = useState<string>("QUARANTINED");
 
   function load(status: string) {
+    setError(null);
     adminApi
       .listQuarantine(status || undefined)
       .then(setFiles)
@@ -22,26 +26,39 @@ export function Quarantine() {
 
   useEffect(() => load(statusFilter), [statusFilter]);
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => load(statusFilter)}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!files) return <LoadingBlock label="Loading quarantine…" />;
 
   return (
     <div className="page">
-      <h1>Quarantine</h1>
+      <PageHeader title="Quarantine" subtitle="Files intercepted by policy or scan result that aren't automatically released." />
 
-      <div className="filter-bar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
+      <TableToolbar
+        filters={
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        }
+        onRefresh={() => load(statusFilter)}
+      />
 
       {files.length === 0 ? (
-        <EmptyState>No files are currently in quarantine.</EmptyState>
+        <EmptyState icon={<Icons.Quarantine width={20} height={20} />} title="No files are currently in quarantine">
+          Files awaiting review will appear here.
+        </EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="data-table">

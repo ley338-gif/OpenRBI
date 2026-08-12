@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { TableToolbar } from "@shared/components/TableToolbar";
 import { formatDateTime } from "@shared/format";
 import type { SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
@@ -18,6 +20,7 @@ export function Audit() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   function load() {
+    setError(null);
     adminApi
       .listSecurityEvents({ event_type: eventType || undefined, limit: PAGE_SIZE, offset })
       .then(setEvents)
@@ -26,27 +29,33 @@ export function Audit() {
 
   useEffect(load, [offset, eventType]);
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!events) return <LoadingBlock label="Loading audit trail…" />;
 
   return (
     <div className="page">
-      <h1>Audit</h1>
+      <PageHeader title="Audit" subtitle="Append-only trail of every security-relevant action." />
 
-      <div className="filter-bar">
-        <input
-          placeholder="Filter by event type (e.g. SESSION_ISOLATED)"
-          value={eventType}
-          onChange={(e) => {
-            setOffset(0);
-            setEventType(e.target.value);
-          }}
-          style={{ width: "280px" }}
-        />
-      </div>
+      <TableToolbar
+        search={eventType}
+        onSearchChange={(v) => {
+          setOffset(0);
+          setEventType(v);
+        }}
+        searchPlaceholder="Filter by event type (e.g. SESSION_ISOLATED)…"
+        onRefresh={load}
+      />
 
       {events.length === 0 ? (
-        <EmptyState>No security events match.</EmptyState>
+        <EmptyState title="No security events match">Try a different event-type filter.</EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="data-table">
