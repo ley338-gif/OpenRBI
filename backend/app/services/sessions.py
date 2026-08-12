@@ -10,7 +10,14 @@ from app.core import session_agent_client
 from app.core.session_agent_client import SessionAgentError
 from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
-from app.models.enums import BrowserNodeStatus, SecurityEventType, SessionStatus
+from app.models.enums import (
+    BrowserNodeStatus,
+    IncidentSeverity,
+    IncidentStatus,
+    SecurityEventType,
+    SessionStatus,
+)
+from app.models.incident import Incident
 from app.models.user import User
 from app.services.security_events import record_security_event
 
@@ -171,6 +178,91 @@ async def terminate_session(db: AsyncSession, session: BrowserSession, *, actor_
     session.ended_at = datetime.now(UTC)
     await record_security_event(
         db, SecurityEventType.SESSION_TERMINATED, user_id=session.user_id, session_id=session.id,
+        metadata={"actor": str(actor_id)},
+    )
+    await db.flush()
+
+
+async def isolate_session(db: AsyncSession, session: BrowserSession, *, actor_id: uuid.UUID) -> None:
+    """Network egress DENY ALL (enforced by the Session Agent disconnecting
+    the sandbox from every network it's on, Phase 6) while the sandbox
+    itself keeps running for investigation (docs/session-lifecycle.md).
+    Always creates an Incident, not just a security event — an admin
+    choosing to isolate a session is a deliberate, rare action, not a
+    high-frequency automatic trigger, so there's no alert-fatigue concern
+    here (contrast with e.g. repeated NETWORK_ACCESS_BLOCKED events, which
+    are aggregated rather than one-incident-each).
+    """
+    if session.status not in (SessionStatus.ACTIVE, SessionStatus.DISCONNECTED):
+        raise SessionServiceError(f"cannot isolate a session in status {session.status.value}")
+
+    session.status = SessionStatus.ISOLATING
+    await db.flush()
+
+    try:
+        await session_agent_client.isolate_sandbox(str(session.id))
+    except SessionAgentError as exc:
+        session.status = SessionStatus.FAILED
+        await db.flush()
+        raise SessionServiceError(f"failed to isolate sandbox: {exc}") from exc
+
+    session.status = SessionStatus.ISOLATED
+    await record_security_event(
+        db, SecurityEventType.SESSION_ISOLATED, user_id=session.user_id, session_id=session.id,
+        metadata={"actor": str(actor_id)},
+    )
+    db.add(
+        Incident(
+            severity=IncidentSeverity.MEDIUM,
+            status=IncidentStatus.NEW,
+            title="Browser session isolated by admin",
+            description=(
+                f"Session {session.id} for user {session.user_id} was isolated by an administrator "
+                "(network egress, clipboard, and file transfer denied; sandbox preserved for review)."
+            ),
+            user_id=session.user_id,
+            session_id=session.id,
+        )
+    )
+    await db.flush()
+
+
+async def restore_session(db: AsyncSession, session: BrowserSession, *, actor_id: uuid.UUID) -> None:
+    """Reactivating a previously isolated session is logged distinctly from
+    the original isolation (project brief §9: "Beides muss protokolliert
+    werden").
+    """
+    if session.status != SessionStatus.ISOLATED:
+        raise SessionServiceError(f"cannot restore a session in status {session.status.value}")
+
+    try:
+        await session_agent_client.restore_sandbox(str(session.id))
+    except SessionAgentError as exc:
+        session.status = SessionStatus.FAILED
+        await db.flush()
+        raise SessionServiceError(f"failed to restore sandbox: {exc}") from exc
+
+    session.status = SessionStatus.ACTIVE
+    await record_security_event(
+        db, SecurityEventType.SESSION_RESTORED, user_id=session.user_id, session_id=session.id,
+        metadata={"actor": str(actor_id)},
+    )
+    await db.flush()
+
+
+async def disconnect_session(db: AsyncSession, session: BrowserSession, *, actor_id: uuid.UUID) -> None:
+    """Admin-forced disconnect: drops the remote-display connection only —
+    the sandbox is untouched and the user can reconnect (docs/session-
+    lifecycle.md). The actual websocket, if one is open, is closed by the
+    caller (app/api/admin_sessions.py) via the in-process connection
+    registry in app/api/display.py; this just records the state/event.
+    """
+    if session.status not in (SessionStatus.ACTIVE, SessionStatus.DISCONNECTED):
+        raise SessionServiceError(f"cannot disconnect a session in status {session.status.value}")
+
+    session.status = SessionStatus.DISCONNECTED
+    await record_security_event(
+        db, SecurityEventType.SESSION_DISCONNECTED, user_id=session.user_id, session_id=session.id,
         metadata={"actor": str(actor_id)},
     )
     await db.flush()

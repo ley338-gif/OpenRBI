@@ -13,8 +13,10 @@ from app.api.schemas.admin import (
     UpdateUserRoleRequest,
     UserSummary,
 )
+from app.api.schemas.sessions import AdminSessionResponse
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
+from app.models.browser_session import BrowserSession
 from app.models.role import Role
 from app.models.user import User
 from app.services.groups import GroupServiceError, create_group, list_groups_with_member_counts
@@ -180,3 +182,17 @@ async def create_group_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await db.commit()
     return GroupSummary(id=group.id, name=group.name, description=group.description, member_count=0)
+
+
+@router.get("/users/{user_id}/sessions", response_model=list[AdminSessionResponse])
+async def list_user_sessions(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[AdminSessionResponse]:
+    """Convenience view for the User Detail page (project brief §26: "Admin
+    sieht die aktive Browser-Session"). Full session control actions
+    (disconnect/isolate/restore/kill) live under /admin/sessions
+    (app/api/admin_sessions.py), not duplicated here.
+    """
+    user = await _get_user_or_404(db, user_id)
+    result = await db.execute(
+        select(BrowserSession).where(BrowserSession.user_id == user.id).order_by(BrowserSession.created_at.desc())
+    )
+    return [AdminSessionResponse.from_model_with_user(s, user.username) for s in result.scalars()]

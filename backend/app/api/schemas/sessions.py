@@ -34,3 +34,13 @@ class SessionResponse(BaseModel):
             started_at=session.started_at,
             ended_at=session.ended_at,
         )
+
+
+class AdminSessionResponse(SessionResponse):
+    user_id: uuid.UUID
+    username: str
+
+    @classmethod
+    def from_model_with_user(cls, session, username: str) -> "AdminSessionResponse":
+        base = SessionResponse.from_model(session)
+        return cls(**base.model_dump(), user_id=session.user_id, username=username)

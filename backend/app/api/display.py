@@ -22,6 +22,25 @@ _CHUNK_SIZE = 65536
 # than just seeing a dropped connection.
 _CLOSE_NOT_FOUND = 4404
 _CLOSE_SANDBOX_UNREACHABLE = 4502
+_CLOSE_ADMIN_DISCONNECTED = 4001
+
+# In-process registry of live display connections, keyed by session id, so
+# an admin-triggered disconnect (app/api/admin_sessions.py, Phase 11) can
+# actually close a session's active websocket rather than only flipping a
+# database flag the client won't notice until its next action. Single
+# backend process for MVP 1 (docs/architecture.md's multi-node note) — a
+# real multi-instance deployment would need this shared (e.g. via Redis
+# pub/sub) instead of in-process.
+_active_connections: dict[uuid.UUID, WebSocket] = {}
+
+
+async def force_disconnect(session_id: uuid.UUID) -> bool:
+    """Returns True if a live connection was found and closed."""
+    websocket = _active_connections.get(session_id)
+    if websocket is None:
+        return False
+    await websocket.close(code=_CLOSE_ADMIN_DISCONNECTED)
+    return True
 
 
 @router.websocket("/{session_id}/ws")
@@ -70,6 +89,8 @@ async def display_ws(
     session.last_activity_at = datetime.now(UTC)
     await db.commit()
 
+    _active_connections[session_id] = websocket
+
     async def pump_ws_to_tcp() -> None:
         try:
             while True:
@@ -93,6 +114,7 @@ async def display_ws(
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
+        _active_connections.pop(session_id, None)
         for task in tasks:
             task.cancel()
         writer.close()

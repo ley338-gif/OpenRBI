@@ -2,7 +2,11 @@
 
 ## Implementation status
 
-`QUEUED → STARTING → ACTIVE ⇄ DISCONNECTED → TERMINATING → TERMINATED/FAILED` is real and backend-orchestrated (`app/services/sessions.py`, Phase 10): `POST /sessions` drives the full create→start→wait-for-display-ready→ACTIVE sequence against the Session Agent, and the display WebSocket (`app/api/display.py`) drives the `ACTIVE ⇄ DISCONNECTED` transitions from actual client connect/disconnect. `ISOLATING`/`ISOLATED` exist in the model and the Session Agent already supports the underlying `isolate`/`restore` primitives (Phase 6), but the admin-facing trigger for them is Phase 11.
+The full state machine is real and backend-orchestrated: `POST /sessions` (Phase 10, `app/services/sessions.py`) drives create→start→wait-for-display-ready→`ACTIVE`; the display WebSocket (`app/api/display.py`) drives `ACTIVE ⇄ DISCONNECTED` from actual client connect/disconnect; and the admin actions (Phase 11, `app/api/admin_sessions.py`) drive `ISOLATING → ISOLATED`, `ISOLATED → ACTIVE` (restore), and `TERMINATING → TERMINATED` (kill), each backed by the Session Agent's real Docker-level primitives (Phase 6) — isolate actually disconnects the sandbox's network, kill actually removes the container.
+
+**Role assumption** (documented per the project's own "pick the more restrictive reading when ambiguous" principle): the project brief lists Disconnect/Isolate/Kill together under "User Detail Actions" without stating which role each requires, while §6 explicitly grants only Isolate to `SECURITY_REVIEWER`. Disconnect and Isolate are available to both `ADMIN` and `SECURITY_REVIEWER`; Kill is `ADMIN`-only. An admin-triggered Isolate also always opens an Incident (`MEDIUM` severity), matching the project brief's Definition-of-Done walkthrough (§37, step 25) — not just a security event.
+
+Admin-forced Disconnect closes the user's live display WebSocket immediately via an in-process connection registry (`app/api/display.py`'s `_active_connections`) — single-backend-process for MVP 1; a real multi-instance deployment would need this shared (e.g. Redis pub/sub) instead.
 
 ## States
 

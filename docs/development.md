@@ -33,7 +33,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 8. noVNC remote browser — **done** (manual test harness; the real session-start flow is Phase 10/11)
 9. Network isolation — **done** (`scripts/setup-network-isolation.sh`; see docs/security-model.md for tracked interim gaps: no automatic security event yet, no dedicated DNS-rebinding resolver)
 10. Session lifecycle — **done** (real `POST /sessions` orchestration through session-agent; the frontend's "Start Secure Browser" button now drives an actual session, not a manually-typed id)
-11. Admin session control
+11. Admin session control — **done** (`/admin/sessions/{id}/{disconnect,isolate,restore,kill}`; Kill restricted to ADMIN only — see docs/security-model.md for the rationale)
 12. Policy engine
 13. Download interception
 14. File scanner
