@@ -40,3 +40,15 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# app/db/session.py's engine and app/core/redis.py's client are both
+# @lru_cache'd singletons, created once against whichever event loop is
+# running at first use (matching production's single long-lived uvicorn
+# loop). pytest-asyncio's default is a fresh loop per test function, which
+# breaks those cached connections on the second test ("Future attached to a
+# different loop") — share one loop for the whole session instead.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
