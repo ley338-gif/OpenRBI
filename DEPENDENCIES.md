@@ -1,0 +1,20 @@
+# Dependencies
+
+This document tracks the central third-party components OpenRBI relies on: what they do, why they were chosen, their license, and possible alternatives. Versions and licenses are verified against the actual pinned version in use, not assumed from memory — update this table whenever a dependency's pinned version changes.
+
+| Component | Purpose | Version (pinned) | License | Project URL | Why used | Alternative considered |
+|---|---|---|---|---|---|---|
+| Firefox (ESR) | First `BrowserProvider` implementation; renders isolated web sessions server-side | TBD — pin in `docker/browser/Dockerfile` | MPL-2.0 | https://www.mozilla.org/firefox/ | Mature remote-control/automation support, strong sandboxing primitives, ESR channel gives predictable patch cadence | Chromium (planned second provider) |
+| noVNC | First `DisplayProvider` implementation; browser-based VNC client, no plugin required | TBD — pin in `docker/novnc` | MPL-2.0 | https://github.com/novnc/noVNC | Pure JS/HTML5, no native client install, widely deployed, easy to audit | KasmVNC, Guacamole |
+| VNC backend (TigerVNC / x11vnc, TBD) | Serves the browser container's X11 display over VNC for noVNC to consume | TBD | GPL-2.0 (TigerVNC) / GPL-2.0 (x11vnc) | https://tigervnc.org/ | Lightweight, well understood, works with Xvfb | KasmVNC-integrated capture |
+| ClamAV | First `FileScanner` implementation; open-source antivirus engine for downloaded/uploaded files | TBD — pin `clamav/clamav` image tag | GPL-2.0 | https://www.clamav.net/ | Open source, actively maintained signature DB, daemon (`clamd`) mode fits the fail-closed scan pipeline | Commercial AV engines (ICAP-compatible) |
+| PostgreSQL | Primary relational store for users, policies, sessions, audit, quarantine metadata | TBD — pin image tag | PostgreSQL License (permissive) | https://www.postgresql.org/ | Strong relational + JSONB support, mature migration tooling, widely operable | MySQL/MariaDB |
+| Redis | Transient state/queue: sessions cache, background job queue, rate limiting | TBD — pin image tag | RSALv2/SSPLv1 dual-license (Redis Ltd, post-7.4) or BSD-3-Clause (Valkey fork) — **verify exact license for the pinned version before shipping** | https://redis.io/ / https://valkey.io/ | Fast transient store with pub/sub and TTL primitives well suited to session/queue state | Valkey (BSD-3-Clause fork) if Redis licensing is a blocker |
+| gVisor (optional) | Additional sandboxing runtime for `GVisorSandboxProvider` | TBD | Apache-2.0 | https://gvisor.dev/ | Userspace kernel reduces syscall attack surface vs. plain runc | Kata Containers (heavier, VM-based) |
+| Docker Engine | Baseline container runtime via `DockerSandboxProvider` and Session Agent | TBD | Apache-2.0 | https://www.docker.com/ | Ubiquitous, well-documented API (`docker-py`), fits single-host MVP | Podman |
+| FastAPI | Backend/API and Session Agent web framework | TBD — see `backend/pyproject.toml` | MIT | https://fastapi.tiangolo.com/ | Async-first, typed request/response models via Pydantic, good fit for an internal authenticated API plus public REST API | Django REST Framework |
+| SQLAlchemy + Alembic | ORM and schema migrations | TBD | MIT | https://www.sqlalchemy.org/ | Mature, explicit migration story required by this project's "migrations are mandatory" rule | Prisma (Python support immature) |
+| pyotp | TOTP generation/verification | TBD | MIT | https://github.com/pyauth/pyotp | Small, well-audited, RFC 6238 compliant | python-otp alternatives |
+| React + TypeScript + Vite | Admin/user frontend | TBD | MIT | https://react.dev/ | Component-driven UI, strong typing, fast dev loop | Vue, Svelte |
+
+**Note:** Redis licensing changed after version 7.4 (Redis Ltd moved to RSALv2/SSPLv1 for new releases; the community-maintained **Valkey** fork continues under BSD-3-Clause). Whichever is pinned in `docker-compose.yml` must be verified against its actual upstream license page before any redistribution or commercial use — do not assume from memory.

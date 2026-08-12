@@ -1,0 +1,32 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Backend configuration, sourced from environment variables / .env.
+
+    No default carries a real secret — every security-relevant value must be
+    supplied explicitly at deploy time (fail closed on missing config, not on
+    a convenient-but-insecure default).
+    """
+
+    model_config = SettingsConfigDict(env_prefix="OPENRBI_", env_file=".env", extra="ignore")
+
+    environment: str = "development"
+
+    database_url: str = "postgresql+asyncpg://openrbi:openrbi@postgres:5432/openrbi"
+    redis_url: str = "redis://redis:6379/0"
+
+    session_agent_base_url: str = "http://session-agent:8100"
+    session_agent_api_token: str = ""
+
+    session_cookie_name: str = "openrbi_session"
+    session_ttl_seconds: int = 8 * 60 * 60
+
+    totp_secret_encryption_key: str = ""
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

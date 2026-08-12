@@ -1,0 +1,73 @@
+# OpenRBI
+
+**OpenRBI** is a self-hosted, open-source Remote Browser Isolation (RBI) platform for organizations. It runs web browsing sessions server-side, in isolated sandboxes, and streams the display to the user — so the endpoint never executes untrusted web content, and the organization's internal networks stay unreachable from the browsing session.
+
+## Project status
+
+**Pre-alpha / MVP 1 in progress.** OpenRBI is not yet feature-complete and has not undergone independent security review. Do not deploy it in a production or security-critical environment yet. See [docs/threat-model.md](docs/threat-model.md) for what is and isn't covered today, and [CHANGELOG.md](CHANGELOG.md) for progress.
+
+The MVP 1 build order and scope are tracked internally against the phases in [docs/development.md](docs/development.md).
+
+## MVP 1 goals
+
+- Admins manage users, groups, roles, MFA, policies, sessions, incidents, and quarantine.
+- Users log in locally with username/password + TOTP MFA.
+- Users launch a server-side remote browser (Firefox) from the web portal, viewed via noVNC.
+- Each browser session is isolated from every other user's session.
+- Browser sessions can reach the public internet but not internal networks, the host, or the OpenRBI control plane.
+- File transfers (download/upload) are controlled by versioned policies, malware scanning, and quarantine.
+- Admins/Security Reviewers can disconnect, isolate, or kill sessions on demand.
+- Every security-relevant action is captured in an append-only audit log.
+
+## Quick start
+
+> Deployment tooling is being built out in [docs/deployment.md](docs/deployment.md). Until Phase 22 lands, this repository is source-only.
+
+```bash
+git clone <this-repo>
+cd OpenRBI
+cp .env.example .env   # fill in secrets before first run
+docker compose up -d --build
+```
+
+## Architecture overview
+
+OpenRBI separates a **control plane** (backend API, database, policy engine, admin/user frontends) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so MVP 1's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
+
+See [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown.
+
+## Security
+
+OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quarantine storage is unavailable, file transfers are blocked rather than silently allowed. No security decision is made only in the frontend. See:
+
+- [docs/security-model.md](docs/security-model.md) — sandbox model, network isolation, fail-closed rules, MFA, secrets, audit
+- [docs/threat-model.md](docs/threat-model.md) — assets, trust boundaries, attacker models, explicit non-goals
+- [SECURITY.md](SECURITY.md) — supported versions and how to report a vulnerability
+
+**OpenRBI never claims a file is "safe."** Status wording is deliberately limited to things it can actually verify: *No threat detected*, *Scan completed*, *Policy allowed*, *Quarantined*.
+
+## Documentation
+
+| Doc | Purpose |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Components, data flows, trust boundaries, provider architecture |
+| [docs/threat-model.md](docs/threat-model.md) | Threat model and non-goals |
+| [docs/security-model.md](docs/security-model.md) | Sandbox, network, file-transfer, MFA, secrets, audit rules |
+| [docs/policies.md](docs/policies.md) | Roles vs. groups, policy model, MIME/source matching |
+| [docs/session-lifecycle.md](docs/session-lifecycle.md) | Session states and transitions |
+| [docs/quarantine.md](docs/quarantine.md) | Download pipeline, scanning, quarantine, release/reject |
+| [docs/admin-guide.md](docs/admin-guide.md) | Admin operations |
+| [docs/user-guide.md](docs/user-guide.md) | End-user operations |
+| [docs/deployment.md](docs/deployment.md) | Installation, HTTPS, secrets, backup |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
+| [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
+| [docs/api.md](docs/api.md) | API reference |
+| [docs/adr/](docs/adr/) | Architecture Decision Records |
+
+## Scope
+
+MVP 1 deliberately excludes LDAP/AD/Entra ID/OIDC/SAML/WebAuthn, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+
+## License
+
+TBD.
