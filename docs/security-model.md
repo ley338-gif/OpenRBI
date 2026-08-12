@@ -107,6 +107,10 @@ No two users' sessions ever share a browser instance, a writable profile, or a f
 
 No secrets in git. No hardcoded passwords or tokens. Database credentials, session-signing keys, and the TOTP secret-encryption key are provided via environment variables / a secrets manager at deploy time (see [deployment.md](deployment.md) and `.env.example`). The Session Agent's internal API credentials are provisioned the same way and are never accessible from inside a browser sandbox.
 
+**Verified, not just asserted (Roadmap Phase A / A6, 2026-08-12):** the full git history (51 commits at the time of this check) was scanned with `gitleaks` — no leaks found. Separately confirmed via `git log --all --diff-filter=A --name-only` that a real `.env` was never committed, only `.env.example` (whose values are placeholders, verified by inspection). Re-run the `gitleaks` scan periodically, and always before a first public release — a clean result today doesn't cover commits made after this check.
+
+Every secret's rotation procedure — including `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`, which is not a simple `.env` edit since it encrypts data already at rest — is documented in [deployment.md#secret-rotation](deployment.md#secret-rotation).
+
 ## Audit
 
 Security Events are append-only and not deletable through the normal admin UI (see [docs/architecture.md](architecture.md) for the event flow, and the master event list in the project's Security Event model). Logs never contain passwords, MFA secrets, complete tokens, or file contents.
