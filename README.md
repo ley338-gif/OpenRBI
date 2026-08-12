@@ -72,4 +72,4 @@ MVP 1 deliberately excludes LDAP/AD/Entra ID/OIDC/SAML/WebAuthn, Kubernetes, rea
 
 ## License
 
-TBD.
+[GNU AGPLv3](LICENSE). Chosen to keep this an open-core project — if you run a modified version of OpenRBI as a network service (including a hosted/managed offering), the AGPL's core obligation is that your users get access to your modified source, closing the loophole plain GPL leaves for SaaS-style use without ever distributing the binary.
