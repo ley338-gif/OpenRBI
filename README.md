@@ -21,7 +21,7 @@ The MVP 1 build order and scope are tracked internally against the phases in [do
 
 ## Quick start
 
-> Deployment tooling is being built out in [docs/deployment.md](docs/deployment.md). Until Phase 22 lands, this repository is source-only.
+> See [docs/deployment.md](docs/deployment.md) for a full production deployment (TLS, firewall, backup/restore). The quick start below is local/evaluation only.
 
 ```bash
 git clone <this-repo>

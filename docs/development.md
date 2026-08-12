@@ -44,7 +44,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 19. Health monitoring — **done** (`GET /admin/health`, ADMIN/SECURITY_REVIEWER; checks API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser image availability, ClamAV, and quarantine-storage writability, each independently and non-fatally — see docs/architecture.md#health-monitoring-phase-19)
 20. Hardening — **done** (container hardening for every compose service, fail-closed secret validation at startup, per-username login lockout — see docs/security-model.md#control-plane-container-hardening-phase-20)
 21. Integration/security tests — **done** (`backend/tests/` pytest suite via `scripts/run-integration-tests.sh`; Docker-socket-dependent checks via `scripts/run-security-tests.sh` — see "Tests" below for what's covered where)
-22. Deployment
+22. Deployment — **done** (TLS overlay `docker-compose.prod.yml` + `docker/nginx/nginx.tls.conf`, `scripts/backup.sh`/`scripts/restore.sh`, full requirements/firewall/storage/update-procedure writeup — see docs/deployment.md)
 23. Final documentation review
 
 After each phase: run tests, update documentation, record any known technical debt, and do not silently ignore a known security regression.

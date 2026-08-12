@@ -1,0 +1,16 @@
+# Production overlay (Phase 22) — adds TLS termination on top of the base
+# docker-compose.yml. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requires a real certificate at ./certs/fullchain.pem and ./certs/privkey.pem
+# on the host before starting (see docs/deployment.md#tls) — nginx will
+# refuse to start without them, which is the correct fail-closed behavior
+# for a reverse proxy that's supposed to be terminating TLS.
+services:
+  reverse-proxy:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.tls.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro

@@ -27,6 +27,8 @@ postgres-data/
 redis-data/
 quarantine-storage/
 session-agent/sessions/
+backups/
+certs/
 
 # IDE / OS
 .vscode/
