@@ -1,5 +1,11 @@
 FROM python:3.11-slim AS base
 
+# libmagic1: backing library for python-magic (real magic-byte file-type
+# detection, Phase 13 download interception — never trust extension or
+# declared Content-Type alone, docs/policies.md).
+RUN apt-get update && apt-get install -y --no-install-recommends libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --uid 10001 openrbi
 WORKDIR /app
 
@@ -9,6 +15,8 @@ RUN pip install --no-cache-dir .
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
+
+RUN mkdir -p /app/data/staging && chown -R openrbi:openrbi /app/data
 
 USER openrbi
 EXPOSE 8000

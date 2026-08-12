@@ -27,3 +27,8 @@ class MetricsResponse(BaseModel):
 class DisplayInfoResponse(BaseModel):
     host: str
     port: int
+
+
+class DownloadedFileResponse(BaseModel):
+    filename: str
+    size_bytes: int

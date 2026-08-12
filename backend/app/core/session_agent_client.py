@@ -12,6 +12,12 @@ class DisplayInfo:
 
 
 @dataclass
+class DownloadedFile:
+    filename: str
+    size_bytes: int
+
+
+@dataclass
 class NodeStatus:
     hostname: str
     status: str
@@ -101,3 +107,21 @@ async def get_display_info(session_id: str) -> DisplayInfo:
     response = await _request("GET", f"/v1/sandboxes/{session_id}/display")
     body = response.json()
     return DisplayInfo(host=body["host"], port=body["port"])
+
+
+async def list_downloads(session_id: str) -> list[DownloadedFile]:
+    response = await _request("GET", f"/v1/sandboxes/{session_id}/downloads")
+    return [DownloadedFile(filename=f["filename"], size_bytes=f["size_bytes"]) for f in response.json()]
+
+
+async def fetch_download(session_id: str, filename: str) -> tuple[bytes, str | None]:
+    """Reaches into the sandbox filesystem only via the Session Agent's
+    Docker API access (docs/adr/0005) — never a network path from the
+    backend into the browser-plane subnet for this purpose.
+    """
+    response = await _request("GET", f"/v1/sandboxes/{session_id}/downloads/{filename}")
+    return response.content, response.headers.get("X-Openrbi-Origin-Url")
+
+
+async def delete_download(session_id: str, filename: str) -> None:
+    await _request("DELETE", f"/v1/sandboxes/{session_id}/downloads/{filename}")

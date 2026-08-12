@@ -1,10 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.auth import require_control_plane_token
 from app.config import get_settings
 from app.providers.base import SandboxConfig, SandboxRuntimeStatus
 from app.providers.factory import get_provider
-from app.schemas import CreateSandboxRequest, DisplayInfoResponse, MetricsResponse, StatusResponse
+from app.schemas import (
+    CreateSandboxRequest,
+    DisplayInfoResponse,
+    DownloadedFileResponse,
+    MetricsResponse,
+    StatusResponse,
+)
 
 router = APIRouter(
     prefix="/v1/sandboxes", tags=["sandboxes"], dependencies=[Depends(require_control_plane_token)]
@@ -86,6 +92,34 @@ async def sandbox_display_info(session_id: str) -> DisplayInfoResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return DisplayInfoResponse(host=info.host, port=info.port)
+
+
+@router.get("/{session_id}/downloads", response_model=list[DownloadedFileResponse])
+async def list_downloads(session_id: str) -> list[DownloadedFileResponse]:
+    try:
+        files = await get_provider().list_downloads(session_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return [DownloadedFileResponse(filename=f.filename, size_bytes=f.size_bytes) for f in files]
+
+
+@router.get("/{session_id}/downloads/{filename}")
+async def fetch_download(session_id: str, filename: str) -> Response:
+    try:
+        data, origin_url = await get_provider().fetch_download(session_id, filename)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    headers = {"X-Openrbi-Origin-Url": origin_url} if origin_url else {}
+    return Response(content=data, media_type="application/octet-stream", headers=headers)
+
+
+@router.delete("/{session_id}/downloads/{filename}")
+async def delete_download(session_id: str, filename: str) -> dict[str, str]:
+    try:
+        await get_provider().delete_download(session_id, filename)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"status": "deleted"}
 
 
 @router.get("/{session_id}/metrics", response_model=MetricsResponse)

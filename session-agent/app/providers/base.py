@@ -54,6 +54,12 @@ class SandboxDisplayInfo:
 
 
 @dataclass
+class DownloadedFile:
+    filename: str
+    size_bytes: int
+
+
+@dataclass
 class SandboxMetrics:
     cpu_percent: float
     memory_usage_mb: float
@@ -70,3 +76,6 @@ class SandboxProvider(Protocol):
     async def get_status(self, session_id: str) -> SandboxStatus: ...
     async def get_metrics(self, session_id: str) -> SandboxMetrics: ...
     async def get_display_info(self, session_id: str) -> SandboxDisplayInfo: ...
+    async def list_downloads(self, session_id: str) -> list[DownloadedFile]: ...
+    async def fetch_download(self, session_id: str, filename: str) -> tuple[bytes, str | None]: ...
+    async def delete_download(self, session_id: str, filename: str) -> None: ...

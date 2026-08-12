@@ -4,6 +4,7 @@ import docker
 from docker.errors import NotFound
 
 from app.providers.base import (
+    DownloadedFile,
     SandboxConfig,
     SandboxDisplayInfo,
     SandboxMetrics,
@@ -16,6 +17,9 @@ _MANAGED_LABEL = "openrbi.managed"
 _SESSION_LABEL = "openrbi.session_id"
 _NETWORK_LABEL = "openrbi.network"
 _VNC_PORT = 5900
+# Matches docker/browser/entrypoint.sh's $HOME/downloads (HOME=/tmp/home,
+# set in docker/browser/Dockerfile).
+_DOWNLOAD_DIR = "/tmp/home/downloads"
 
 
 def _container_name(session_id: str) -> str:
@@ -202,6 +206,79 @@ class DockerSandboxProvider:
         if not network or not network.get("IPAddress"):
             raise RuntimeError(f"session {session_id} has no address on network {network_name}")
         return SandboxDisplayInfo(host=network["IPAddress"], port=_VNC_PORT)
+
+    async def list_downloads(self, session_id: str) -> list[DownloadedFile]:
+        return await asyncio.to_thread(self._list_downloads_sync, session_id)
+
+    def _list_downloads_sync(self, session_id: str) -> list[DownloadedFile]:
+        """Only files without Firefox's in-progress `.part` suffix — a
+        completed download, not one still being written (docs/quarantine.md
+        step 1: "download wird erkannt" means finished, not partial).
+        """
+        container = self._get_managed_container(session_id)
+        exit_code, output = container.exec_run(
+            ["find", _DOWNLOAD_DIR, "-maxdepth", "1", "-type", "f", "!", "-name", "*.part", "-printf", "%s %f\\n"]
+        )
+        if exit_code != 0:
+            return []
+        files = []
+        for line in output.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            size_str, _, filename = line.partition(" ")
+            try:
+                files.append(DownloadedFile(filename=filename, size_bytes=int(size_str)))
+            except ValueError:
+                continue
+        return files
+
+    async def fetch_download(self, session_id: str, filename: str) -> tuple[bytes, str | None]:
+        return await asyncio.to_thread(self._fetch_download_sync, session_id, filename)
+
+    def _fetch_download_sync(self, session_id: str, filename: str) -> tuple[bytes, str | None]:
+        """Returns (file bytes, origin URL if recoverable).
+
+        Reads via `exec` (`cat`), not the container archive API
+        (`get_archive`/`docker cp`): the download directory lives under the
+        tmpfs mount at /tmp (docs/security-model.md's hardening baseline),
+        and Docker's archive API — which reads through the storage driver's
+        layer-diff mechanism — cannot see files inside a tmpfs mount at all
+        (confirmed empirically: even a plain `docker cp` from the host
+        fails with "could not find the file" for a file that unmistakably
+        exists). `exec` reads through a live process in the container's own
+        mount namespace instead, which has no such limitation.
+
+        Firefox on Linux (GIO/XDG convention) tags downloaded files with a
+        `user.xdg.origin.url` extended attribute; recovered here via
+        `getfattr` for the same reason `cat` is used for the content —
+        best-effort only, degrades to None rather than erroring (docs/
+        quarantine.md notes the resulting redirect-chain gap).
+        """
+        container = self._get_managed_container(session_id)
+        path = f"{_DOWNLOAD_DIR}/{filename}"
+
+        exit_code, output = container.exec_run(["cat", path])
+        if exit_code != 0:
+            raise RuntimeError(f"failed to read {filename} (exit {exit_code}): {output.decode(errors='replace')}")
+
+        # exec_run combines stdout+stderr by default; getfattr writes an
+        # informational "Removing leading '/'..." note to stderr that would
+        # otherwise get silently concatenated onto the actual attribute
+        # value with no separator — redirect it away explicitly.
+        origin_exit, origin_output = container.exec_run(
+            ["sh", "-c", f"getfattr --only-values -n user.xdg.origin.url '{path}' 2>/dev/null"]
+        )
+        origin_url = origin_output.decode("utf-8", errors="replace").strip() if origin_exit == 0 else None
+
+        return output, origin_url or None
+
+    async def delete_download(self, session_id: str, filename: str) -> None:
+        await asyncio.to_thread(self._delete_download_sync, session_id, filename)
+
+    def _delete_download_sync(self, session_id: str, filename: str) -> None:
+        container = self._get_managed_container(session_id)
+        container.exec_run(["rm", "-f", f"{_DOWNLOAD_DIR}/{filename}"])
 
     async def count_active_sessions(self) -> int:
         return await asyncio.to_thread(self._count_active_sessions_sync)

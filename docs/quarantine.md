@@ -1,6 +1,31 @@
 # Quarantine
 
-> Status: design reference for Phases 13–15 (Download Interception, File Scanner, Quarantine). Not yet implemented — see [development.md](development.md).
+> Status: Phase 13 (download interception, staging, hashing, MIME detection, policy pre-check) is implemented. Every file lands in `PENDING_SCAN` and stays there — Phase 14 (real scanning) and Phase 15 (release/reject, real quarantine storage) are not yet built, so nothing is ever auto-released yet.
+
+## How download interception actually works (Phase 13)
+
+Firefox inside the sandbox is configured (`docker/browser/entrypoint.sh`, a `user.js` written at container start) to silently auto-save every download to a fixed directory (`$HOME/downloads`) with no save-as prompt — an isolated session has nowhere sensible to show that dialog, and the real control point is the policy engine downstream, not a client-side prompt.
+
+The backend cannot reach into the sandbox's filesystem or network directly (docs/adr/0005) — only the Session Agent can, via the Docker API, which already manages the sandbox's lifecycle. The Session Agent exposes:
+
+- `GET /v1/sandboxes/{id}/downloads` — lists completed downloads (anything without Firefox's in-progress `.part` suffix), via `find` through `exec`.
+- `GET /v1/sandboxes/{id}/downloads/{filename}` — returns the file's bytes, plus a best-effort origin URL.
+- `DELETE /v1/sandboxes/{id}/downloads/{filename}` — removes it from the sandbox after staging.
+
+**Important implementation detail:** these read/fetch operations use `exec` (`cat`, `getfattr`), not Docker's archive API (`get_archive`/`docker cp`). The download directory lives under the tmpfs mount at `/tmp` (the container hardening baseline, docs/security-model.md), and Docker's archive API — which reads through the storage driver's layer-diff mechanism — cannot see files inside a tmpfs mount at all. This was confirmed empirically: even a plain `docker cp` from the host failed with "could not find the file" for a file that unmistakably existed. `exec` reads through a live process in the container's own mount namespace instead, which has no such limitation.
+
+The backend runs a per-session background poll loop (`app/core/download_poller.py`, started when a session becomes `ACTIVE`) that, every few seconds, asks the Session Agent for new completed downloads and for each one:
+
+1. Fetches the bytes.
+2. Computes SHA-256 and size.
+3. Detects the actual MIME type via magic bytes (`python-magic`/`libmagic1`) — **never** the filename extension. Verified directly: a file named `report.txt` containing a PNG signature was correctly detected as *not* `text/plain`.
+4. Recovers a best-effort origin URL: Firefox on Linux (GIO/XDG convention) tags downloaded files with a `user.xdg.origin.url` extended attribute, read via `getfattr`. This is the **known gap** — it gives the final URL the browser actually fetched, not a full initial→final redirect chain, and no explicit "was this hop over TLS" signal beyond inferring it from the URL's scheme. Full redirect-chain capture would need deeper browser instrumentation (e.g. a WebExtension); tracked, not built.
+5. Runs the Phase 12 policy engine (`evaluate_file_action`) as a **pre-check** using detected MIME/extension/size/source-hostname — this is not the final decision (no scanner exists yet), just what governs today's `PENDING_SCAN` outcome.
+6. Stages the bytes locally, content-addressed by SHA-256 (`app/services/downloads.py:_stage_file`) — never under the original filename. Interim: Phase 15 replaces this with a real quarantine-storage abstraction.
+7. Creates a `QuarantineFile` row (`status=PENDING_SCAN`) and a `DOWNLOAD_REQUESTED` security event.
+8. Deletes the file from the sandbox. If that delete fails, the same content is deduplicated by SHA-256 on the next poll rather than creating a second row.
+
+Verified end-to-end against the real running stack, including the tmpfs/archive-API limitation above and the getfattr stderr-concatenation bug both being real bugs caught and fixed during testing, not assumed correct.
 
 ## Download pipeline
 

@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dbus-x11 \
         fonts-liberation \
         ca-certificates \
+        attr \
     && rm -rf /var/lib/apt/lists/*
 
 # Fixed non-root uid:gid — matches the "10001:10001" user set by

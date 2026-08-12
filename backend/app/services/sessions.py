@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core import session_agent_client
+from app.core import download_poller, session_agent_client
 from app.core.session_agent_client import SessionAgentError
 from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
@@ -153,6 +153,7 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
     session.last_activity_at = session.started_at
     await record_security_event(db, SecurityEventType.SESSION_STARTED, user_id=user.id, session_id=session.id)
     await db.flush()
+    download_poller.start_polling(session.id)
     return session
 
 
@@ -166,6 +167,7 @@ async def terminate_session(db: AsyncSession, session: BrowserSession, *, actor_
 
     session.status = SessionStatus.TERMINATING
     await db.flush()
+    download_poller.stop_polling(session.id)
 
     try:
         await session_agent_client.terminate_sandbox(str(session.id))

@@ -37,6 +37,10 @@ services:
       control-plane:
       browser-plane:
         ipv4_address: 172.30.0.2
+    volumes:
+      # Interim local staging for intercepted downloads (Phase 13) —
+      # replaced by a real quarantine-storage abstraction in Phase 15.
+      - quarantine-staging:/app/data
     # Deliberately no volume mount of /var/run/docker.sock — see
     # docs/adr/0005-no-docker-socket-in-backend.md. All sandbox lifecycle
     # operations go through session-agent's internal API instead.
@@ -88,3 +92,4 @@ networks:
 
 volumes:
   postgres-data:
+  quarantine-staging:

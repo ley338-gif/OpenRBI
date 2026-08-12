@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # override yet — that's Phase 12).
     max_sessions_per_user: int = 1
 
+    # Interim local staging path for intercepted downloads (Phase 13).
+    # Replaced by a real quarantine-storage abstraction in Phase 15 — see
+    # docs/quarantine.md.
+    download_staging_dir: str = "/app/data/staging"
+    download_poll_interval_seconds: float = 3.0
+
 
 @lru_cache
 def get_settings() -> Settings:

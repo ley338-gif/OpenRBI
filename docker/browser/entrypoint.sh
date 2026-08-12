@@ -5,7 +5,22 @@
 set -eu
 
 PROFILE_DIR="$HOME/firefox-profile"
-mkdir -p "$PROFILE_DIR"
+DOWNLOAD_DIR="$HOME/downloads"
+mkdir -p "$PROFILE_DIR" "$DOWNLOAD_DIR"
+
+# Silent auto-download to a fixed, known directory — Phase 13's download
+# interception polls exactly this path via the Session Agent's Docker API
+# access (docs/quarantine.md). No per-file save-as prompt: an isolated
+# browser session has nowhere sensible to show that dialog anyway, and the
+# real gate is the policy engine downstream, not a client-side prompt.
+cat > "$PROFILE_DIR/user.js" <<EOF
+user_pref("browser.download.folderList", 2);
+user_pref("browser.download.dir", "$DOWNLOAD_DIR");
+user_pref("browser.download.useDownloadDir", true);
+user_pref("browser.download.always_ask_before_handling_new_types", false);
+user_pref("browser.helperApps.neverAsk.saveToDisk", "application/octet-stream,application/pdf,application/zip,application/x-msdownload,application/x-msdos-program,application/vnd.microsoft.portable-executable,text/plain,application/x-sh");
+user_pref("browser.download.manager.showWhenStarting", false);
+EOF
 
 Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp &
 XVFB_PID=$!
