@@ -10,6 +10,26 @@ import { ApiError } from "@shared/api/client";
 const TERMINAL = new Set<SessionStatus>(["TERMINATED", "FAILED"]);
 const CONNECTABLE = new Set<SessionStatus>(["ACTIVE", "DISCONNECTED"]);
 
+// Matches the sandbox's actual Xvfb resolution (1280x800,
+// docker/browser/entrypoint.sh) exactly.
+const SANDBOX_ASPECT = 1280 / 800;
+
+/** Largest box of SANDBOX_ASPECT that fits inside (availW, availH) without
+ * overflowing either dimension — a plain "contain fit", computed in JS
+ * instead of via CSS aspect-ratio because that property only derives ONE
+ * dimension from the other; combined with a max-height clamp it produced
+ * a box wider than the sandbox's own ratio, which scaleViewport then
+ * padded with black bars on the sides instead of actually filling it (a
+ * real issue reported from a live session, not a hypothetical).
+ */
+function containFit(availW: number, availH: number): { width: number; height: number } {
+  if (availW <= 0 || availH <= 0) return { width: 0, height: 0 };
+  if (availW / availH > SANDBOX_ASPECT) {
+    return { width: Math.floor(availH * SANDBOX_ASPECT), height: Math.floor(availH) };
+  }
+  return { width: Math.floor(availW), height: Math.floor(availW / SANDBOX_ASPECT) };
+}
+
 function UploadPanel({ sessionId }: { sessionId: string }) {
   const { notify } = useToast();
   const [busy, setBusy] = useState(false);
@@ -64,8 +84,29 @@ export function SecureBrowser() {
   const [starting, setStarting] = useState(false);
   const [rfbConnected, setRfbConnected] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewerCardRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
   const pollRef = useRef<number | null>(null);
+  const liveRef = useRef<number | null>(null);
+  const [boxSize, setBoxSize] = useState({ width: 960, height: 600 });
+
+  // Recompute the viewer's exact pixel size whenever the card around it
+  // resizes, so the box always matches the sandbox's aspect ratio exactly
+  // and scaleViewport has zero slack to fill with black bars — using the
+  // full height and width the page layout actually gives this card,
+  // instead of a fixed aspect-ratio/max-height pair that could disagree
+  // with each other at some window sizes.
+  useEffect(() => {
+    const el = viewerCardRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setBoxSize(containFit(entry.contentRect.width, entry.contentRect.height));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [session]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -73,6 +114,38 @@ export function SecureBrowser() {
       pollRef.current = null;
     }
   }, []);
+
+  const stopLiveWatch = useCallback(() => {
+    if (liveRef.current !== null) {
+      window.clearInterval(liveRef.current);
+      liveRef.current = null;
+    }
+  }, []);
+
+  // Once a session is connectable, the display websocket itself drives
+  // ACTIVE <-> DISCONNECTED transitions server-side (app/api/display.py) —
+  // but nothing was ever refetching that status client-side afterward, so
+  // the badge could get stuck showing "DISCONNECTED" from before a
+  // reconnect indefinitely, even while the viewer was live and working (a
+  // real bug reported from an actual session, not a timing hunch). This
+  // also picks up an admin Isolate promptly instead of only on next page
+  // load.
+  const watchLiveSession = useCallback(
+    (sessionId: string) => {
+      stopLiveWatch();
+      liveRef.current = window.setInterval(async () => {
+        try {
+          const s = await userApi.getSession(sessionId);
+          setSession(s);
+          if (TERMINAL.has(s.status) || s.status === "ISOLATED") stopLiveWatch();
+        } catch {
+          /* transient — the next tick retries; a real outage already
+             surfaces via the RFB connection dropping */
+        }
+      }, 5000);
+    },
+    [stopLiveWatch],
+  );
 
   const disconnectDisplay = useCallback(() => {
     rfbRef.current?.disconnect();
@@ -84,7 +157,21 @@ export function SecureBrowser() {
     if (!containerRef.current || rfbRef.current) return;
     setConnectError(null);
     const rfb = new RFB(containerRef.current, displayWebSocketUrl(sessionId));
-    rfb.addEventListener("connect", () => setRfbConnected(true));
+    // Scale the remote framebuffer to fill the viewer instead of rendering
+    // it at the sandbox's native resolution in a corner of a much larger
+    // container — real feedback: without this, most of the card was empty
+    // black space around a small fixed-size canvas. Not resizeSession: the
+    // sandbox's Xvfb resolution is fixed server-side, so asking the server
+    // to resize would just fail silently; scaling the client-side canvas
+    // is the only real option here.
+    rfb.scaleViewport = true;
+    rfb.addEventListener("connect", () => {
+      setRfbConnected(true);
+      // The backend just flipped this session back to ACTIVE as a side
+      // effect of accepting this connection — refetch so the status badge
+      // reflects that instead of whatever it showed before reconnecting.
+      userApi.getSession(sessionId).then(setSession).catch(() => {});
+    });
     rfb.addEventListener("disconnect", () => {
       setRfbConnected(false);
       rfbRef.current = null;
@@ -183,6 +270,7 @@ export function SecureBrowser() {
       });
     return () => {
       stopPolling();
+      stopLiveWatch();
       disconnectDisplay();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,18 +278,24 @@ export function SecureBrowser() {
 
   // Connects the display once the viewer div is actually in the DOM for a
   // connectable session — runs after React commits the render that made
-  // containerRef non-null, never racing it.
+  // containerRef non-null, never racing it. Also (re)starts the live status
+  // watch for as long as the session stays connectable, and stops it once
+  // the session leaves that state (terminated/isolated) so it doesn't keep
+  // polling a session nobody can act on anymore.
   useEffect(() => {
     if (session && CONNECTABLE.has(session.status)) {
       connectDisplay(session.id);
+      watchLiveSession(session.id);
+    } else {
+      stopLiveWatch();
     }
-  }, [session, connectDisplay]);
+  }, [session, connectDisplay, watchLiveSession, stopLiveWatch]);
 
   const busy = starting || (session && !TERMINAL.has(session.status) && session.status !== "ISOLATED" && !rfbConnected);
 
   return (
-    <div className="page">
-      <div className="flex-between">
+    <div className="page" style={{ display: "flex", flexDirection: "column" }}>
+      <div className="flex-between" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ marginBottom: 0 }}>Secure Browser</h1>
           {session && (
@@ -245,7 +339,20 @@ export function SecureBrowser() {
       )}
 
       {session && !TERMINAL.has(session.status) && session.status !== "ISOLATED" && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div
+          ref={viewerCardRef}
+          className="card"
+          style={{
+            padding: 0,
+            overflow: "hidden",
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+          }}
+        >
           {!rfbConnected && (
             <div className="loading-block" style={{ position: "absolute", zIndex: 1, width: "100%" }}>
               <span className="spinner" />
@@ -256,7 +363,12 @@ export function SecureBrowser() {
           )}
           <div
             ref={containerRef}
-            style={{ width: "100%", aspectRatio: "16/10", background: "#000", minHeight: "480px" }}
+            // Explicit pixel size from the containFit() calculation above —
+            // always exactly the sandbox's own aspect ratio, sized to use
+            // the full width or full height of this card (whichever is the
+            // binding constraint), so scaleViewport fills it completely
+            // with no black bars on any side.
+            style={{ width: boxSize.width, height: boxSize.height, background: "#000" }}
           />
         </div>
       )}
@@ -269,7 +381,7 @@ export function SecureBrowser() {
         </div>
       )}
 
-      <p className="text-muted" style={{ marginTop: "8px", fontSize: "0.8rem" }}>
+      <p className="text-muted" style={{ marginTop: "8px", fontSize: "0.8rem", flexShrink: 0 }}>
         {busy ? "Starting secure session…" : null}
       </p>
     </div>

@@ -23,7 +23,9 @@ user_pref("browser.helperApps.neverAsk.saveToDisk", "application/octet-stream,ap
 user_pref("browser.download.manager.showWhenStarting", false);
 EOF
 
-Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp &
+SCREEN_WIDTH=1280
+SCREEN_HEIGHT=800
+Xvfb "$DISPLAY" -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x24" -nolisten tcp &
 XVFB_PID=$!
 
 i=0
@@ -44,7 +46,13 @@ cleanup() {
 }
 trap cleanup TERM INT
 
-firefox-esr --no-remote --profile "$PROFILE_DIR" --new-instance about:blank &
+# -width/-height match the Xvfb screen exactly — without them Firefox
+# opens at its own default window size, leaving most of the virtual
+# desktop as empty black space behind a small floating window (a real,
+# reported issue: the noVNC viewer was scaling that whole oversized
+# desktop down, making the actual browser content tiny).
+firefox-esr --no-remote --profile "$PROFILE_DIR" --new-instance \
+    -width "$SCREEN_WIDTH" -height "$SCREEN_HEIGHT" about:blank &
 FF_PID=$!
 
 wait "$FF_PID"
