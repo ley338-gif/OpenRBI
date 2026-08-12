@@ -1,0 +1,11 @@
+{
+  "name": "@openrbi/shared",
+  "private": true,
+  "version": "0.1.1",
+  "type": "module",
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.1.1"
+  }
+}

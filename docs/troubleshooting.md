@@ -33,3 +33,46 @@ Backend endpoints touching sessions (`POST /sessions`, the display WebSocket) re
 ## Browser sandbox won't start
 
 Confirm the hardened browser image actually exists (`docker images | grep openrbi-browser`) — it's not a compose service, so `docker compose up` never builds it; run `./scripts/build-browser-image.sh` first (see docs/deployment.md).
+
+## Portal: login fails
+
+A wrong password, an unknown username, and a disabled account all show the identical "invalid credentials" message in both portals — by design (see [user-guide.md#logging-in](user-guide.md#logging-in)), not a bug to fix. If login fails even with correct credentials, check for a `429` in the browser's network tab: ten wrong attempts against a username locks it out for 15 minutes (`LOGIN_LOCKED` security event, see [security-model.md#login-brute-force-protection-phase-20](security-model.md#login-brute-force-protection-phase-20)) — the *correct* password won't work either until the window clears. If the request never reaches the backend at all (a network error, not a `401`), see "User API unavailable" / "Admin API unavailable" below.
+
+## Portal: MFA enrollment fails ("that code didn't work")
+
+The most common cause is clock drift between the server and the device running the authenticator app — TOTP codes are time-windowed and don't tolerate more than roughly ±30-60 seconds of skew. Confirm the backend container's clock is correct (`docker exec openrbi-backend-1 date -u`) before assuming the QR code or secret is wrong. A stuck "Confirm and continue" spinner with no error at all instead usually means the backend is unreachable — check the Network tab for a failed `POST /mfa/setup/confirm`.
+
+## Portal: Secure Browser stuck at "Preparing sandbox…" or "Waiting for capacity…"
+
+The User Portal polls `GET /sessions/{id}` once a second and only advances once the session's real status changes — it never fabricates progress. "Waiting for capacity…" (`QUEUED`) staying up for a long time means no browser-node capacity is free; check `GET /admin/nodes` (Admin Portal → System) for whether the node is drained or already at its session limit. "Preparing sandbox…" (`STARTING`) staying up means the Session Agent hasn't reported the sandbox as ready yet — see "Session Agent unreachable" and "Browser sandbox won't start" above; check `docker logs openrbi-session-agent-1` for the specific session ID shown under the portal's status line.
+
+## Portal: noVNC cannot connect ("Connecting display…" never finishes)
+
+First check the browser console/network tab for a WebSocket attempt to `/api/display/{id}/ws` at all:
+
+- **No WebSocket attempt is made**: this was a real, since-fixed frontend bug (a React ref-timing race — the display connection was attempted before the viewer's container `<div>` had actually mounted). If seen on a build predating the fix in [ADR 0014](adr/0014-separate-user-and-admin-portal-frontends.md), rebuild the User Portal from current `main`.
+- **A WebSocket attempt is made but fails/closes immediately**: see "Secure Browser session fails to connect right after starting" above — the sandbox's VNC server may not have bound its port yet; also confirm the backend's `browser-plane` leg is actually exempted by `scripts/setup-network-isolation.sh` (Compact: the default `172.30.0.2`; Segmented: see [deployment.md#user-portal-and-admin-portal-origins](deployment.md#user-portal-and-admin-portal-origins) for the `OPENRBI_BACKEND_BROWSER_PLANE_IP` override needed when running `backend-user`).
+
+## Portal: "End Session" shows Terminated but the session later reappears as Disconnected
+
+A known, unfixed backend limitation, not a frontend bug: destroying the sandbox container (which `terminate_session` does) also kills the VNC TCP connection the display WebSocket handler is independently watching, and that handler's own `finally` block can write `DISCONNECTED` back over the session row concurrently with (or just after) `terminate_session`'s own `TERMINATED` write — two independent server-side async tasks racing on the same row. The User Portal already sequences its own calls to minimize this (terminate before closing the display connection, see `frontend/user/src/pages/SecureBrowser.tsx`), but this alone cannot fully prevent a server-side race between two backend tasks. If seen, the session is not actually still running — `TERMINATED` (or `DISCONNECTED`, in this specific case) both mean the sandbox is gone; treat the persisted status here as a display-only inconsistency, not a live session, and start a new one as usual.
+
+## Portal: User API unavailable
+
+The User Portal shows a generic backend-unavailable banner (not a raw network error or a blank page) if any request fails to reach the User listener at all. Confirm the process serving `VITE_API_BASE_URL` is actually up: in Compact, `docker compose ps backend`; in a Segmented deployment, `docker compose ps backend-user`. A `404` on every request (rather than a connection failure) instead usually means the portal is accidentally pointed at an `admin`-mode listener, which never registers session/file/display routes — double-check each app's own `.env`.
+
+## Portal: Admin API unavailable
+
+Same as above, but for `backend` (Compact) / `backend-admin` (Segmented). Since the Admin Portal itself requires an authenticated, MFA-verified session to reach almost anything, a fully down Admin API also takes `/admin/health` down with it — fall back to `GET /health` (unauthenticated liveness only) or the host-level `docker compose ps`/`docker logs` to distinguish "API process is down" from "API is up but something behind it isn't."
+
+## Portal: download unavailable
+
+The Downloads page's **Download** button requests a genuine single-use token (`POST /files/{id}/download-token`) and immediately follows it — a second click, or reusing a link from browser history, gets a `401` by design (the token was already consumed), not a bug. A file stuck showing "Awaiting review" instead of a Download button is still `QUARANTINED` — see [Quarantine review](admin-guide.md#quarantine-review) for the administrator side of releasing it.
+
+## Portal: session isolated
+
+The Secure Browser page shows this honestly (*"This session has been isolated by an administrator…"*) rather than a generic connection error — see [user-guide.md#secure-browser](user-guide.md#secure-browser). This is expected admin behavior, not a defect; end the session and start a new one.
+
+## Portal: health page shows Degraded/Unavailable
+
+See "File scanner (ClamAV) unavailable", "Quarantine storage issues", and "Database / Redis operational issues" above — the Admin Portal's System page renders exactly what `GET /admin/health` returns, component by component, with no hardcoded green checkmarks anywhere to mask a real outage.

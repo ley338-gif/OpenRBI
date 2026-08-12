@@ -1,0 +1,121 @@
+import { api } from "./client";
+
+// URLSearchParams(obj) stringifies `undefined` values as the literal text
+// "undefined" — a real bug caught during live browser testing (a request
+// went out as "?status_filter=undefined"). This drops undefined entries
+// before building the query string.
+function queryString(params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string | number][];
+  if (entries.length === 0) return "";
+  const qs = new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
+  return qs ? `?${qs}` : "";
+}
+import type {
+  AdminSessionDto,
+  BrowserNodeDto,
+  EnrollResponse,
+  GroupSummaryDto,
+  IncidentDto,
+  PolicyDetailDto,
+  PolicySummaryDto,
+  QuarantineFileDto,
+  Role,
+  SecurityEventDto,
+  SessionStatus,
+  SetupConfirmResponse,
+  SystemHealthDto,
+  UserSummaryDto,
+} from "@shared/api/types";
+
+// Only endpoints that actually exist on the Admin listener (section 48) —
+// verified against a running `OPENRBI_LISTENER_MODE=admin` instance's own
+// OpenAPI schema. No fallback to a user-only endpoint if one is ever
+// "convenient" — if the Admin Portal needs a shared endpoint, it must be
+// registered in the Admin listener (mfa* below is: app/api/mfa.py is a
+// shared router, registered in every mode).
+export const adminApi = {
+  // Users
+  listUsers: () => api.get<UserSummaryDto[]>("/admin/users"),
+  getUser: (id: string) => api.get<UserSummaryDto>(`/admin/users/${id}`),
+  createUser: (payload: { username: string; password: string; role: Role; group_ids: string[] }) =>
+    api.post<UserSummaryDto>("/admin/users", payload),
+  enableUser: (id: string) => api.post<UserSummaryDto>(`/admin/users/${id}/enable`),
+  disableUser: (id: string) => api.post<UserSummaryDto>(`/admin/users/${id}/disable`),
+  resetPassword: (id: string, newPassword: string) =>
+    api.post<{ status: string }>(`/admin/users/${id}/reset-password`, { new_password: newPassword }),
+  updateRole: (id: string, role: Role) => api.put<UserSummaryDto>(`/admin/users/${id}/role`, { role }),
+  updateGroups: (id: string, groupIds: string[]) =>
+    api.put<UserSummaryDto>(`/admin/users/${id}/groups`, { group_ids: groupIds }),
+  userSessions: (id: string) => api.get<AdminSessionDto[]>(`/admin/users/${id}/sessions`),
+
+  // Groups
+  listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),
+  createGroup: (name: string, description: string | null) =>
+    api.post<GroupSummaryDto>("/admin/groups", { name, description }),
+  deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),
+
+  // Sessions
+  listSessions: () => api.get<AdminSessionDto[]>("/admin/sessions"),
+  getSession: (id: string) => api.get<AdminSessionDto>(`/admin/sessions/${id}`),
+  disconnectSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/disconnect`),
+  isolateSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/isolate`),
+  restoreSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/restore`),
+  killSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/kill`),
+
+  // Policies
+  listPolicies: () => api.get<PolicySummaryDto[]>("/admin/policies"),
+  getPolicy: (id: string) => api.get<PolicyDetailDto>(`/admin/policies/${id}`),
+  createPolicy: (name: string, policyType: string) =>
+    api.post<PolicySummaryDto>("/admin/policies", { name, policy_type: policyType }),
+  createVersion: (
+    policyId: string,
+    payload: { content: Record<string, unknown>; file_rules: { rule_type: string; match_pattern: string; action: string; priority: number }[] },
+  ) => api.post(`/admin/policies/${policyId}/versions`, payload),
+  updateVersion: (
+    policyId: string,
+    versionId: string,
+    payload: { content: Record<string, unknown>; file_rules: { rule_type: string; match_pattern: string; action: string; priority: number }[] },
+  ) => api.put(`/admin/policies/${policyId}/versions/${versionId}`, payload),
+  publishVersion: (policyId: string, versionId: string) =>
+    api.post<PolicyDetailDto>(`/admin/policies/${policyId}/versions/${versionId}/publish`),
+  rollback: (policyId: string, versionId: string) =>
+    api.post<PolicySummaryDto>(`/admin/policies/${policyId}/rollback`, { version_id: versionId }),
+  attachToGroup: (policyId: string, groupId: string) => api.post<void>(`/admin/policies/${policyId}/groups/${groupId}`),
+  detachFromGroup: (policyId: string, groupId: string) => api.delete<void>(`/admin/policies/${policyId}/groups/${groupId}`),
+
+  // Quarantine
+  listQuarantine: (statusFilter?: string) =>
+    api.get<QuarantineFileDto[]>(`/admin/quarantine${statusFilter ? `?status_filter=${statusFilter}` : ""}`),
+  getQuarantineFile: (id: string) => api.get<QuarantineFileDto>(`/admin/quarantine/${id}`),
+  releaseFile: (id: string, comment: string) => api.post<QuarantineFileDto>(`/admin/quarantine/${id}/release`, { comment }),
+  rejectFile: (id: string, comment: string) => api.post<QuarantineFileDto>(`/admin/quarantine/${id}/reject`, { comment }),
+
+  // Incidents
+  listIncidents: (params?: { status_filter?: string; severity_filter?: string }) =>
+    api.get<IncidentDto[]>(`/admin/incidents${queryString(params ?? {})}`),
+  getIncident: (id: string) => api.get<IncidentDto>(`/admin/incidents/${id}`),
+  updateIncident: (id: string, payload: { status?: string; assigned_to?: string; resolution?: string }) =>
+    api.put<IncidentDto>(`/admin/incidents/${id}`, payload),
+
+  // Audit
+  listSecurityEvents: (params?: { event_type?: string; user_id?: string; session_id?: string; limit?: number; offset?: number }) =>
+    api.get<SecurityEventDto[]>(`/admin/security-events${queryString(params ?? {})}`),
+
+  // Health
+  getHealth: () => api.get<SystemHealthDto>("/admin/health"),
+
+  // Nodes
+  listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
+  drainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/drain`),
+  undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
+
+  // Shared MFA (app/api/mfa.py — registered in every listener mode)
+  mfaSetupEnroll: (mfaToken: string) => api.post<EnrollResponse>("/mfa/setup/enroll", { mfa_token: mfaToken }),
+  mfaSetupConfirm: (mfaToken: string, code: string) =>
+    api.post<SetupConfirmResponse>("/mfa/setup/confirm", { mfa_token: mfaToken, code }),
+  mfaVerify: (mfaToken: string, code: string) => api.post("/auth/mfa/verify", { mfa_token: mfaToken, code }),
+  // Admin-only MFA (app/api/admin_mfa.py)
+  resetUserMfa: (userId: string) => api.post<{ status: string }>(`/mfa/admin/users/${userId}/reset`),
+};
+
+export type { SessionStatus };

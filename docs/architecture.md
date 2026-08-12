@@ -2,15 +2,13 @@
 
 ## Status
 
-All 22 build phases (see [development.md](development.md)) are complete as of Phase 23's final documentation pass. The one deliberate deviation from this document's original sketch: there is no separate **Worker** service/container — background jobs (the download poller, incident aggregation) run as in-process asyncio background tasks inside the backend (`app/core/download_poller.py`), not a distinct deployment unit. This was a simplification made once real usage showed the job volume didn't warrant a separate process, and it can be split out later without changing any caller — nothing in the codebase assumes "in the same process" beyond that module.
-
-The **Admin and User portals** (frontend) remain the one component that's genuinely still just a scaffold, not fully built: every backend capability listed below is real and usable directly via its API (see [api.md](api.md), [admin-guide.md](admin-guide.md), [user-guide.md](user-guide.md)), but the React SPA itself only ships the noVNC test harness (`frontend/src/SecureBrowserTest.tsx`), not a full admin/user UI. This was a deliberate scope choice for MVP 1 — the project brief's phase order (§35) is entirely backend/infrastructure-first, and no phase in it is "build the admin/user portal UI."
+All 22 build phases (see [development.md](development.md)) are complete, and Productization v0.1.1 has added a real User Portal and Admin Portal on top of them. The one deliberate deviation from this document's original sketch: there is no separate **Worker** service/container — background jobs (the download poller, incident aggregation) run as in-process asyncio background tasks inside the backend (`app/core/download_poller.py`), not a distinct deployment unit. This was a simplification made once real usage showed the job volume didn't warrant a separate process, and it can be split out later without changing any caller — nothing in the codebase assumes "in the same process" beyond that module.
 
 ## Components
 
 | Component | Role | Status |
 |---|---|---|
-| Frontend | React/TypeScript SPA | noVNC test harness only — no admin/user portal UI (see above) |
+| Frontend | Two React/TypeScript SPAs — User Portal and Admin Portal (see below) | done |
 | Backend/API | FastAPI service: auth, users, groups, policies, sessions, incidents, quarantine, audit, health | done — one codebase, runnable as `both`/`user`/`admin` listener modes (see below) |
 | PostgreSQL | Durable store for all persistent entities (§27/§28) | done |
 | Redis | Transient state: server-side sessions, MFA/login-lockout state, release tokens | done |
@@ -92,6 +90,21 @@ Following `docs/analysis/productization-v0.1.1-zone-separation.md`'s recommendat
 This is a **logical/process-level** separation, not yet a network-level one: both modes still reach the same PostgreSQL, the same Redis, and hold the same Session Agent shared token when run as separate processes. See [ADR 0011](adr/0011-user-admin-listener-separation.md) for the full reasoning, and [ADR 0012](adr/0012-compact-vs-segmented-deployment.md) for how this maps onto **Compact** (today's only shipped profile) vs. an illustrative, not-yet-complete **Segmented** profile (`docker-compose.segmented.yml`, two instances of the same image, no separate DB roles/Session Agent scopes/reverse-proxy vhosts yet — see `docs/deployment.md#segmented`).
 
 The Browser Isolation Zone this task's own preceding analysis considered building **already exists** — see [ADR 0013](adr/0013-browser-isolation-zone.md): it's `browser-plane` below, unchanged by any of this.
+
+## User Portal and Admin Portal (Productization v0.1.1)
+
+Two separate Vite/React/TypeScript single-page apps, `frontend/user/` and `frontend/admin/`, sharing common code from `frontend/shared/` via an npm workspace (`frontend/package.json`'s `"workspaces": ["shared", "user", "admin"]`) — not a published package, not a monolith. See [ADR 0014](adr/0014-separate-user-and-admin-portal-frontends.md) for the full reasoning.
+
+- **`frontend/shared/`** — the `ApiClient`/`ApiError` wrapper, `AuthProvider`/`useAuth`, the shared `LoginFlow` (covers all three `/auth/login` outcomes plus MFA setup and one-time recovery-code display), `ToastProvider`, and UI primitives (`StatusBadge`, `ConfirmDialog`, table/form/loading/empty/error components) plus the brand design tokens. Not buildable on its own — it's a source-only package consumed directly by each app's own Vite build.
+- **`frontend/user/`** — talks exclusively to `userApi` (`frontend/user/src/api/userApi.ts`), which only calls endpoints that exist on a `user`-mode listener: sessions, files, display, plus the shared auth/MFA routes. Routes: Dashboard, Secure Browser, Downloads, Profile/MFA. Contains zero admin functionality — verified by inspecting its own production bundle, which contains no `/admin/*` calls.
+- **`frontend/admin/`** — talks exclusively to `adminApi` (`frontend/admin/src/api/adminApi.ts`), which only calls endpoints that exist on an `admin`-mode listener: users, groups, sessions, policies, quarantine, incidents, audit, health, nodes, plus the admin-only MFA reset. Routes: Dashboard, Users, Groups, Sessions, Policies, Quarantine, Incidents, Audit, System.
+- Each portal has its own configurable API base URL (`VITE_API_BASE_URL`, `.env.example` in each app) — Compact points both at the same origin's `/api`; a Segmented deployment would point each at its own listener's origin, with no code change.
+- **Compact build**: `frontend/Dockerfile` builds both workspace apps and serves them from one nginx image — User Portal at `/`, Admin Portal at `/admin/` (`frontend/admin/vite.config.ts`'s `base`, overridable via `OPENRBI_ADMIN_BASE_PATH` for a build meant to be served at `/` on its own origin). `frontend/nginx.conf` adds the `/admin/` `try_files` rule as a site-level addition, without touching the base image's own `nginx.conf` (preserving the Phase 20 privilege-drop hardening).
+
+**Display relay path**: User Portal → User API's `/display/{id}/ws` (a plain WebSocket upgrade, `app/api/display.py`) → whichever process terminates that route has its own pinned leg on `browser-plane` → the sandbox's VNC port. `/display/*/ws` is a user-facing route (session/file/display are the User listener's routers, see [ADR 0011](adr/0011-user-admin-listener-separation.md)) — it is never registered on an `admin`-mode process, so the Admin listener has no reason to reach `browser-plane` at all, and doesn't: `docker-compose.segmented.yml`'s `backend-admin` isn't attached to that network.
+
+- **Compact** (`both` mode): the single `backend` service serves everything, pinned at `172.30.0.2`, exempted by `scripts/setup-network-isolation.sh`'s default. No new isolation question arises.
+- **Segmented**: `backend-user` (the process that actually owns `/display/*/ws` in this profile) is pinned at `172.30.0.4` on `browser-plane`; `backend-admin` has no `browser-plane` network at all. `scripts/setup-network-isolation.sh` accepts a space-separated `OPENRBI_BACKEND_BROWSER_PLANE_IP` override precisely so a Segmented deployment can exempt `backend-user`'s own address instead of (or in addition to) Compact's default — never a blanket allow for the whole control plane, and never an exemption for `backend-admin`, which has no legitimate reason to open a connection here. See `docker-compose.segmented.yml`'s comments and `docs/deployment.md#segmented` for the exact override command.
 
 ## Multi-node readiness
 

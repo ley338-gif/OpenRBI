@@ -30,17 +30,18 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     depends_on: [postgres, redis]
-    # KNOWN LIMITATION (documented, not fixed here — see docs/deployment.md
-    # #segmented and docs/security-model.md): the noVNC display relay needs
-    # to open a *new* connection into browser-plane, and
-    # scripts/setup-network-isolation.sh's exemption is hardcoded to the
-    # original "backend" service's pinned 172.30.0.2 — NOT this address.
-    # A real Segmented deployment running the display relay from
-    # backend-user instead of backend would need that script updated to
-    # exempt 172.30.0.4 too. Deliberately not changed here — this task's
-    # scope explicitly excludes touching browser-plane/iptables without a
-    # concrete need, and no test in this repo currently exercises a live
-    # display relay from this service.
+    # This is the process that actually terminates /display/*/ws (the User
+    # listener owns display.py's routes — see docs/architecture.md#user-
+    # portal-and-admin-portal-productization-v011), so it's the one that
+    # needs to open a *new* connection into browser-plane for the noVNC
+    # relay. scripts/setup-network-isolation.sh's exemption defaults to the
+    # Compact "backend" service's address (172.30.0.2) only; a real
+    # Segmented deployment running backend-user must override it to this
+    # service's own pinned address instead:
+    #   OPENRBI_BACKEND_BROWSER_PLANE_IP="172.30.0.4" ./scripts/setup-network-isolation.sh
+    # backend-admin below deliberately gets no browser-plane network at
+    # all — it never terminates /display/*/ws and has no legitimate reason
+    # to open a connection here, so it gets no exemption and no attachment.
     networks:
       control-plane:
       browser-plane:

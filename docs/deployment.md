@@ -34,7 +34,7 @@ docker compose up -d --build
 sudo ./scripts/setup-network-isolation.sh
 ```
 
-At this point the stack is reachable on `http://<host>:8080` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
+At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
 
 ## TLS
 
@@ -128,6 +128,38 @@ What this **does** give you today: a `backend-user` process where `/admin/*` gen
 - **Session Agent token scoping** — both instances hold the same shared `OPENRBI_SESSION_AGENT_API_TOKEN`. Per-listener tokens/scopes (so a compromised `backend-user` can't issue `isolate`/`terminate` on arbitrary sessions) are documented, not implemented.
 - **The display relay's network exemption** — `scripts/setup-network-isolation.sh`'s allow-list is hardcoded to the base `backend` service's pinned `browser-plane` address; `backend-user`'s own pinned address (see the overlay file's comments) is not yet exempted, so a real deployment running the display relay from `backend-user` instead of `backend` would need that script updated first — deliberately not done in this pass (see [ADR 0013](adr/0013-browser-isolation-zone.md); browser-plane itself is unchanged by this work).
 - **Firewall/VLAN enforcement** — entirely an operator decision once real separate origins exist; nothing in this repository automates it, on purpose (see the Productization v0.1.1 analysis's explicit anti-overengineering guardrail).
+- **The display relay's `browser-plane` exemption defaults to the base `backend` service only.** `scripts/setup-network-isolation.sh` now accepts `OPENRBI_BACKEND_BROWSER_PLANE_IP` as a space-separated list, so a Segmented deployment can exempt `backend-user`'s own pinned address (`172.30.0.4`, the process that actually terminates `/display/*/ws` in this profile) instead of Compact's default:
+  ```bash
+  OPENRBI_BACKEND_BROWSER_PLANE_IP="172.30.0.4" sudo -E ./scripts/setup-network-isolation.sh
+  ```
+  `backend-admin` deliberately has no `browser-plane` network attachment and gets no exemption — it never terminates the display route, so it never needs one. See [architecture.md#user-portal-and-admin-portal-productization-v011](architecture.md#user-portal-and-admin-portal-productization-v011).
+
+### User Portal and Admin Portal origins
+
+Both portals accept their API base URL at **build time**, via each app's own `.env` (`frontend/user/.env`, `frontend/admin/.env`, see the corresponding `.env.example`):
+
+```bash
+# frontend/user/.env
+VITE_API_BASE_URL=/api          # Compact default: same-origin, reverse-proxied to backend
+
+# frontend/admin/.env
+VITE_API_BASE_URL=/api          # Compact default
+```
+
+**Compact** (today's only complete production profile): one reverse-proxy origin serves both — User Portal at `/`, Admin Portal at `/admin/` — both talking to the same `/api` on that same origin, which itself runs `OPENRBI_LISTENER_MODE=both`. This is the default from `frontend/Dockerfile`; no extra configuration needed.
+
+**Segmented** (illustrative, not yet a complete production profile — see above): each portal would get its own origin and point at its own listener, e.g. (using local example names, not real domains):
+
+```bash
+# frontend/user/.env  — built for a deployment where the User Portal is DMZ-facing
+VITE_API_BASE_URL=https://browser.openrbi.local/api
+
+# frontend/admin/.env — built for a deployment where the Admin Portal is management-side
+VITE_API_BASE_URL=https://admin.openrbi.local/api
+OPENRBI_ADMIN_BASE_PATH=/        # served at its own origin's root, not /admin/
+```
+
+This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and the display-relay network exemption still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point.
 
 ## Sizing
 

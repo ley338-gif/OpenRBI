@@ -1,0 +1,89 @@
+/* OpenRBI shared design tokens — reused as-is from the project's existing
+   brand guide (deep navy / indigo-to-blue gradient mark, Inter UI type,
+   JetBrains Mono for technical/status text). Not a new branding project —
+   see docs/architecture.md#user-portal--admin-portal.
+*/
+:root {
+  --color-navy: #0b1220;
+  --color-indigo: #4f4e6e;
+  --color-blue: #2563eb;
+  --color-violet: #7c3aed;
+  --color-teal: #10b981;
+
+  --color-slate-700: #334155;
+  --color-slate-500: #64748b;
+  --color-slate-300: #cbd5e1;
+  --color-slate-100: #f1f5f9;
+  --color-white: #ffffff;
+
+  --color-bg: var(--color-white);
+  --color-surface: var(--color-white);
+  --color-surface-muted: var(--color-slate-100);
+  --color-border: var(--color-slate-300);
+  --color-text: var(--color-navy);
+  --color-text-muted: var(--color-slate-500);
+  --color-accent: var(--color-blue);
+  --color-accent-strong: var(--color-violet);
+
+  /* Status colors — always paired with a text label, never color-only
+     (section 6/43: status must not be conveyed by color alone). */
+  --status-healthy-bg: #ecfdf5;
+  --status-healthy-fg: #047857;
+  --status-warning-bg: #fffbeb;
+  --status-warning-fg: #b45309;
+  --status-critical-bg: #fef2f2;
+  --status-critical-fg: #b91c1c;
+  --status-neutral-bg: var(--color-slate-100);
+  --status-neutral-fg: var(--color-slate-700);
+  --status-info-bg: #eff6ff;
+  --status-info-fg: #1d4ed8;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--color-accent);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
