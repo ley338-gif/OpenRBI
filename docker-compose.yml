@@ -16,7 +16,7 @@ services:
     networks: [control-plane]
 
   clamav:
-    image: clamav/clamav:1.3
+    image: clamav/clamav:1.5.4
     restart: unless-stopped
     networks: [control-plane]
 
