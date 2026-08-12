@@ -7,14 +7,22 @@
   min-height: 100vh;
 }
 
+/* TEST VARIANT (requested): light-gray sidebar instead of dark navy —
+   see the git history for the dark version if this doesn't stick. */
 .sidebar {
-  width: 220px;
+  width: 264px;
   flex-shrink: 0;
-  background: var(--color-navy);
-  color: var(--color-white);
+  background: var(--color-slate-100);
+  color: var(--color-text);
   display: flex;
   flex-direction: column;
   padding: var(--space-4) 0;
+  border-right: 1px solid var(--color-border);
+  transition: width 0.15s ease;
+}
+
+.sidebar.collapsed {
+  width: 76px;
 }
 
 .sidebar-brand {
@@ -24,18 +32,27 @@
   padding: 0 var(--space-4) var(--space-4);
   font-weight: 600;
   font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar-brand img {
-  width: 28px;
-  height: 28px;
+  height: 34px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-brand .sidebar-logo-full {
+  width: 188px;
+  height: auto;
+  margin-bottom: 4px;
 }
 
 .sidebar-brand .subtitle {
   display: block;
   font-size: 0.65rem;
   font-weight: 400;
-  color: var(--color-slate-300);
+  color: var(--color-text-muted);
   letter-spacing: 0.04em;
 }
 
@@ -44,31 +61,55 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  padding: 0 var(--space-2);
+  margin-top: var(--space-6);
 }
 
 .sidebar nav a {
-  color: var(--color-slate-300);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text);
   text-decoration: none;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   font-size: 0.9rem;
-  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar nav a svg {
+  flex-shrink: 0;
 }
 
 .sidebar nav a:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-white);
+  background: var(--color-white);
+  color: var(--color-text);
 }
 
 .sidebar nav a.active {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-accent-strong);
   color: var(--color-white);
-  border-left-color: var(--color-blue);
+  font-weight: 500;
 }
 
-.sidebar-footer {
-  padding: var(--space-4);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 0.85rem;
+.sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: var(--font-ui);
+}
+
+.sidebar-collapse-btn:hover {
+  color: var(--color-text);
 }
 
 .main-area {
@@ -81,10 +122,89 @@
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: var(--space-3);
   padding: var(--space-3) var(--space-6);
   background: var(--color-white);
   border-bottom: 1px solid var(--color-border);
+}
+
+.user-menu {
+  position: relative;
+}
+
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+.user-menu-trigger:hover {
+  background: var(--color-surface-muted);
+}
+
+.user-menu-label {
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-accent-strong);
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.user-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(11, 18, 32, 0.12);
+  min-width: 180px;
+  padding: var(--space-1);
+  z-index: 50;
+}
+
+.user-menu-panel a,
+.user-menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.user-menu-panel a:hover,
+.user-menu-panel button:hover {
+  background: var(--color-surface-muted);
 }
 
 .page {
@@ -100,12 +220,19 @@
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-card);
 }
 
 .card + .card {
-  margin-top: var(--space-4);
+  /* Matches .stat-grid's margin-bottom below so the vertical rhythm
+     between a KPI row and the cards that follow it is consistent. */
+  margin-top: var(--space-6);
+}
+
+.cta-card {
+  border-left: 3px solid var(--color-accent-strong);
 }
 
 .stat-grid {
@@ -118,8 +245,9 @@
 .stat-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--shadow-card);
 }
 
 .stat-card .label {
@@ -152,12 +280,14 @@
 }
 
 .btn-primary {
-  background: var(--color-accent);
+  /* TEST VARIANT (requested): unified with the sidebar's active-nav-item
+     color instead of the plain blue accent. */
+  background: var(--color-accent-strong);
   color: var(--color-white);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--color-accent-strong-hover);
 }
 
 .btn-secondary {
@@ -416,29 +546,69 @@ table.data-table tbody tr:hover {
 
 .login-card {
   background: var(--color-white);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--space-8);
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
 }
 
 .login-card .brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  text-align: center;
   gap: var(--space-2);
   margin-bottom: var(--space-6);
 }
 
-.login-card .brand img {
-  width: 32px;
-  height: 32px;
+.login-card .brand-lockup {
+  width: 200px;
+  height: auto;
 }
 
 .login-card .brand .subtitle {
   display: block;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--color-text-muted);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-card h1 {
+  text-align: center;
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 40px !important;
+}
+
+.password-toggle {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 4px;
+  display: flex;
+}
+
+.password-toggle:hover {
+  color: var(--color-text);
+}
+
+.login-footnote {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: var(--space-4);
 }
 
 .recovery-codes {

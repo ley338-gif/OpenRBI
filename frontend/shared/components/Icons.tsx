@@ -1,0 +1,154 @@
+import type { SVGProps } from "react";
+
+type IconProps = SVGProps<SVGSVGElement>;
+
+function base(children: React.ReactNode, props: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** Hand-written, dependency-free icon set (no icon-library install) —
+ * one file, reused by both portals' sidebars/topbars/forms.
+ */
+export const Icons = {
+  Dashboard: (p: IconProps) =>
+    base(
+      <>
+        <rect x="3" y="3" width="7" height="9" rx="1.5" />
+        <rect x="14" y="3" width="7" height="5" rx="1.5" />
+        <rect x="14" y="12" width="7" height="9" rx="1.5" />
+        <rect x="3" y="16" width="7" height="5" rx="1.5" />
+      </>,
+      p,
+    ),
+  Browser: (p: IconProps) =>
+    base(
+      <>
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </>,
+      p,
+    ),
+  Download: (p: IconProps) =>
+    base(
+      <>
+        <path d="M12 3v12M7 10l5 5 5-5" />
+        <path d="M4 20h16" />
+      </>,
+      p,
+    ),
+  User: (p: IconProps) =>
+    base(
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" />
+      </>,
+      p,
+    ),
+  Users: (p: IconProps) =>
+    base(
+      <>
+        <circle cx="9" cy="8" r="3.2" />
+        <path d="M3 20c0-3.4 2.7-5.2 6-5.2s6 1.8 6 5.2" />
+        <path d="M16 8.2a3 3 0 1 1 0 5.9" />
+        <path d="M15 14.8c2.7.4 4.5 2 4.5 5.2" />
+      </>,
+      p,
+    ),
+  Groups: (p: IconProps) =>
+    base(
+      <>
+        <rect x="3" y="4" width="8" height="8" rx="1.5" />
+        <rect x="13" y="4" width="8" height="8" rx="1.5" />
+        <rect x="8" y="14" width="8" height="6" rx="1.5" />
+      </>,
+      p,
+    ),
+  Sessions: (p: IconProps) =>
+    base(
+      <>
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M9 21h6M12 16v5" />
+        <path d="M8 12l2.5-3L13 11l3-3.5" />
+      </>,
+      p,
+    ),
+  Shield: (p: IconProps) =>
+    base(<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />, p),
+  Quarantine: (p: IconProps) =>
+    base(
+      <>
+        <path d="M12 3l9 16H3z" />
+        <path d="M12 10v4M12 17.5v.1" />
+      </>,
+      p,
+    ),
+  Incident: (p: IconProps) =>
+    base(
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7.5v5M12 16.2v.1" />
+      </>,
+      p,
+    ),
+  Audit: (p: IconProps) =>
+    base(
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </>,
+      p,
+    ),
+  System: (p: IconProps) =>
+    base(
+      <>
+        <rect x="3" y="4" width="18" height="6" rx="1.5" />
+        <rect x="3" y="14" width="18" height="6" rx="1.5" />
+        <path d="M7 7h.01M7 17h.01" />
+      </>,
+      p,
+    ),
+  Logout: (p: IconProps) =>
+    base(
+      <>
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <path d="M16 17l5-5-5-5M21 12H9" />
+      </>,
+      p,
+    ),
+  ChevronDown: (p: IconProps) => base(<path d="M6 9l6 6 6-6" />, p),
+  ChevronsLeft: (p: IconProps) => base(<path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />, p),
+  ChevronsRight: (p: IconProps) => base(<path d="M13 17l5-5-5-5M6 17l5-5-5-5" />, p),
+  Eye: (p: IconProps) =>
+    base(
+      <>
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+        <circle cx="12" cy="12" r="3" />
+      </>,
+      p,
+    ),
+  EyeOff: (p: IconProps) =>
+    base(
+      <>
+        <path d="M3 3l18 18" />
+        <path d="M10.6 5.2C11 5.1 11.5 5 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.4 4.3M6.5 6.6A17 17 0 0 0 2 12s3.5 7 10 7c1 0 1.9-.1 2.7-.4" />
+        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      </>,
+      p,
+    ),
+};
