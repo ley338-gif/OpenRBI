@@ -21,6 +21,11 @@ RUN npm run build --workspace=user
 RUN npm run build --workspace=admin
 
 FROM nginx:1.27-alpine
+# Pulls in whatever OS security patches Alpine has released since this tag
+# was last pulled (A5) — verified to actually close real findings here,
+# unlike the Debian-based images where the equivalent apt-get upgrade left
+# the remaining CVEs unfixed upstream (see .trivyignore).
+RUN apk update && apk upgrade --no-cache
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/user/dist /usr/share/nginx/html
 COPY --from=build /app/admin/dist /usr/share/nginx/html/admin
