@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     download_staging_dir: str = "/app/data/staging"
     download_poll_interval_seconds: float = 3.0
 
+    clamav_host: str = "clamav"
+    clamav_port: int = 3310
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -36,7 +36,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 11. Admin session control — **done** (`/admin/sessions/{id}/{disconnect,isolate,restore,kill}`; Kill restricted to ADMIN only — see docs/security-model.md for the rationale)
 12. Policy engine — **done** (draft/publish/rollback, deterministic DENY>QUARANTINE>AUTO_RELEASE conflict model, structural MIME/source matching; not yet wired into a real download/upload pipeline — that's Phase 13+)
 13. Download interception — **done** (real detection/staging/hashing/magic-byte MIME detection/policy pre-check; every file lands in PENDING_SCAN since no scanner exists yet — see docs/quarantine.md)
-14. File scanner
+14. File scanner — **done** (real ClamAV integration, fail-closed final decision matrix — see docs/quarantine.md#scanning-and-the-final-decision-phase-14)
 15. Quarantine
 16. Upload pipeline
 17. Incidents

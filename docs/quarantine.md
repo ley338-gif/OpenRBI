@@ -1,6 +1,6 @@
 # Quarantine
 
-> Status: Phase 13 (download interception, staging, hashing, MIME detection, policy pre-check) is implemented. Every file lands in `PENDING_SCAN` and stays there — Phase 14 (real scanning) and Phase 15 (release/reject, real quarantine storage) are not yet built, so nothing is ever auto-released yet.
+> Status: Phase 13 (download interception, staging, hashing, MIME detection, policy pre-check) and Phase 14 (real ClamAV scanning, fail-closed final decision) are both implemented — a file now reaches a real terminal status (`RELEASED`/`QUARANTINED`/`REJECTED`). Phase 15 (the admin release/reject *workflow*, single-use download tokens, and a real quarantine-storage abstraction beyond local staging) is not yet built.
 
 ## How download interception actually works (Phase 13)
 
@@ -26,6 +26,20 @@ The backend runs a per-session background poll loop (`app/core/download_poller.p
 8. Deletes the file from the sandbox. If that delete fails, the same content is deduplicated by SHA-256 on the next poll rather than creating a second row.
 
 Verified end-to-end against the real running stack, including the tmpfs/archive-API limitation above and the getfattr stderr-concatenation bug both being real bugs caught and fixed during testing, not assumed correct.
+
+## Scanning and the final decision (Phase 14)
+
+`app/core/clamav_client.py` speaks clamd's native protocol directly over TCP (`PING`/`VERSION`/`INSTREAM`) rather than pulling in a third-party client library, so every failure mode is under explicit control. `app/services/scanning.py`'s `scan_and_finalize` applies the fail-closed rules from [ADR 0008](adr/0008-fail-closed.md):
+
+| Scan result | Policy pre-check | Final `QuarantineFile.status` |
+|---|---|---|
+| scanner unreachable/error | *(any)* | `QUARANTINED` — never released regardless of policy |
+| infected | *(any)* | `QUARANTINED` + `MALWARE_DETECTED` event + a `CRITICAL` Incident (§21's automatic-incident list) — never silently deleted, kept for review |
+| clean | `DENY` | `REJECTED` immediately (§16 step 11: "löschen/blockieren" — policy already decided, no human review needed) |
+| clean | `QUARANTINE` (or no policy matched) | `QUARANTINED`, awaiting admin review — release/reject mechanics are Phase 15 |
+| clean | `AUTO_RELEASE` | `RELEASED` — the row is marked cleared; the actual single-use download token for user retrieval is Phase 15 |
+
+Verified against the live stack: the standard EICAR test string is correctly flagged infected (`Eicar-Test-Signature`) and forced to `QUARANTINED` with a `CRITICAL` incident *even when its policy verdict was `AUTO_RELEASE`* — malware detection overrides policy, never the reverse. Also verified the fail-closed case directly: stopping the ClamAV container and re-running the same `AUTO_RELEASE`-eligible file correctly produces `QUARANTINED`/`ERROR`, not a release.
 
 ## Download pipeline
 

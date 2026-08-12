@@ -12,6 +12,7 @@ from app.models.browser_session import BrowserSession
 from app.models.enums import QuarantineStatus, ScannerStatus, SecurityEventType
 from app.models.quarantine import QuarantineFile
 from app.services.policy_engine import FileDecisionInput, evaluate_file_action
+from app.services.scanning import scan_and_finalize
 from app.services.security_events import record_security_event
 
 
@@ -36,10 +37,11 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
     docs/adr/0005, the backend never reaches into the sandbox filesystem or
     network directly) for newly completed downloads and stages each one:
     hash, size, detected MIME (magic bytes, never trusting the extension
-    alone), best-effort origin URL, and a policy pre-check
-    (app/services/policy_engine.py). Creates a QuarantineFile row per file,
-    status PENDING_SCAN — no scanner exists yet (Phase 14), so nothing is
-    ever auto-released here; final release/reject is Phase 15.
+    alone), best-effort origin URL, a policy pre-check
+    (app/services/policy_engine.py), and a real ClamAV scan with a
+    fail-closed final decision (app/services/scanning.py). The actual
+    single-use download token for user retrieval of a RELEASED file, and
+    the admin release/reject workflow for a QUARANTINED one, are Phase 15.
     """
     try:
         files = await session_agent_client.list_downloads(str(session.id))
@@ -119,6 +121,7 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
             quarantine_file_id=quarantine_file.id,
             metadata={"sha256": sha256, "detected_mime": detected_mime, "policy_action": decision.action.value},
         )
+        await scan_and_finalize(db, quarantine_file)
         created.append(quarantine_file)
 
         try:
