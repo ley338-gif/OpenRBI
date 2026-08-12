@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     # app/core/auth_providers/ldap.py's escaping.
     ldap_user_search_filter: str = "(sAMAccountName={username})"
     ldap_group_attribute: str = "memberOf"
+    # Group DN -> OpenRBI role name (Roadmap B1.3, docs/admin-guide.md).
+    # An LDAP user whose groups match none of these keys gets the
+    # least-privileged USER role, never an implicit elevated default — see
+    # app/services/ldap_provisioning.py's resolution precedence
+    # (ADMIN > SECURITY_REVIEWER > USER when multiple groups match).
+    # Pydantic parses this from a JSON object string in the environment.
+    ldap_group_role_mapping: dict[str, str] = {}
 
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
@@ -111,6 +118,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"OPENRBI_{field_name.upper()} must be set when OPENRBI_LDAP_ENABLED=true — "
                     "refusing to start with a missing or unedited placeholder value"
+                )
+        _valid_roles = {"USER", "SECURITY_REVIEWER", "ADMIN"}
+        for group_dn, role_name in self.ldap_group_role_mapping.items():
+            if role_name not in _valid_roles:
+                raise ValueError(
+                    f"OPENRBI_LDAP_GROUP_ROLE_MAPPING maps '{group_dn}' to unknown role "
+                    f"'{role_name}' — must be one of {sorted(_valid_roles)}"
                 )
         return self
 

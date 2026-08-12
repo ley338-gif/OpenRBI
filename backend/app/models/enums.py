@@ -127,3 +127,8 @@ class SecurityEventType(str, enum.Enum):
     GROUP_DELETED = "GROUP_DELETED"
     UPLOAD_REQUESTED = "UPLOAD_REQUESTED"
     UPLOAD_BLOCKED = "UPLOAD_BLOCKED"
+
+    # Roadmap Phase B / B1.3 — a just-in-time-provisioned LDAP account is a
+    # real account-creation event, distinct from an admin-issued
+    # USER_CREATED (see backend/migrations/versions/b3d8f1a29c47_*).
+    USER_PROVISIONED_VIA_LDAP = "USER_PROVISIONED_VIA_LDAP"

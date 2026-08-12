@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse
 from app.api.schemas.mfa import MfaVerifyRequest
 from app.config import get_settings
+from app.core.auth_providers.base import AuthResult
 from app.core.auth_providers.factory import get_local_auth_provider
+from app.core.auth_providers.ldap import LdapAuthProvider
 from app.core.deps import get_current_user
 from app.core.sessions import (
     clear_login_failures,
@@ -23,6 +25,7 @@ from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
+from app.services.ldap_provisioning import resolve_or_provision_ldap_user
 from app.services.mfa import verify_login_factor
 from app.services.security_events import record_security_event
 
@@ -43,6 +46,14 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
     the rest of the window and gets the same generic response shape (429,
     not a distinct error), so this can't be used to enumerate usernames
     either.
+
+    Roadmap Phase B / B1.3: local is always tried first (fast, no network
+    round-trip, and authoritative for any account with a real local
+    password — docs/adr/0015). LDAP is only attempted if local fails *and*
+    OPENRBI_LDAP_ENABLED is true, and only one lockout/failure event is
+    recorded per login attempt regardless of how many providers were
+    tried, not one per provider — otherwise a single guessed password
+    would burn through the lockout budget twice as fast.
     """
     if await is_login_locked(payload.username):
         await record_security_event(
@@ -54,8 +65,16 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         )
 
     auth_result = await get_local_auth_provider().authenticate(db, payload.username, payload.password)
+    user: User | None = None
 
-    if not auth_result.success:
+    if auth_result.success:
+        user = await db.get(User, auth_result.matched_user_id)
+    elif settings.ldap_enabled:
+        ldap_result: AuthResult = await LdapAuthProvider().authenticate(db, payload.username, payload.password)
+        if ldap_result.success:
+            user = await resolve_or_provision_ldap_user(db, payload.username, ldap_result.ldap_group_dns or [])
+
+    if user is None:
         await record_login_failure(payload.username)
         await record_security_event(
             db,
@@ -67,20 +86,30 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
     await clear_login_failures(payload.username)
-    user = await db.get(User, auth_result.matched_user_id)
     role = await db.get(Role, user.role_id)
 
     if user.mfa_enabled:
         # Password verified, but MFA must still be satisfied before a real
-        # session is issued — no partial-trust session is set here.
+        # session is issued — no partial-trust session is set here. Commit
+        # before returning: a JIT-provisioned LDAP user (Roadmap B1.3) may
+        # still be only flush()ed, not committed, at this point — without
+        # this the new row (and its USER_PROVISIONED_VIA_LDAP audit event)
+        # would be silently discarded when the request's DB session closes,
+        # and the mfa_token just issued would reference a user that was
+        # never actually persisted. A pre-existing local account reaching
+        # this branch has no pending writes, so this commit is a no-op for
+        # it — safe either way.
         mfa_token = await create_mfa_pending(user.id)
+        await db.commit()
         return LoginResponse(status="mfa_required", mfa_token=mfa_token)
 
     if role.name in _MFA_MANDATORY_ROLES:
         # MFA is mandatory for ADMIN/SECURITY_REVIEWER (docs/security-model.md)
         # — an account in this role with no TOTP enrolled yet must complete
-        # enrollment before it ever gets a session, not after.
+        # enrollment before it ever gets a session, not after. Same commit
+        # rationale as the branch above.
         mfa_token = await create_mfa_pending(user.id)
+        await db.commit()
         return LoginResponse(status="mfa_enrollment_required", mfa_token=mfa_token)
 
     session_token = await create_session(user.id, role.name)

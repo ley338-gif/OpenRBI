@@ -7,6 +7,11 @@ verification call, and the "don't distinguish unknown-user from wrong-
 password" behavior are unchanged from the pre-refactor version — see
 backend/tests/integration/test_auth_and_mfa.py's existing local-login tests,
 which this refactor must keep passing byte-for-byte.
+
+Roadmap B1.3 adds one real behavior change on top of that unchanged core:
+users.password_hash can now be NULL (a JIT-provisioned LDAP-only account,
+docs/adr/0015) — explicitly rejected here rather than passed into
+verify_password(), which was never designed to receive one.
 """
 
 from sqlalchemy import select
@@ -22,7 +27,12 @@ class LocalAuthProvider:
         result = await db.execute(select(User).where(User.username == username))
         user = result.scalar_one_or_none()
 
-        if user is None or not user.is_active or not verify_password(password, user.password_hash):
+        if (
+            user is None
+            or not user.is_active
+            or user.password_hash is None
+            or not verify_password(password, user.password_hash)
+        ):
             return AuthResult(success=False, matched_user_id=user.id if user is not None else None)
 
         return AuthResult(success=True, username=user.username, matched_user_id=user.id)
