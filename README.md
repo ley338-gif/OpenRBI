@@ -44,6 +44,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 - [docs/security-model.md](docs/security-model.md) — sandbox model, network isolation, fail-closed rules, MFA, secrets, audit
 - [docs/threat-model.md](docs/threat-model.md) — assets, trust boundaries, attacker models, explicit non-goals
+- [docs/security-self-assessment.md](docs/security-self-assessment.md) — a structured first-party check of every claimed control against the actual code, with file/line evidence and open gaps stated explicitly. **Not** a substitute for the independent external review still pending before any production use.
 - [SECURITY.md](SECURITY.md) — supported versions and how to report a vulnerability
 
 **OpenRBI never claims a file is "safe."** Status wording is deliberately limited to things it can actually verify: *No threat detected*, *Scan completed*, *Policy allowed*, *Quarantined*.
@@ -55,6 +56,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/architecture.md](docs/architecture.md) | Components, data flows, trust boundaries, provider architecture |
 | [docs/threat-model.md](docs/threat-model.md) | Threat model and non-goals |
 | [docs/security-model.md](docs/security-model.md) | Sandbox, network, file-transfer, MFA, secrets, audit rules |
+| [docs/security-self-assessment.md](docs/security-self-assessment.md) | Every claimed control checked against the actual code, with evidence and open gaps |
 | [docs/policies.md](docs/policies.md) | Roles vs. groups, policy model, MIME/source matching |
 | [docs/session-lifecycle.md](docs/session-lifecycle.md) | Session states and transitions |
 | [docs/quarantine.md](docs/quarantine.md) | Download pipeline, scanning, quarantine, release/reject |
