@@ -5,23 +5,31 @@
 # files served by the same container, same as before this work. The
 # Segmented example (docker-compose.segmented.yml) instead builds and
 # serves each portal from its own dedicated container/origin.
+#
+# Build context is the repo root (docker-compose.yml), not frontend/, so
+# this can also copy in docs/*.md for the in-app Help menus.
 FROM node:22-slim AS build
 WORKDIR /app
-COPY package.json ./
-COPY shared/package.json shared/package.json
-COPY user/package.json user/package.json
-COPY admin/package.json admin/package.json
+COPY frontend/package.json ./
+COPY frontend/shared/package.json shared/package.json
+COPY frontend/user/package.json user/package.json
+COPY frontend/admin/package.json admin/package.json
 RUN npm install
 
-COPY shared/ shared/
-COPY user/ user/
-COPY admin/ admin/
+COPY frontend/shared/ shared/
+COPY frontend/user/ user/
+COPY frontend/admin/ admin/
 
 RUN npm run build --workspace=user
 RUN npm run build --workspace=admin
 
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/user/dist /usr/share/nginx/html
 COPY --from=build /app/admin/dist /usr/share/nginx/html/admin
+# Served at /docs/*.md from either portal's origin (absolute path), so a
+# Help link works the same whether the Admin Portal is reached at /admin/
+# (Compact) or its own origin root (Segmented, OPENRBI_ADMIN_BASE_PATH=/).
+COPY docs/ /usr/share/nginx/html/docs/
+COPY docs/ /usr/share/nginx/html/admin/docs/
 EXPOSE 80

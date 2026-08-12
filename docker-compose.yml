@@ -77,7 +77,13 @@ services:
     networks: [control-plane]
 
   frontend:
-    build: ./frontend
+    build:
+      # Root context (not ./frontend) so the image can also copy in
+      # docs/*.md for the portals' Help menus — real, always-in-sync
+      # documentation links instead of a hardcoded GitHub URL that would
+      # break for an offline/local deployment.
+      context: .
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
