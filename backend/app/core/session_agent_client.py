@@ -25,6 +25,7 @@ class NodeStatus:
     active_sessions: int
     runtime: str
     version: str
+    sandbox_image_available: bool
 
 
 class SessionAgentError(RuntimeError):
@@ -61,6 +62,7 @@ async def get_node_status() -> NodeStatus:
         active_sessions=body["active_sessions"],
         runtime=body["runtime"],
         version=body["version"],
+        sandbox_image_available=body["sandbox_image_available"],
     )
 
 

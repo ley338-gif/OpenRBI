@@ -71,6 +71,12 @@ Core session/policy logic depends only on these interfaces (see [ADR 0003](adr/0
 
 See [ADR 0004](adr/0004-separate-session-agent.md). The Session Agent exposes an internal API (mutual-auth, not exposed publicly) for sandbox lifecycle and status/metrics, and is the only component with runtime-level privileges. Its interface is host-address-based (not "localhost-assumed"), so a later deployment can run browser nodes on separate hosts from the control plane without an interface change — see [Browser Nodes](#multi-node-readiness).
 
+## Health monitoring (Phase 19)
+
+`GET /admin/health` (ADMIN/SECURITY_REVIEWER) aggregates independent, non-fatal checks of every component named in §25 of the project brief: API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser image availability, ClamAV, and quarantine-storage writability. Each check is isolated — one dependency being down never breaks another's check or 500s the endpoint (`app/services/health.py`). Overall status is `HEALTHY` only if every component is; `UNAVAILABLE` if API or PostgreSQL itself is down (the control plane is unusable); otherwise `DEGRADED`.
+
+The plain `GET /health` liveness probe is deliberately separate and unauthenticated: because `/admin/health` requires a DB-backed session to authenticate, it is — like every other admin endpoint — unreachable during a full PostgreSQL outage. `/health` has no such dependency, so it stays the one signal guaranteed to answer regardless of what else is down.
+
 ## Multi-node readiness
 
 MVP 1 runs on a single Linux host, but:

@@ -36,6 +36,7 @@ async def node_status() -> dict[str, str | int]:
     provider = get_provider()
     active_sessions = await provider.count_active_sessions()
     version = await provider.runtime_version()
+    image_available = await provider.sandbox_image_available(settings.sandbox_image)
     return {
         "hostname": settings.node_name,
         "status": "ONLINE",
@@ -43,6 +44,7 @@ async def node_status() -> dict[str, str | int]:
         "active_sessions": active_sessions,
         "runtime": "docker",
         "version": version,
+        "sandbox_image_available": image_available,
         "heartbeat_at": datetime.now(UTC).isoformat(),
     }
 

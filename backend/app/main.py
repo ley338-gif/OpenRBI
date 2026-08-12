@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
 from app.api.admin_audit import router as admin_audit_router
+from app.api.admin_health import router as admin_health_router
 from app.api.admin_incidents import router as admin_incidents_router
 from app.api.admin_nodes import router as admin_nodes_router
 from app.api.admin_quarantine import router as admin_quarantine_router
@@ -32,6 +33,7 @@ app.include_router(admin_quarantine_router)
 app.include_router(admin_incidents_router)
 app.include_router(admin_nodes_router)
 app.include_router(admin_audit_router)
+app.include_router(admin_health_router)
 app.include_router(policies_router)
 app.include_router(sessions_router)
 app.include_router(files_router)

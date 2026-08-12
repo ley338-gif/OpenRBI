@@ -41,7 +41,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 16. Upload pipeline — **done** (hash/detect/policy/scan/write-to-sandbox via a live exec socket, no async approval queue for uploads — see docs/quarantine.md#upload-pipeline-phase-16)
 17. Incidents — **done** (admin management API, repeated-policy-violation aggregation with dedup — see docs/admin-guide.md#incidents-phase-17)
 18. Audit/security events — **done** (`GET /admin/security-events`, append-only verified codebase-wide, metadata sensitivity audited — see docs/api.md#audit--security-events-phase-18). Also closed two dead-code gaps found during this pass: group deletion and node drain/undrain, both of which existed only as unused `SecurityEventType` values before now.
-19. Health monitoring
+19. Health monitoring — **done** (`GET /admin/health`, ADMIN/SECURITY_REVIEWER; checks API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser image availability, ClamAV, and quarantine-storage writability, each independently and non-fatally — see docs/architecture.md#health-monitoring-phase-19)
 20. Hardening
 21. Integration/security tests
 22. Deployment

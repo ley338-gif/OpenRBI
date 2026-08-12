@@ -338,6 +338,21 @@ class DockerSandboxProvider:
     async def runtime_version(self) -> str:
         return await asyncio.to_thread(lambda: self._client.version().get("Version", "unknown"))
 
+    async def sandbox_image_available(self, image: str) -> bool:
+        """Phase 19 health check: the browser image isn't built by
+        `docker compose up` (docs/deployment.md — it's built separately via
+        scripts/build-browser-image.sh), so this is a real, meaningful
+        signal a deployment can be missing rather than assumed present.
+        """
+        return await asyncio.to_thread(self._sandbox_image_available_sync, image)
+
+    def _sandbox_image_available_sync(self, image: str) -> bool:
+        try:
+            self._client.images.get(image)
+            return True
+        except NotFound:
+            return False
+
     def _get_managed_container(self, session_id: str):
         container = self._client.containers.get(_container_name(session_id))
         if container.labels.get(_MANAGED_LABEL) != "true" or container.labels.get(_SESSION_LABEL) != session_id:
