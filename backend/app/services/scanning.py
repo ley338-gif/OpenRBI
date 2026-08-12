@@ -9,6 +9,7 @@ from app.models.enums import (
 )
 from app.models.incident import Incident
 from app.models.quarantine import QuarantineFile
+from app.services.incidents import check_repeated_policy_violations
 from app.services.security_events import record_security_event
 
 
@@ -96,6 +97,7 @@ async def scan_and_finalize(db, quarantine_file: QuarantineFile) -> None:
             quarantine_file_id=quarantine_file.id,
             metadata={"reason": "policy DENY"},
         )
+        await check_repeated_policy_violations(db, quarantine_file.user_id)
     elif quarantine_file.policy_action == FileAction.AUTO_RELEASE:
         quarantine_file.status = QuarantineStatus.RELEASED
         db.add(quarantine_file)

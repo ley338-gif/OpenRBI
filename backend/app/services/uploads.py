@@ -9,6 +9,7 @@ from app.core.session_agent_client import SessionAgentError
 from app.models.browser_session import BrowserSession
 from app.models.enums import FileAction, IncidentSeverity, IncidentStatus, SecurityEventType
 from app.models.incident import Incident
+from app.services.incidents import check_repeated_policy_violations
 from app.services.policy_engine import FileDecisionInput, evaluate_file_action
 from app.services.security_events import record_security_event
 
@@ -49,6 +50,7 @@ async def process_upload(db, session: BrowserSession, filename: str, data: bytes
             session_id=session.id,
             metadata={"filename": filename, "sha256": sha256, "reason": f"policy {decision.action.value}"},
         )
+        await check_repeated_policy_violations(db, session.user_id)
         await db.commit()
         raise UploadBlockedError(f"blocked by policy ({decision.action.value})")
 

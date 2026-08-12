@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
+from app.api.admin_incidents import router as admin_incidents_router
 from app.api.admin_quarantine import router as admin_quarantine_router
 from app.api.admin_sessions import router as admin_sessions_router
 from app.api.auth import router as auth_router
@@ -26,6 +27,7 @@ app.include_router(mfa_router)
 app.include_router(admin_router)
 app.include_router(admin_sessions_router)
 app.include_router(admin_quarantine_router)
+app.include_router(admin_incidents_router)
 app.include_router(policies_router)
 app.include_router(sessions_router)
 app.include_router(files_router)
