@@ -4,6 +4,7 @@ from app.api.admin import router as admin_router
 from app.api.admin_audit import router as admin_audit_router
 from app.api.admin_health import router as admin_health_router
 from app.api.admin_incidents import router as admin_incidents_router
+from app.api.admin_mfa import router as admin_mfa_router
 from app.api.admin_nodes import router as admin_nodes_router
 from app.api.admin_quarantine import router as admin_quarantine_router
 from app.api.admin_sessions import router as admin_sessions_router
@@ -24,17 +25,59 @@ app = FastAPI(
     description="OpenRBI control-plane API (MVP 1 under active development).",
 )
 
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(mfa_router)
-app.include_router(admin_router)
-app.include_router(admin_sessions_router)
-app.include_router(admin_quarantine_router)
-app.include_router(admin_incidents_router)
-app.include_router(admin_nodes_router)
-app.include_router(admin_audit_router)
-app.include_router(admin_health_router)
-app.include_router(policies_router)
-app.include_router(sessions_router)
-app.include_router(files_router)
-app.include_router(display_router)
+
+def _register_shared_routes(app: FastAPI) -> None:
+    """Registered in every listener mode. Liveness and authentication have
+    to work regardless of which API surface a given process is serving —
+    an admin-mode process still needs its own login/MFA/logout, and a
+    user-mode process needs the same. See docs/adr/
+    0011-user-admin-listener-separation.md.
+    """
+    app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(mfa_router)
+
+
+def _register_user_routes(app: FastAPI) -> None:
+    """Self-service endpoints a normal USER account needs: own sessions,
+    own files, the remote-display relay. Never includes anything gated by
+    require_role("ADMIN"/"SECURITY_REVIEWER") — those routers don't even
+    get imported here, they get excluded entirely (see module docstring
+    note in docs/adr/0011-user-admin-listener-separation.md on why "not
+    registered" beats "registered but 403").
+    """
+    app.include_router(sessions_router)
+    app.include_router(files_router)
+    app.include_router(display_router)
+
+
+def _register_admin_routes(app: FastAPI) -> None:
+    """Every router gated by require_role("ADMIN"/"SECURITY_REVIEWER"),
+    plus admin_mfa (the one endpoint split out of the shared mfa router —
+    see app/api/admin_mfa.py).
+    """
+    app.include_router(admin_router)
+    app.include_router(admin_sessions_router)
+    app.include_router(admin_quarantine_router)
+    app.include_router(admin_incidents_router)
+    app.include_router(admin_nodes_router)
+    app.include_router(admin_audit_router)
+    app.include_router(admin_health_router)
+    app.include_router(policies_router)
+    app.include_router(admin_mfa_router)
+
+
+# Single, central decision point for which API surface this process
+# exposes (Productization v0.1.1) — deliberately not scattered across
+# individual endpoints. OPENRBI_LISTENER_MODE defaults to "both", which
+# reproduces MVP 1's exact prior behavior (every router, one process);
+# Compact/homelab/dev deployments never need to set this. A user-mode
+# process never imports/registers an admin router at all, so a request to
+# an admin path is a plain FastAPI 404 (the route does not exist), not a
+# 403 (the route exists and the caller lacked a role) — see docs/
+# security-model.md for why that distinction is the actual point.
+_register_shared_routes(app)
+if settings.listener_mode in ("user", "both"):
+    _register_user_routes(app)
+if settings.listener_mode in ("admin", "both"):
+    _register_admin_routes(app)

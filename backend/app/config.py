@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +47,20 @@ class Settings(BaseSettings):
 
     clamav_host: str = "clamav"
     clamav_port: int = 3310
+
+    # Productization v0.1.1 (docs/analysis/productization-v0.1.1-zone-separation.md,
+    # docs/adr/0011-user-admin-listener-separation.md): which API surface this
+    # process instance registers. "both" (the default) preserves MVP 1's
+    # single-process behavior exactly — Compact/homelab/dev deployments never
+    # need to touch this. "user"/"admin" let the *same* built image run as two
+    # separate processes with disjoint router surfaces, so a compromise of one
+    # never inherits the other's routes (RBAC alone already blocks a merely
+    # curious authenticated user from crossing this line, but doesn't help if
+    # the process itself is compromised — see the ADR for the full rationale).
+    # A Literal type here means an invalid value is a pydantic ValidationError
+    # at startup — the same fail-fast principle as the secret validators
+    # above, not a runtime 500 on first request.
+    listener_mode: Literal["user", "admin", "both"] = "both"
 
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
