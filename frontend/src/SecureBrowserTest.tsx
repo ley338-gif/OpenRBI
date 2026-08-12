@@ -1,27 +1,45 @@
 import { useRef, useState } from 'react'
 import RFB from '@novnc/novnc'
 
+type SessionStatus = 'idle' | 'starting' | 'connecting' | 'connected' | 'error'
+
 /**
- * Manual test harness for Phase 8 (noVNC remote display). The real
- * "Secure Browser" start button — which creates a BrowserSession and asks
- * the Session Agent to provision a sandbox before connecting — lands with
- * Phase 10/11's session lifecycle wiring. Until then, this connects to a
- * sandbox session id that already exists (created via the session-agent
- * API directly), to prove the noVNC relay path end-to-end.
+ * The real "start a Secure Browser" flow (project brief §26: Login -> MFA
+ * -> Secure Browser starten), wired to the actual session lifecycle
+ * (POST /sessions) rather than a manually-typed session id. Admin session
+ * control (disconnect/isolate/kill someone else's session) is Phase 11 and
+ * lives in the admin portal, not here.
  */
 function SecureBrowserTest() {
-  const [sessionId, setSessionId] = useState('')
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle')
+  const [status, setStatus] = useState<SessionStatus>('idle')
+  const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const rfbRef = useRef<RFB | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
 
-  const connect = () => {
-    if (!containerRef.current || !sessionId) return
+  const start = async () => {
+    setError(null)
+    setStatus('starting')
+    try {
+      const r = await fetch('/api/sessions', { method: 'POST', credentials: 'include' })
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}))
+        throw new Error(body.detail || `failed to start session (${r.status})`)
+      }
+      const session = await r.json()
+      sessionIdRef.current = session.id
+      connectDisplay(session.id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setStatus('error')
+    }
+  }
+
+  const connectDisplay = (sessionId: string) => {
+    if (!containerRef.current) return
     setStatus('connecting')
-
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const url = `${protocol}://${window.location.host}/api/display/${sessionId}/ws`
-
     const rfb = new RFB(containerRef.current, url)
     rfb.addEventListener('connect', () => setStatus('connected'))
     rfb.addEventListener('disconnect', () => setStatus('idle'))
@@ -29,33 +47,31 @@ function SecureBrowserTest() {
     rfbRef.current = rfb
   }
 
-  const disconnect = () => {
+  const stop = async () => {
     rfbRef.current?.disconnect()
     rfbRef.current = null
+    const sessionId = sessionIdRef.current
+    if (sessionId) {
+      await fetch(`/api/sessions/${sessionId}/terminate`, { method: 'POST', credentials: 'include' }).catch(() => {})
+    }
+    sessionIdRef.current = null
     setStatus('idle')
   }
 
+  const busy = status === 'starting' || status === 'connecting' || status === 'connected'
+
   return (
     <section style={{ padding: '1rem' }}>
-      <h2>Secure Browser (Phase 8 test harness)</h2>
-      <p>
-        Connects to an already-running sandbox session by id. The real start flow (create session,
-        launch sandbox, then connect) is Phase 10/11 work.
-      </p>
-      <input
-        placeholder="session id"
-        value={sessionId}
-        onChange={(e) => setSessionId(e.target.value)}
-        disabled={status === 'connecting' || status === 'connected'}
-      />
-      {status === 'connected' ? (
-        <button onClick={disconnect}>Disconnect</button>
+      <h2>Secure Browser</h2>
+      {status === 'connected' || status === 'connecting' ? (
+        <button onClick={stop}>End session</button>
       ) : (
-        <button onClick={connect} disabled={!sessionId || status === 'connecting'}>
-          Connect
+        <button onClick={start} disabled={busy}>
+          Start Secure Browser
         </button>
       )}
       <p>status: {status}</p>
+      {error && <p style={{ color: 'red' }}>{error}</p>}
       <div ref={containerRef} style={{ width: 1280, height: 800, background: '#000' }} />
     </section>
   )

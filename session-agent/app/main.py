@@ -1,3 +1,4 @@
+import socket
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI
@@ -37,6 +38,7 @@ async def node_status() -> dict[str, str | int]:
     active_sessions = await provider.count_active_sessions()
     version = await provider.runtime_version()
     return {
+        "hostname": socket.gethostname(),
         "status": "ONLINE",
         "capacity": _capacity_from_settings(settings),
         "active_sessions": active_sessions,

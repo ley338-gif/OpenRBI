@@ -1,5 +1,9 @@
 # Session Lifecycle
 
+## Implementation status
+
+`QUEUED → STARTING → ACTIVE ⇄ DISCONNECTED → TERMINATING → TERMINATED/FAILED` is real and backend-orchestrated (`app/services/sessions.py`, Phase 10): `POST /sessions` drives the full create→start→wait-for-display-ready→ACTIVE sequence against the Session Agent, and the display WebSocket (`app/api/display.py`) drives the `ACTIVE ⇄ DISCONNECTED` transitions from actual client connect/disconnect. `ISOLATING`/`ISOLATED` exist in the model and the Session Agent already supports the underlying `isolate`/`restore` primitives (Phase 6), but the admin-facing trigger for them is Phase 11.
+
 ## States
 
 | State | Meaning |

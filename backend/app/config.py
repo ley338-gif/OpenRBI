@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     totp_secret_encryption_key: str = ""
 
+    # Restrictive default per the project's fail-closed philosophy (§24
+    # allows this to be configured higher; MVP 1 has no per-group/per-policy
+    # override yet — that's Phase 12).
+    max_sessions_per_user: int = 1
+
 
 @lru_cache
 def get_settings() -> Settings:
