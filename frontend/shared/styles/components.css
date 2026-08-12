@@ -232,7 +232,15 @@
 }
 
 .cta-card {
-  border-left: 3px solid var(--color-accent-strong);
+  border-left-width: 3px;
+  border-left-color: var(--color-accent-strong);
+}
+
+/* Wins over .surface-emphasis's border-color shorthand for this one side
+   — a CTA surface should keep its stronger accent edge even when paired
+   with the lighter tinted background. */
+.cta-card.surface-emphasis {
+  border-left-color: var(--color-accent-strong);
 }
 
 .stat-grid {
@@ -256,9 +264,16 @@
 }
 
 .stat-card .value {
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   font-weight: 600;
   margin-top: var(--space-1);
+  line-height: 1.2;
+}
+
+.stat-card-hint {
+  margin-top: var(--space-1);
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
 }
 
 .btn {
@@ -449,6 +464,37 @@ table.data-table tbody tr:hover {
 
 .error-state {
   color: var(--status-critical-fg);
+}
+
+.empty-state-structured {
+  padding: var(--space-6) var(--space-4);
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--space-3);
+  border-radius: 50%;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.empty-state-title {
+  font-size: 0.98rem;
+  font-weight: 500;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.empty-state-body {
+  font-size: 0.86rem;
+}
+
+.empty-state-action {
+  margin-top: var(--space-3);
 }
 
 .spinner {
@@ -674,4 +720,434 @@ table.data-table tbody tr:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
+}
+
+/* ============================================================
+   UI polish pass — shared patterns extracted from repeated
+   per-page markup (PageHeader, surfaces, action menu, table
+   toolbar, tabs, definition list). See frontend/shared/components/
+   for the React components that use these classes.
+   ============================================================ */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.page-header .page-subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+}
+
+.page-header .page-header-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.page-header-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+/* Surface variants — a deliberate hierarchy so cards don't all read as
+   equally important. Only border/background tint changes, never a loud
+   color (section 6: functional, not decorative). */
+.surface-muted {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.surface-emphasis {
+  background: var(--surface-emphasis-bg);
+  border-color: var(--surface-emphasis-border);
+}
+
+.surface-danger {
+  background: var(--surface-danger-bg);
+  border-color: var(--surface-danger-border);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.icon-btn-badge {
+  position: relative;
+}
+
+.icon-btn-badge::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-critical-fg);
+  border: 1.5px solid var(--color-white);
+}
+
+/* Reuses the same trigger/panel shape as .user-menu (topbar), generalized
+   for any dropdown menu — row action menus, help menu, notifications. */
+.dropdown-menu {
+  position: relative;
+}
+
+.dropdown-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(11, 18, 32, 0.12);
+  min-width: 200px;
+  padding: var(--space-1);
+  z-index: 50;
+}
+
+.dropdown-panel.wide {
+  min-width: 300px;
+  padding: var(--space-3);
+}
+
+.dropdown-panel a,
+.dropdown-panel button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.dropdown-panel a:hover,
+.dropdown-panel button:hover {
+  background: var(--color-surface-muted);
+}
+
+.dropdown-panel button.danger {
+  color: var(--status-critical-fg);
+}
+
+.dropdown-panel .menu-separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+
+.dropdown-panel .menu-section-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.table-toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.table-toolbar-search {
+  font-family: var(--font-ui);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  min-width: 200px;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
+.tabs button {
+  font-family: var(--font-ui);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.tabs button:hover {
+  color: var(--color-text);
+}
+
+.tabs button.active {
+  color: var(--color-accent-strong);
+  border-bottom-color: var(--color-accent-strong);
+  font-weight: 500;
+}
+
+/* Compact rows for a short list shown inline on a dashboard, rather than
+   a full data-table (section 11: not a raw table for 3-5 items). */
+.compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.compact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
+.compact-row:hover {
+  background: var(--color-surface-muted);
+}
+
+.compact-row-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.compact-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.compact-row-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-row-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.compact-row-time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Activity feed (admin dashboard) — a timeline-style list, not a table. */
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activity-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.activity-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: var(--status-neutral-fg);
+}
+
+.activity-dot.critical {
+  background: var(--status-critical-fg);
+}
+
+.activity-dot.warning {
+  background: var(--status-warning-fg);
+}
+
+.activity-dot.healthy {
+  background: var(--status-healthy-fg);
+}
+
+.activity-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.activity-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.activity-time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* "Needs attention" list (admin dashboard) */
+.attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.attention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface-danger-border);
+  background: var(--surface-danger-bg);
+}
+
+.attention-item .attention-label {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.attention-item .attention-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* Secure Browser toolbar */
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-navy);
+  color: var(--color-slate-300);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.viewer-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.viewer-toolbar .icon-btn {
+  color: var(--color-slate-300);
+  width: 30px;
+  height: 30px;
+}
+
+.viewer-toolbar .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-white);
+}
+
+.viewer-toolbar .icon-btn.active {
+  background: var(--color-accent-strong);
+  color: var(--color-white);
+}
+
+.viewer-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.viewer-toolbar-toggle {
+  font-family: var(--font-ui);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-slate-300);
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.viewer-toolbar-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-white);
+}
+
+.viewer-toolbar-toggle.active {
+  background: var(--color-accent-strong);
+  color: var(--color-white);
+}
+
+.viewer-toolbar .mono {
+  font-family: var(--font-mono);
+  color: var(--color-white);
 }

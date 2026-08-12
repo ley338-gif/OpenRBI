@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Icons } from "./Icons";
+import { useDropdown } from "../hooks/useDropdown";
 
 function initialsOf(username: string): string {
   return username.slice(0, 2).toUpperCase();
@@ -21,24 +21,7 @@ export function UserMenu({
   profileTo?: string;
   onLogout: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const { open, setOpen, ref } = useDropdown<HTMLDivElement>();
 
   return (
     <div className="user-menu" ref={ref}>

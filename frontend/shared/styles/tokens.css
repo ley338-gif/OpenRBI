@@ -20,11 +20,20 @@
   --color-surface: var(--color-white);
   --color-surface-muted: var(--color-slate-100);
   --color-border: var(--color-slate-300);
+  --color-border-strong: var(--color-slate-300);
   --color-text: var(--color-navy);
   --color-text-muted: var(--color-slate-500);
   --color-accent: var(--color-blue);
   --color-accent-strong: var(--color-violet);
   --color-accent-strong-hover: #6d28d9;
+
+  /* Surface variants (UI polish pass) — a small, deliberate hierarchy so
+     not every block on a page reads as equally important. Never a bright
+     background; only border/shadow/tint differences. */
+  --surface-emphasis-bg: #f5f3ff;
+  --surface-emphasis-border: #ddd6fe;
+  --surface-danger-bg: var(--status-critical-bg);
+  --surface-danger-border: #fecaca;
 
   /* Status colors — always paired with a text label, never color-only
      (section 6/43: status must not be conveyed by color alone). */
@@ -47,8 +56,10 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
 
   --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
