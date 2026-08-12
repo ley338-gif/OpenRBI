@@ -1,6 +1,6 @@
 # Policies
 
-> Status: implemented (Phase 12) — `app/services/policy_engine.py` (evaluation), `app/services/policies.py` (admin CRUD/versioning), `app/api/policies.py` (`/admin/policies/*`). Wiring this engine into a real download/upload pipeline is Phase 13+; today it's exercised directly (`evaluate_file_action`) and via its admin API.
+> Status: implemented (Phase 12) — `app/services/policy_engine.py` (evaluation), `app/services/policies.py` (admin CRUD/versioning), `app/api/policies.py` (`/admin/policies/*`). Wired into the real download (Phase 13) and upload (Phase 16) pipelines — see [quarantine.md](quarantine.md) — and exercised directly via `evaluate_file_action` and its admin API.
 
 ## Roles vs. groups
 
@@ -16,7 +16,7 @@ When multiple applicable group policies disagree on a file rule, the outcome is 
 
 1. `DENY` wins over everything.
 2. Otherwise `QUARANTINE` wins.
-3. Otherwise `AUTO_RELEASE` / `SCAN_AND_ALLOW` wins.
+3. Otherwise `AUTO_RELEASE` wins.
 4. Otherwise the default policy applies.
 
 This ordering is deliberately conservative: any single group requiring denial or quarantine overrides a more permissive group the same user also belongs to.
@@ -27,11 +27,18 @@ A file decision is never based on extension or HTTP `Content-Type` alone. Inputs
 
 Source rules are normalized, not string-contains matched. A rule like `*.microsoft.com` must match `download.microsoft.com` and `office.microsoft.com`, but must **not** match `microsoft.com.attacker.org` or `evil-microsoft.com`. Matching is done against a parsed hostname's registrable-domain/subdomain structure, not substring search. Stored per download/upload: `initial_url`, `final_url`, `source_hostname`, `redirect_chain`, and whether TLS was used.
 
-## Download / upload / clipboard rules
+## What a Policy's `policy_type` actually does
 
-- **Downloads**: see [quarantine.md](quarantine.md) for the full pipeline; final action is one of `AUTO_RELEASE`, `QUARANTINE`, `DENY`.
-- **Uploads**: policy can allow/block globally or per MIME type/group; no local directory is ever mounted directly into a sandbox.
-- **Clipboard**: text-only in MVP 1. Policy values: `NONE`, `LOCAL_TO_REMOTE`, `REMOTE_TO_LOCAL`, `BIDIRECTIONAL_TEXT`. No file clipboard in MVP 1.
+`Policy.policy_type` (`NETWORK`, `DOWNLOADS`, `UPLOADS`, `CLIPBOARD`, `BROWSER`, `SESSION`, `MIME`, `SOURCE`) is a label chosen at creation time — the admin API (`app/api/policies.py`) accepts and stores it, and it's shown back in `PolicySummary`/`PolicyDetail`, but it is **not** read by anything at decision time. `app/services/policy_engine.py`'s `evaluate_file_action` — the only runtime consumer of policy content in MVP 1 — queries `FilePolicyRule` rows (which only ever have `rule_type` `MIME` or `SOURCE`) reachable through a user's groups, entirely independent of what `policy_type` the parent `Policy` was labeled with. A `Policy` created with `policy_type=NETWORK` that happens to have `MIME` file rules attached to its published version is evaluated exactly the same as one labeled `MIME`; a `Policy` labeled `CLIPBOARD`/`BROWSER`/`SESSION`/`NETWORK` with no file rules attached has **zero runtime effect**, however its freeform `content` JSONB is filled in.
+
+Concretely, per the categories the project brief names:
+
+- **Downloads/uploads (MIME/SOURCE rules)**: fully implemented and enforced — see [quarantine.md](quarantine.md). Final action is one of `AUTO_RELEASE`, `QUARANTINE`, `DENY`.
+- **Network**: egress control is real and enforced, but as a single static blocklist applied to the whole `browser-plane` network (`scripts/setup-network-isolation.sh`, see [security-model.md](security-model.md#network-isolation)) — not per-group/per-policy. A `Policy` labeled `NETWORK` can be created and versioned through the admin API but has no effect; there is no per-group network policy enforcement in MVP 1.
+- **Clipboard**: **not implemented as a policy.** During a normal `ACTIVE` session there is no group-level clipboard control at all (`NONE`/`LOCAL_TO_REMOTE`/`REMOTE_TO_LOCAL`/`BIDIRECTIONAL_TEXT` are documented as intended values but nothing reads or enforces them). The "clipboard denied" effect of an admin Isolate (see [session-lifecycle.md](session-lifecycle.md)) isn't a separate clipboard-specific control either — `isolate_session` (`app/services/sessions.py`) only ever calls the Session Agent's network-disconnect primitive; clipboard (and everything else that rides over the VNC connection) stops working purely as a side effect of the sandbox losing all network connectivity, the same blunt instrument as the file-transfer denial.
+- **Browser / Session**: also not implemented as enforced policy content — browser hardening is a fixed property of the sandbox image (docker/browser/), and session resource limits (`max_sessions_per_user`, CPU/RAM/PID/disk) come from `.env`/request defaults, not from a versioned `Policy`.
+
+This is a real, tracked gap, not a silent one: the data model and admin CRUD support all eight policy types uniformly (by design, so adding real enforcement for one later doesn't need a schema change), but MVP 1 only ever built the *enforcement* for MIME/SOURCE file rules. Creating a `NETWORK`/`CLIPBOARD`/`BROWSER`/`SESSION`-typed policy through the admin API today does not do anything beyond storing it.
 
 ## Example
 

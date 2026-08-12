@@ -34,7 +34,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 9. Network isolation — **done** (`scripts/setup-network-isolation.sh`; see docs/security-model.md for tracked interim gaps: no automatic security event yet, no dedicated DNS-rebinding resolver)
 10. Session lifecycle — **done** (real `POST /sessions` orchestration through session-agent; the frontend's "Start Secure Browser" button now drives an actual session, not a manually-typed id)
 11. Admin session control — **done** (`/admin/sessions/{id}/{disconnect,isolate,restore,kill}`; Kill restricted to ADMIN only — see docs/security-model.md for the rationale)
-12. Policy engine — **done** (draft/publish/rollback, deterministic DENY>QUARANTINE>AUTO_RELEASE conflict model, structural MIME/source matching; not yet wired into a real download/upload pipeline — that's Phase 13+)
+12. Policy engine — **done** (draft/publish/rollback, deterministic DENY>QUARANTINE>AUTO_RELEASE conflict model, structural MIME/source matching; wired into the real download/upload pipelines in Phase 13/16)
 13. Download interception — **done** (real detection/staging/hashing/magic-byte MIME detection/policy pre-check; every file lands in PENDING_SCAN since no scanner exists yet — see docs/quarantine.md)
 14. File scanner — **done** (real ClamAV integration, fail-closed final decision matrix — see docs/quarantine.md#scanning-and-the-final-decision-phase-14)
 15. Quarantine — **done** (admin release/reject review, single-use download tokens via Redis GETDEL — see docs/quarantine.md#review-and-release-phase-15)
@@ -45,7 +45,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 20. Hardening — **done** (container hardening for every compose service, fail-closed secret validation at startup, per-username login lockout — see docs/security-model.md#control-plane-container-hardening-phase-20)
 21. Integration/security tests — **done** (`backend/tests/` pytest suite via `scripts/run-integration-tests.sh`; Docker-socket-dependent checks via `scripts/run-security-tests.sh` — see "Tests" below for what's covered where)
 22. Deployment — **done** (TLS overlay `docker-compose.prod.yml` + `docker/nginx/nginx.tls.conf`, `scripts/backup.sh`/`scripts/restore.sh`, full requirements/firewall/storage/update-procedure writeup — see docs/deployment.md)
-23. Final documentation review
+23. Final documentation review — **done** (architecture.md status table rewritten, user-guide.md written from scratch, admin-guide.md expanded, troubleshooting.md's missing sections added, a real policy-enforcement-scope gap documented in policies.md, DEPENDENCIES.md versions/licenses verified against the actual running stack — including a real finding: `redis:7-alpine` resolves to a post-relicense RSALv2/SSPLv1 version, not BSD-3-Clause)
 
 After each phase: run tests, update documentation, record any known technical debt, and do not silently ignore a known security regression.
 

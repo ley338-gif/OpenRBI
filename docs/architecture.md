@@ -2,24 +2,26 @@
 
 ## Status
 
-This document describes the target architecture for MVP 1. Components marked **(planned)** are not yet implemented; see [development.md](development.md) for the current build phase.
+All 22 build phases (see [development.md](development.md)) are complete as of Phase 23's final documentation pass. The one deliberate deviation from this document's original sketch: there is no separate **Worker** service/container — background jobs (the download poller, incident aggregation) run as in-process asyncio background tasks inside the backend (`app/core/download_poller.py`), not a distinct deployment unit. This was a simplification made once real usage showed the job volume didn't warrant a separate process, and it can be split out later without changing any caller — nothing in the codebase assumes "in the same process" beyond that module.
+
+The **Admin and User portals** (frontend) remain the one component that's genuinely still just a scaffold, not fully built: every backend capability listed below is real and usable directly via its API (see [api.md](api.md), [admin-guide.md](admin-guide.md), [user-guide.md](user-guide.md)), but the React SPA itself only ships the noVNC test harness (`frontend/src/SecureBrowserTest.tsx`), not a full admin/user UI. This was a deliberate scope choice for MVP 1 — the project brief's phase order (§35) is entirely backend/infrastructure-first, and no phase in it is "build the admin/user portal UI."
 
 ## Components
 
 | Component | Role | Status |
 |---|---|---|
-| Frontend (Admin + User portals) | React/TypeScript SPA | scaffolded |
-| Backend/API | FastAPI service: auth, users, groups, policies, sessions, incidents, quarantine, audit | scaffolded |
-| PostgreSQL | Durable store for all persistent entities (§27/§28) | planned |
-| Redis | Transient state: server-side sessions, background job queue, rate limiting | planned |
-| Worker | Background jobs: scans, node health checks, incident aggregation | planned |
-| Session Manager | Backend module owning `BrowserSession` lifecycle and state transitions | planned |
-| Session Agent | Separate privileged service; only component with sandbox-runtime credentials | scaffolded |
-| Browser Sandbox | Per-user hardened Firefox container | planned |
-| Remote Display | noVNC + VNC backend + Xvfb inside the sandbox container | planned |
-| File Scanner | ClamAV daemon, wrapped by `FileScanner` provider | planned |
-| Quarantine Storage | Content-addressed object storage for held/rejected files | planned |
-| Reverse Proxy | TLS termination, routing to backend/noVNC/websockets | planned |
+| Frontend | React/TypeScript SPA | noVNC test harness only — no admin/user portal UI (see above) |
+| Backend/API | FastAPI service: auth, users, groups, policies, sessions, incidents, quarantine, audit, health | done |
+| PostgreSQL | Durable store for all persistent entities (§27/§28) | done |
+| Redis | Transient state: server-side sessions, MFA/login-lockout state, release tokens | done |
+| Background jobs | Download polling, incident aggregation | done, in-process (see note above, not a separate Worker) |
+| Session Manager | Backend module owning `BrowserSession` lifecycle and state transitions (`app/services/sessions.py`) | done |
+| Session Agent | Separate privileged service; only component with sandbox-runtime credentials | done |
+| Browser Sandbox | Per-user hardened Firefox container | done |
+| Remote Display | noVNC + VNC backend + Xvfb inside the sandbox container | done |
+| File Scanner | ClamAV daemon, wrapped by `FileScanner`-shaped client (`app/core/clamav_client.py`) | done |
+| Quarantine Storage | Content-addressed local disk staging (`app/services/downloads.py`) — see [quarantine.md](quarantine.md) for the tracked simplification vs. a pluggable/S3-like abstraction | done (as scoped for MVP 1) |
+| Reverse Proxy | TLS termination (production overlay), routing to backend/noVNC/websockets | done |
 
 ## Trust boundaries
 
@@ -35,9 +37,11 @@ This document describes the target architecture for MVP 1. Components marked **(
 ┌───────────▼───────────────┐                    ┌───────────▼──────────────┐
 │  Control Plane            │  internal, authenticated API   │ Browser Plane │
 │  - Backend/API            │────────────────────▶│  Session Agent           │
-│  - PostgreSQL             │                     │  (privileged: sandbox    │
-│  - Redis                  │                     │   runtime credentials    │
-│  - Worker                 │                     │   ONLY)                  │
+│    (background jobs run   │                     │  (privileged: sandbox    │
+│     in-process, no        │                     │   runtime credentials    │
+│     separate Worker)      │                     │   ONLY)                  │
+│  - PostgreSQL             │                     │                          │
+│  - Redis                  │                     │                          │
 │  - Quarantine Storage     │                     └───────────┬──────────────┘
 │  - File Scanner (ClamAV)  │                                 │ create/start/
 └────────────────────────────┘                                 │ isolate/kill
