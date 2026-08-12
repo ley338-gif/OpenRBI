@@ -1,6 +1,6 @@
 # Policies
 
-> Status: design reference for Phase 12 (Policy Engine). Not yet implemented — see [development.md](development.md).
+> Status: implemented (Phase 12) — `app/services/policy_engine.py` (evaluation), `app/services/policies.py` (admin CRUD/versioning), `app/api/policies.py` (`/admin/policies/*`). Wiring this engine into a real download/upload pipeline is Phase 13+; today it's exercised directly (`evaluate_file_action`) and via its admin API.
 
 ## Roles vs. groups
 

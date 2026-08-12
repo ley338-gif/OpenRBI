@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.display import router as display_router
 from app.api.health import router as health_router
 from app.api.mfa import router as mfa_router
+from app.api.policies import router as policies_router
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
 
@@ -22,5 +23,6 @@ app.include_router(auth_router)
 app.include_router(mfa_router)
 app.include_router(admin_router)
 app.include_router(admin_sessions_router)
+app.include_router(policies_router)
 app.include_router(sessions_router)
 app.include_router(display_router)
