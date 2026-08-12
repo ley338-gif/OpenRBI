@@ -30,11 +30,13 @@ cp .env.example .env   # fill in secrets before first run
 docker compose up -d --build
 ```
 
+Then open the **User Portal** at `http://localhost:8080/` and the **Admin Portal** at `http://localhost:8080/admin/`. Both are real, API-backed UIs — see [docs/user-guide.md](docs/user-guide.md) and [docs/admin-guide.md](docs/admin-guide.md). Admin/Security Reviewer accounts are walked through mandatory TOTP enrollment on first login.
+
 ## Architecture overview
 
-OpenRBI separates a **control plane** (backend API, database, policy engine, admin/user frontends) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so MVP 1's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
+OpenRBI separates a **control plane** (backend API, database, policy engine) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so MVP 1's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
 
-The backend can also run as a `user`- or `admin`-only listener (`OPENRBI_LISTENER_MODE`, default `both`) — preparation for a future Segmented deployment, not a change to how Compact/homelab deployments work today. See [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown.
+Two separate frontends — a **User Portal** and an **Admin Portal** — sit in front of the API (`frontend/user/`, `frontend/admin/`, sharing common code from `frontend/shared/`), each talking only to the listener mode it's meant for. The backend itself can run as a `user`- or `admin`-only listener (`OPENRBI_LISTENER_MODE`, default `both`); in `user` mode, admin routes don't exist in that process at all (a `404`, not a `403`). This is preparation for a future Segmented deployment with genuinely separate portal origins, not yet the default — see [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown, and [docs/deployment.md](docs/deployment.md#compact-vs-segmented-productization-v011) for Compact vs. Segmented.
 
 ## Security
 

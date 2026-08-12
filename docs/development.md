@@ -12,7 +12,11 @@ OpenRBI/
       models/         ORM models
     migrations/       Alembic migrations
   session-agent/       Separate privileged service; only component with sandbox-runtime credentials (see ADR 0004/0005)
-  frontend/            React + TypeScript + Vite SPA (admin + user portals)
+  frontend/            npm workspace: two Vite/React/TS SPAs sharing common code
+    shared/            Source-only package: API client, auth/MFA flow, UI primitives, design tokens — not independently built
+    user/              User Portal (Dashboard, Secure Browser, Downloads, Profile/MFA) — talks to the User listener only
+    admin/             Admin Portal (Users, Groups, Sessions, Policies, Quarantine, Incidents, Audit, System) — talks to the Admin listener only
+    e2e/               Playwright E2E suite for both portals against the live stack (see "Tests" below)
   docker/              Dockerfiles / configs for nginx, clamav, browser sandbox image, etc.
   docs/                Project documentation (this directory)
   docs/adr/            Architecture Decision Records
@@ -54,7 +58,22 @@ After each phase: run tests, update documentation, record any known technical de
 The 23 phases above are the original MVP 1 build order and are complete. Work after that point is tracked here rather than renumbered into the phase list, since it's genuinely post-MVP (the DoD walkthrough already passed against the 23-phase result).
 
 - **User/Admin listener separation** — **done**. `docs/analysis/productization-v0.1.1-zone-separation.md` analyzed whether User/Admin plane network segmentation should happen before building the User Portal/Admin Portal UIs and recommended `PREPARE FOR SEGMENTATION, IMPLEMENT LATER`. [ADR 0011](adr/0011-user-admin-listener-separation.md) implements that preparation: `OPENRBI_LISTENER_MODE` (`user`/`admin`/`both`, default `both`) makes `app/main.py`'s router registration conditional, so a `user`-mode process never has an admin route to serve at all (`404`, not `403`). `app/api/mfa.py`'s one admin-only endpoint moved to a new `app/api/admin_mfa.py` (same path, same logic, different router). See [ADR 0012](adr/0012-compact-vs-segmented-deployment.md) for the Compact/Segmented deployment-profile split (`docker-compose.segmented.yml`, illustrative and tested, not yet a complete production guide) and [ADR 0013](adr/0013-browser-isolation-zone.md) for why no new Browser Isolation Zone was built (it already exists as `browser-plane`). No business logic, session lifecycle, browser sandbox, noVNC, file pipeline, quarantine, or audit code changed — see `docs/security-model.md#useradmin-listener-separation-productization-v011` for exactly what this does and does not mitigate.
-- **User Portal / Admin Portal UI** — not started. Explicitly the next piece of work, not begun as part of this listener-separation task.
+- **User Portal / Admin Portal UI** — **done**. Two Vite/React/TypeScript SPAs (`frontend/user/`, `frontend/admin/`) sharing `frontend/shared/` via an npm workspace — see [ADR 0014](adr/0014-separate-user-and-admin-portal-frontends.md) and [architecture.md#user-portal-and-admin-portal-productization-v011](architecture.md#user-portal-and-admin-portal-productization-v011). Built and verified end-to-end against the live stack (real login/MFA, a real noVNC-connected Secure Browser session, real downloads/uploads for the User Portal; real user/session/policy/quarantine/incident management for the Admin Portal) — no mocked data anywhere in either app. Two genuine bugs surfaced only by this live-browser testing are documented in [ADR 0014](adr/0014-separate-user-and-admin-portal-frontends.md)'s Consequences and [troubleshooting.md](troubleshooting.md): a React ref-timing race in the noVNC connect sequence (fixed), and a session-status write race between `terminate_session` and the display WebSocket's own close handler (a pre-existing backend concurrency issue, documented as a known limitation, not fixed in this pass).
+
+### Frontend development
+
+```bash
+cd frontend
+npm install                       # hoists shared deps for frontend/shared/ via the workspace root
+
+npm run dev --workspace=user      # http://localhost:5173, proxies /api to the backend — see frontend/user/vite.config.ts
+npm run dev --workspace=admin     # http://localhost:5174
+
+npm run build --workspace=user    # frontend/user/dist
+npm run build --workspace=admin   # frontend/admin/dist
+```
+
+Both apps read their API base URL from `VITE_API_BASE_URL` (`.env`/`.env.example` in each app's directory) at build time — see [deployment.md#user-portal-and-admin-portal-origins](deployment.md#user-portal-and-admin-portal-origins) for Compact vs. Segmented values. `frontend/shared/` has no build step of its own; both apps' own Vite config aliases `@shared` to it directly and compile its `.tsx`/`.ts` files as part of their own build.
 
 ## Tests
 
@@ -67,6 +86,8 @@ Unit tests alone are not sufficient. Phase 21's checklist (project brief §30, n
 Both are meant to run against an already-running `docker compose up` stack, not a separate test-only environment — see each script's own header comment for details (test data is prefixed `pytest_` and swept up automatically; the security-tests script briefly stops ClamAV and a throwaway sandbox container, restoring/removing them itself).
 
 **`scripts/test-listener-modes.sh`** (Productization v0.1.1) — verifies `OPENRBI_LISTENER_MODE` actually changes which routes exist, run from the host for the same reason as `run-security-tests.sh` (needs Docker access to start throwaway sibling containers with different env vars): in `user` mode every admin route is a `404` and the OpenAPI schema contains no `/admin` paths; in `admin` mode every admin route exists (`401`, not `404`) and user-only routes are `404` with no leak in the OpenAPI schema; `both` mode is unchanged from prior behavior; an invalid `OPENRBI_LISTENER_MODE` value fails container startup immediately with a clear error.
+
+**`scripts/e2e-run.sh`** (Productization v0.1.1) — a real, no-mock Playwright suite (`frontend/e2e/`) driving both portals through an actual Chromium browser against the already-running Compact stack: seeds `e2e_admin` (pre-enrolled with a known TOTP secret), `e2e_admin_enroll` (deliberately unenrolled, for the one test that exercises the real first-login mandatory-MFA-enrollment UI flow end to end), and `e2e_user` via the real `create_user()` service function, then always tears them down again (even on failure). Covers: wrong-credentials shows a generic message (never raw JSON/a traceback); a real Secure Browser session reaching a genuine noVNC-connected canvas and a clean End Session; logout clearing the session so a fresh navigation is redirected back to `/login`; the Admin Portal's mandatory-MFA-enrollment flow showing recovery codes *before* the dashboard, not skipped past it (the exact regression documented in `frontend/shared/auth/LoginFlow.tsx`'s comments); real Users/System/Quarantine pages rendering actual backend data with no fake preview; and a UI-level listener-boundary check that the User Portal's own session gets `403`/`404`, never `200`, calling the admin API directly. Building this suite surfaced and fixed two real frontend bugs neither manual testing nor the unit-level work had caught: `FormField`'s `<label>` was never actually associated with its input (no `htmlFor`, not wrapping it) — a real accessibility defect independent of testing, not just a test-tooling inconvenience — and the MFA-enrollment `refresh()` call (itself a fix from earlier manual testing) was placed *before* the recovery-codes screen rendered, which under React's update batching skips that screen entirely because the `/login` route swaps to a redirect the instant `user` becomes truthy. Both are fixed in `frontend/shared/components/FormField.tsx` and `frontend/shared/auth/LoginFlow.tsx` respectively.
 
 ## Migrations
 
