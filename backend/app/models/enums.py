@@ -115,3 +115,12 @@ class SecurityEventType(str, enum.Enum):
     POLICY_CHANGED = "POLICY_CHANGED"
     POLICY_PUBLISHED = "POLICY_PUBLISHED"
     NODE_DRAINED = "NODE_DRAINED"
+
+    # Extensions beyond the project brief's minimum event list (§22 says "at
+    # least" these) — admin user/group management is security-relevant and
+    # must be auditable just like the enumerated events.
+    USER_ROLE_CHANGED = "USER_ROLE_CHANGED"
+    USER_GROUPS_CHANGED = "USER_GROUPS_CHANGED"
+    PASSWORD_RESET_BY_ADMIN = "PASSWORD_RESET_BY_ADMIN"
+    GROUP_CREATED = "GROUP_CREATED"
+    GROUP_DELETED = "GROUP_DELETED"
