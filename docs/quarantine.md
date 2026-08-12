@@ -1,6 +1,6 @@
 # Quarantine
 
-> Status: Phase 13 (download interception, staging, hashing, MIME detection, policy pre-check) and Phase 14 (real ClamAV scanning, fail-closed final decision) are both implemented — a file now reaches a real terminal status (`RELEASED`/`QUARANTINED`/`REJECTED`). Phase 15 (the admin release/reject *workflow*, single-use download tokens, and a real quarantine-storage abstraction beyond local staging) is not yet built.
+> Status: Phases 13–15 are all implemented: download interception/staging/hashing/MIME detection/policy pre-check, real ClamAV scanning with a fail-closed final decision, and the admin release/reject review workflow plus single-use download tokens. A real quarantine-storage abstraction beyond local disk staging (content-addressed but not yet pluggable/S3-like) remains a known simplification, not a functional gap — see [architecture.md](architecture.md).
 
 ## How download interception actually works (Phase 13)
 
@@ -40,6 +40,14 @@ Verified end-to-end against the real running stack, including the tmpfs/archive-
 | clean | `AUTO_RELEASE` | `RELEASED` — the row is marked cleared; the actual single-use download token for user retrieval is Phase 15 |
 
 Verified against the live stack: the standard EICAR test string is correctly flagged infected (`Eicar-Test-Signature`) and forced to `QUARANTINED` with a `CRITICAL` incident *even when its policy verdict was `AUTO_RELEASE`* — malware detection overrides policy, never the reverse. Also verified the fail-closed case directly: stopping the ClamAV container and re-running the same `AUTO_RELEASE`-eligible file correctly produces `QUARANTINED`/`ERROR`, not a release.
+
+## Review and release (Phase 15)
+
+Admin/Security Reviewer (`app/api/admin_quarantine.py`, `POST /admin/quarantine/{id}/{release,reject}`) can only act on a file still in `QUARANTINED` — a file already `RELEASED` (including via Phase 14's auto-release) or `REJECTED` is not re-actionable through this path, closing off double-release/release-after-reject races. Both roles can review, matching §6's explicit `SECURITY_REVIEWER` right to release/reject files. Every decision records `reviewed_at`/`reviewed_by`/`review_comment` and emits `FILE_RELEASED`/`FILE_REJECTED`. The file itself is never opened or previewed by the reviewer — only its captured metadata (hash, source, MIME, scan status) is shown, per §19.
+
+A `RELEASED` file (whether auto-released or manually released) isn't handed to the user directly — `app/core/release_tokens.py` issues a time-limited (5 minute), single-use token via Redis `GETDEL` (atomic get-and-delete, so there's no window where concurrent requests could both consume the same token). `GET /files/download/{token}` requires both a valid, unconsumed token *and* that the requesting session's user matches the token's owner — an unknown, expired, already-used, or wrong-owner token all fail identically with a generic `401` (§20: never confirm to a caller that a valid token exists for someone else). `GET /files/me` and `POST /files/{id}/download-token` use the same ownership check as sessions and the display websocket (`app/api/sessions.py`, `app/api/display.py`): a file belonging to someone else is a `404`, indistinguishable from a nonexistent one — verified directly, including against an ADMIN account (role doesn't grant implicit ownership).
+
+Verified end-to-end against the live stack: a reviewer lists and releases a `QUARANTINED` file; re-releasing it is correctly rejected (`409`); a plain `USER` is blocked from every `/admin/quarantine` endpoint (`403`); the owning user requests a token, downloads the exact file content, and a second attempt with the *same* token correctly fails (`401`); a different user (even an ADMIN) cannot obtain a token for someone else's file (`404`).
 
 ## Download pipeline
 
