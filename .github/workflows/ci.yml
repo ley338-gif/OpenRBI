@@ -26,7 +26,14 @@ jobs:
             context: session-agent
             dockerfile: session-agent/Dockerfile
           - image: openrbi-frontend
-            context: .
+            # frontend/ itself, not the repo root: matches this branch's
+            # Dockerfile (COPY package.json ./ etc. assume that context).
+            # NOTE: the not-yet-merged feat/ui-polish branch moves this
+            # image's build context to the repo root (to COPY in docs/ for
+            # real Help-menu links) — whichever of these two branches
+            # merges second will need this value re-checked against
+            # frontend/Dockerfile's actual COPY paths at that point.
+            context: frontend
             dockerfile: frontend/Dockerfile
           - image: openrbi-browser
             context: docker/browser
@@ -75,6 +82,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        # session-agent runs as uid 10001, group 0 — deliberately not full
+        # root (Phase 20 hardening) but still in group 0 specifically
+        # because a real deployment host's docker.sock is typically
+        # root:root or root:docker with group read-write (see
+        # session-agent/Dockerfile's own comment). GitHub-hosted runners
+        # instead put it in a real, separate "docker" group unrelated to
+        # GID 0, so that assumption doesn't hold here. This only loosens
+        # the *runner VM's* socket permissions for this ephemeral job, not
+        # anything about the image or its hardening.
+        run: sudo chmod 666 /var/run/docker.sock
       - name: Build and start the stack
         run: |
           # Phase 20's fail-closed startup check rejects .env.example's
