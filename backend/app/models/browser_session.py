@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +38,6 @@ class BrowserSession(UUIDPKMixin, TimestampMixin, Base):
     pid_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=512)
     disk_limit_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
 
-    started_at: Mapped[datetime | None] = mapped_column()
-    ended_at: Mapped[datetime | None] = mapped_column()
-    last_activity_at: Mapped[datetime | None] = mapped_column()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

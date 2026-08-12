@@ -8,6 +8,7 @@ from app.core.redis import get_redis
 _SESSION_PREFIX = "session:"
 _MFA_PENDING_PREFIX = "mfa_pending:"
 _MFA_PENDING_TTL_SECONDS = 5 * 60
+_MFA_PENDING_MAX_ATTEMPTS = 5
 
 
 async def create_session(user_id: uuid.UUID, role: str) -> str:
@@ -50,7 +51,44 @@ async def create_mfa_pending(user_id: uuid.UUID) -> str:
     redis_client = get_redis()
     await redis_client.set(
         f"{_MFA_PENDING_PREFIX}{token}",
-        json.dumps({"user_id": str(user_id)}),
+        json.dumps({"user_id": str(user_id), "attempts": 0}),
         ex=_MFA_PENDING_TTL_SECONDS,
     )
     return token
+
+
+async def get_mfa_pending(token: str) -> dict | None:
+    if not token:
+        return None
+    redis_client = get_redis()
+    raw = await redis_client.get(f"{_MFA_PENDING_PREFIX}{token}")
+    if raw is None:
+        return None
+    return json.loads(raw)
+
+
+async def delete_mfa_pending(token: str) -> None:
+    redis_client = get_redis()
+    await redis_client.delete(f"{_MFA_PENDING_PREFIX}{token}")
+
+
+async def record_mfa_pending_failure(token: str) -> bool:
+    """Returns True if the pending token is still usable, False if it just
+    got invalidated for exceeding the attempt limit (brute-force guard on a
+    5-minute window against a 6-digit code — see docs/security-model.md).
+    """
+    pending = await get_mfa_pending(token)
+    if pending is None:
+        return False
+    attempts = pending.get("attempts", 0) + 1
+    if attempts >= _MFA_PENDING_MAX_ATTEMPTS:
+        await delete_mfa_pending(token)
+        return False
+    redis_client = get_redis()
+    ttl = await redis_client.ttl(f"{_MFA_PENDING_PREFIX}{token}")
+    await redis_client.set(
+        f"{_MFA_PENDING_PREFIX}{token}",
+        json.dumps({**pending, "attempts": attempts}),
+        ex=ttl if ttl and ttl > 0 else _MFA_PENDING_TTL_SECONDS,
+    )
+    return True

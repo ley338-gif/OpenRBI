@@ -1,20 +1,33 @@
+import uuid
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse
+from app.api.schemas.mfa import MfaVerifyRequest
 from app.config import get_settings
 from app.core.deps import get_current_user
 from app.core.security import verify_password
-from app.core.sessions import create_mfa_pending, create_session, delete_session
+from app.core.sessions import (
+    create_mfa_pending,
+    create_session,
+    delete_mfa_pending,
+    delete_session,
+    get_mfa_pending,
+    record_mfa_pending_failure,
+)
 from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
+from app.services.mfa import verify_login_factor
 from app.services.security_events import record_security_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+
+_MFA_MANDATORY_ROLES = ("ADMIN", "SECURITY_REVIEWER")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -36,13 +49,21 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
+    role = await db.get(Role, user.role_id)
+
     if user.mfa_enabled:
-        # Password verified, but MFA (Phase 4) must still be satisfied before
-        # a real session is issued — no partial-trust session is set here.
+        # Password verified, but MFA must still be satisfied before a real
+        # session is issued — no partial-trust session is set here.
         mfa_token = await create_mfa_pending(user.id)
         return LoginResponse(status="mfa_required", mfa_token=mfa_token)
 
-    role = await db.get(Role, user.role_id)
+    if role.name in _MFA_MANDATORY_ROLES:
+        # MFA is mandatory for ADMIN/SECURITY_REVIEWER (docs/security-model.md)
+        # — an account in this role with no TOTP enrolled yet must complete
+        # enrollment before it ever gets a session, not after.
+        mfa_token = await create_mfa_pending(user.id)
+        return LoginResponse(status="mfa_enrollment_required", mfa_token=mfa_token)
+
     session_token = await create_session(user.id, role.name)
     response.set_cookie(
         settings.session_cookie_name,
@@ -79,3 +100,46 @@ async def me(current_user: User = Depends(get_current_user), db: AsyncSession = 
         role=role.name,
         mfa_enabled=current_user.mfa_enabled,
     )
+
+
+@router.post("/mfa/verify", response_model=LoginResponse)
+async def mfa_verify(
+    payload: MfaVerifyRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> LoginResponse:
+    """Completes a login for a user who already has MFA enrolled (the
+    mfa_enrollment_required path uses /mfa/setup/confirm instead — see
+    app/api/mfa.py). Fails closed: an invalid/expired mfa_token, an already
+    over-attempted one, or a wrong code are all the same generic 401.
+    """
+    pending = await get_mfa_pending(payload.mfa_token)
+    if pending is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired MFA challenge")
+
+    user = await db.get(User, uuid.UUID(pending["user_id"]))
+    if user is None or not user.is_active or not user.mfa_enabled:
+        await delete_mfa_pending(payload.mfa_token)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or expired MFA challenge")
+
+    if not await verify_login_factor(db, user, payload.code):
+        await record_security_event(db, SecurityEventType.MFA_FAILED, user_id=user.id)
+        await db.commit()
+        still_valid = await record_mfa_pending_failure(payload.mfa_token)
+        detail = "invalid MFA code" if still_valid else "too many failed attempts, please log in again"
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+
+    await delete_mfa_pending(payload.mfa_token)
+
+    role = await db.get(Role, user.role_id)
+    session_token = await create_session(user.id, role.name)
+    response.set_cookie(
+        settings.session_cookie_name,
+        session_token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.environment != "development",
+        samesite="lax",
+    )
+
+    await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
+    await db.commit()
+    return LoginResponse(status="ok")

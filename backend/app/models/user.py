@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, LargeBinary, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, LargeBinary, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,4 +32,4 @@ class User(UUIDPKMixin, TimestampMixin, Base):
     # not just relying on disk/DB encryption (docs/adr/0002-totp-mfa.md).
     totp_secret_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
 
-    disabled_at: Mapped[datetime | None] = mapped_column()
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

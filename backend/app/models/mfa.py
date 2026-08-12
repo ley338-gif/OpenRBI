@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,4 +22,4 @@ class RecoveryCode(UUIDPKMixin, CreatedAtMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    used_at: Mapped[datetime | None] = mapped_column()
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -26,7 +26,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 1. Repository/project foundation — **done**
 2. Data model & migrations — **done**
 3. Local authentication — **done**
-4. TOTP MFA
+4. TOTP MFA — **done**
 5. Roles/groups/authorization
 6. Session Agent
 7. Browser sandbox

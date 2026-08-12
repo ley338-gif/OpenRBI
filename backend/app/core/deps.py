@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.sessions import get_session
 from app.db.session import get_db
+from app.models.role import Role
 from app.models.user import User
 
 settings = get_settings()
@@ -30,3 +31,21 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="account not active")
 
     return user
+
+
+def require_role(*allowed_role_names: str):
+    """Minimal role gate used ahead of the full authorization framework
+    (Phase 5). Fails closed: a user whose role isn't in the allowed set, or
+    whose role can't be resolved, is a 403 — never an implicit allow.
+    """
+
+    async def _check(
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        role = await db.get(Role, current_user.role_id)
+        if role is None or role.name not in allowed_role_names:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role")
+        return current_user
+
+    return _check

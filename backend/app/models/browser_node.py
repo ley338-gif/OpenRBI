@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Enum, Integer, String
+from sqlalchemy import DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,6 +23,6 @@ class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
     )
     capacity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     active_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_heartbeat: Mapped[datetime | None] = mapped_column()
+    last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     runtime: Mapped[str] = mapped_column(String(64), nullable=False, default="docker")
     version: Mapped[str | None] = mapped_column(String(64))
