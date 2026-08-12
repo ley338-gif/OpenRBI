@@ -13,7 +13,7 @@ from app.api.schemas.mfa import (
 )
 from app.config import get_settings
 from app.core.crypto import encrypt_secret
-from app.core.deps import get_current_user, require_role
+from app.core.deps import get_current_user
 from app.core.qrcode_util import png_data_uri
 from app.core.sessions import create_session, delete_mfa_pending, get_mfa_pending
 from app.core.totp import generate_secret, provisioning_uri
@@ -21,9 +21,16 @@ from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
-from app.services.mfa import confirm_enrollment, reset_mfa
+from app.services.mfa import confirm_enrollment
 from app.services.security_events import record_security_event
 
+# Shared/user-facing MFA: enrollment and mandatory-setup for any role,
+# including ADMIN/SECURITY_REVIEWER's own first-time enrollment (see
+# setup_enroll/setup_confirm below) — registered in every listener mode
+# (Productization v0.1.1, docs/adr/0011-user-admin-listener-separation.md).
+# The one admin-*on-someone-else's-account* endpoint that used to live here
+# (MFA reset) moved to app/api/admin_mfa.py, admin-only, so it doesn't force
+# an admin route into a user-mode listener.
 router = APIRouter(prefix="/mfa", tags=["mfa"])
 settings = get_settings()
 
@@ -130,23 +137,3 @@ async def setup_confirm(
     await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
     await db.commit()
     return SetupConfirmResponse(status="ok", recovery_codes=codes)
-
-
-@router.post("/admin/users/{user_id}/reset", dependencies=[Depends(require_role("ADMIN"))])
-async def admin_reset_mfa(
-    user_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
-    """Admin-triggered MFA reset. Always generates a security event (see
-    docs/adr/0002-totp-mfa.md); the full admin user-management surface
-    lands in Phase 5, this endpoint exists ahead of that because MFA reset
-    is a hard MVP requirement independent of it.
-    """
-    target_user = await db.get(User, user_id)
-    if target_user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
-
-    await reset_mfa(db, target_user, current_user.id)
-    await db.commit()
-    return {"status": "ok"}
