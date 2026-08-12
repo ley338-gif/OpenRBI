@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The literal placeholder from .env.example — rejecting exactly this value
@@ -62,6 +62,24 @@ class Settings(BaseSettings):
     # above, not a runtime 500 on first request.
     listener_mode: Literal["user", "admin", "both"] = "both"
 
+    # LDAP/LDAPS authentication (Roadmap Phase B / B1, docs/adr/0015) — an
+    # equal, parallel option alongside local login, never a replacement.
+    # Disabled by default; enabling it with an unencrypted ldap:// URI and
+    # StartTLS turned off is a startup-time ValueError below, not a runtime
+    # choice an operator can quietly make — see the ADR's fail-closed
+    # rationale.
+    ldap_enabled: bool = False
+    ldap_server_uri: str = ""
+    ldap_use_starttls: bool = True
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""
+    ldap_base_dn: str = ""
+    # {username} is substituted with the value the user typed at login,
+    # never interpolated unescaped into a raw filter string — see
+    # app/core/auth_providers/ldap.py's escaping.
+    ldap_user_search_filter: str = "(sAMAccountName={username})"
+    ldap_group_attribute: str = "memberOf"
+
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
     def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
@@ -71,6 +89,30 @@ class Settings(BaseSettings):
                 "refusing to start with a missing or unedited placeholder value"
             )
         return value
+
+    @model_validator(mode="after")
+    def _ldap_config_is_fail_closed(self) -> "Settings":
+        if not self.ldap_enabled:
+            return self
+        if not self.ldap_server_uri.startswith(("ldaps://", "ldap://")):
+            raise ValueError("OPENRBI_LDAP_SERVER_URI must start with ldaps:// or ldap://")
+        if self.ldap_server_uri.startswith("ldap://") and not self.ldap_use_starttls:
+            raise ValueError(
+                "refusing to start: OPENRBI_LDAP_SERVER_URI uses plain ldap:// with "
+                "OPENRBI_LDAP_USE_STARTTLS=false — an unencrypted bind is not a supported "
+                "configuration (docs/adr/0015). Use ldaps:// or set OPENRBI_LDAP_USE_STARTTLS=true."
+            )
+        for field_name, value in (
+            ("ldap_bind_dn", self.ldap_bind_dn),
+            ("ldap_bind_password", self.ldap_bind_password),
+            ("ldap_base_dn", self.ldap_base_dn),
+        ):
+            if not value or value == _PLACEHOLDER_SECRET:
+                raise ValueError(
+                    f"OPENRBI_{field_name.upper()} must be set when OPENRBI_LDAP_ENABLED=true — "
+                    "refusing to start with a missing or unedited placeholder value"
+                )
+        return self
 
 
 @lru_cache
