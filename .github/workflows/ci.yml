@@ -38,7 +38,7 @@ jobs:
         run: docker build -t ${{ matrix.image }}:ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
 
       - name: Scan ${{ matrix.image }} for CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image }}:ci
           scanners: vuln
@@ -109,10 +109,14 @@ jobs:
         # docs/deployment.md's own install/update procedures always call
         # this explicitly, it's never automatic on container start.
         run: docker compose exec -T backend alembic upgrade head
+      - name: Build browser sandbox image
+        # Must happen before the integration tests below: session-agent's
+        # DockerSandboxProvider needs this image to exist to create a real
+        # sandbox, and test_isolate_disconnect_kill_are_audited_and_kill_
+        # is_admin_only does exactly that.
+        run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
       - name: Run integration tests
         run: sh scripts/run-integration-tests.sh
-      - name: Build browser sandbox image
-        run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
       - name: Apply network isolation rules
         # GitHub-hosted ubuntu-latest runners run real Docker with a real
         # DOCKER-USER iptables chain (not nested/rootless), same as the
