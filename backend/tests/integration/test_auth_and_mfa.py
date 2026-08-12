@@ -124,6 +124,39 @@ async def test_mfa_reset_generates_audit_event_and_disables_mfa(db, client):
 
 
 @pytest.mark.asyncio
+async def test_admin_mfa_reset_endpoint_still_works_after_router_split(db, client):
+    """app/api/admin_mfa.py was split out of app/api/mfa.py (Productization
+    v0.1.1, docs/adr/0011-user-admin-listener-separation.md) — same path
+    (/mfa/admin/users/{id}/reset), same business logic, moved module.
+    Regression test that the split didn't silently change behavior.
+    """
+    admin, admin_password = await make_user(db, role_name="ADMIN")
+    admin_cookie = await login_with_mfa_enrollment(client, admin.username, admin_password)
+
+    target, target_password = await make_user(db, role_name="ADMIN")
+    await login_with_mfa_enrollment(client, target.username, target_password)
+    await db.refresh(target)
+    assert target.mfa_enabled is True
+
+    r = await client.post(f"/mfa/admin/users/{target.id}/reset", cookies={"openrbi_session": admin_cookie})
+    assert r.status_code == 200, r.text
+
+    await db.refresh(target)
+    assert target.mfa_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_admin_mfa_reset_endpoint_is_still_admin_only(db, client):
+    reviewer, reviewer_password = await make_user(db, role_name="SECURITY_REVIEWER")
+    reviewer_cookie = await login_with_mfa_enrollment(client, reviewer.username, reviewer_password)
+
+    target, _ = await make_user(db, role_name="USER")
+
+    r = await client.post(f"/mfa/admin/users/{target.id}/reset", cookies={"openrbi_session": reviewer_cookie})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_login_lockout_after_repeated_failures(db, client):
     user, password = await make_user(db, role_name="USER")
     await clear_login_failures(user.username)
