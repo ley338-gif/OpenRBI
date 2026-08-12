@@ -24,6 +24,7 @@
   --color-text-muted: var(--color-slate-500);
   --color-accent: var(--color-blue);
   --color-accent-strong: var(--color-violet);
+  --color-accent-strong-hover: #6d28d9;
 
   /* Status colors — always paired with a text label, never color-only
      (section 6/43: status must not be conveyed by color alone). */
@@ -40,6 +41,8 @@
 
   --radius-sm: 6px;
   --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 3px rgba(11, 18, 32, 0.05);
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

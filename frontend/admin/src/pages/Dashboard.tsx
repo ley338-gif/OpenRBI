@@ -79,7 +79,9 @@ export function Dashboard() {
       <div className="card">
         <div className="flex-between" style={{ marginBottom: "8px" }}>
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Recent security events</h2>
-          <Link to="/audit">View all</Link>
+          <Link to="/audit" className="btn btn-secondary btn-sm">
+            View all
+          </Link>
         </div>
         {data.recentEvents.length === 0 ? (
           <p className="text-muted">No events yet.</p>

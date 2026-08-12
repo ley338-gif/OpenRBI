@@ -25,7 +25,13 @@ function Routed() {
       <Route
         path="/login"
         element={
-          loading ? <LoadingBlock /> : user ? <Navigate to="/" replace /> : <LoginFlow mfaApi={userApi} portalLabel="USER PORTAL" />
+          loading ? (
+            <LoadingBlock />
+          ) : user ? (
+            <Navigate to="/" replace />
+          ) : (
+            <LoginFlow mfaApi={userApi} portalLabel="USER PORTAL" title="Welcome to OpenRBI" />
+          )
         }
       />
       <Route

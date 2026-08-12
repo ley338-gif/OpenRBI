@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { ApiError } from "../api/client";
 import { ErrorBanner, FormField } from "../components/FormField";
+import { Icons } from "../components/Icons";
 import type { EnrollResponse, SetupConfirmResponse } from "../api/types";
 
 type Step =
@@ -29,12 +30,23 @@ export interface MfaFlowApi {
  * doesn't need to special-case that; it just follows whatever the backend
  * actually returns.
  */
-export function LoginFlow({ mfaApi, portalLabel }: { mfaApi: MfaFlowApi; portalLabel: string }) {
+export function LoginFlow({
+  mfaApi,
+  portalLabel,
+  title,
+}: {
+  mfaApi: MfaFlowApi;
+  portalLabel: string;
+  /** Portal-specific heading shown under the brand, e.g. "Welcome to
+   * OpenRBI" or "Admin Sign In". Falls back to a generic greeting. */
+  title?: string;
+}) {
   const { login, refresh } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>({ kind: "credentials" });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,15 +166,33 @@ export function LoginFlow({ mfaApi, portalLabel }: { mfaApi: MfaFlowApi; portalL
 
         {step.kind === "credentials" && (
           <form onSubmit={submitCredentials}>
+            {title && <h1 style={{ fontSize: "1.15rem", margin: "0 0 20px" }}>{title}</h1>}
             <FormField label="Username">
               <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
             </FormField>
             <FormField label="Password">
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <div className="password-field">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <Icons.EyeOff /> : <Icons.Eye />}
+                </button>
+              </div>
             </FormField>
             <button type="submit" className="btn btn-primary" style={{ width: "100%" }} disabled={busy}>
               {busy ? <span className="spinner" /> : null} Log in
             </button>
+            <p className="login-footnote">Forgot your password? Contact your administrator.</p>
           </form>
         )}
 
@@ -200,11 +230,8 @@ export function LoginFlow({ mfaApi, portalLabel }: { mfaApi: MfaFlowApi; portalL
 function Brand({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="brand">
-      <img src="/favicon.svg" alt="" />
-      <div>
-        OpenRBI
-        <span className="subtitle">{portalLabel}</span>
-      </div>
+      <img className="brand-lockup" src="/logo.png" alt="OpenRBI — Remote Browser Isolation" />
+      <span className="subtitle">{portalLabel}</span>
     </div>
   );
 }

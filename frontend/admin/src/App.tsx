@@ -7,6 +7,7 @@ import { api } from "./api/client";
 import { adminApi } from "./api/adminApi";
 import { AppShell } from "./components/AppShell";
 import { Dashboard } from "./pages/Dashboard";
+import { Profile } from "./pages/Profile";
 import { Users } from "./pages/Users";
 import { UserDetail } from "./pages/UserDetail";
 import { Groups } from "./pages/Groups";
@@ -40,7 +41,7 @@ function Routed() {
           ) : user ? (
             <Navigate to="/" replace />
           ) : (
-            <LoginFlow mfaApi={adminApi} portalLabel="ADMIN PORTAL" />
+            <LoginFlow mfaApi={adminApi} portalLabel="ADMIN PORTAL" title="Admin Sign In" />
           )
         }
       />
@@ -53,6 +54,7 @@ function Routed() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="users" element={<Users />} />
         <Route path="users/:id" element={<UserDetail />} />
         <Route path="groups" element={<Groups />} />
