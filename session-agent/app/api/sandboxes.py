@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.auth import require_control_plane_token
 from app.config import get_settings
@@ -120,6 +120,16 @@ async def delete_download(session_id: str, filename: str) -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return {"status": "deleted"}
+
+
+@router.put("/{session_id}/uploads/{filename}")
+async def write_upload(session_id: str, filename: str, request: Request) -> dict[str, str]:
+    data = await request.body()
+    try:
+        await get_provider().write_upload(session_id, filename, data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return {"status": "written"}
 
 
 @router.get("/{session_id}/metrics", response_model=MetricsResponse)

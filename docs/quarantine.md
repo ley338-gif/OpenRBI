@@ -1,6 +1,6 @@
 # Quarantine
 
-> Status: Phases 13–15 are all implemented: download interception/staging/hashing/MIME detection/policy pre-check, real ClamAV scanning with a fail-closed final decision, and the admin release/reject review workflow plus single-use download tokens. A real quarantine-storage abstraction beyond local disk staging (content-addressed but not yet pluggable/S3-like) remains a known simplification, not a functional gap — see [architecture.md](architecture.md).
+> Status: Phases 13–16 are all implemented: download interception/staging/hashing/MIME detection/policy pre-check, real ClamAV scanning with a fail-closed final decision, the admin release/reject review workflow plus single-use download tokens, and the upload pipeline (Phase 16, below). A real quarantine-storage abstraction beyond local disk staging (content-addressed but not yet pluggable/S3-like) remains a known simplification, not a functional gap — see [architecture.md](architecture.md).
 
 ## How download interception actually works (Phase 13)
 
@@ -48,6 +48,21 @@ Admin/Security Reviewer (`app/api/admin_quarantine.py`, `POST /admin/quarantine/
 A `RELEASED` file (whether auto-released or manually released) isn't handed to the user directly — `app/core/release_tokens.py` issues a time-limited (5 minute), single-use token via Redis `GETDEL` (atomic get-and-delete, so there's no window where concurrent requests could both consume the same token). `GET /files/download/{token}` requires both a valid, unconsumed token *and* that the requesting session's user matches the token's owner — an unknown, expired, already-used, or wrong-owner token all fail identically with a generic `401` (§20: never confirm to a caller that a valid token exists for someone else). `GET /files/me` and `POST /files/{id}/download-token` use the same ownership check as sessions and the display websocket (`app/api/sessions.py`, `app/api/display.py`): a file belonging to someone else is a `404`, indistinguishable from a nonexistent one — verified directly, including against an ADMIN account (role doesn't grant implicit ownership).
 
 Verified end-to-end against the live stack: a reviewer lists and releases a `QUARANTINED` file; re-releasing it is correctly rejected (`409`); a plain `USER` is blocked from every `/admin/quarantine` endpoint (`403`); the owning user requests a token, downloads the exact file content, and a second attempt with the *same* token correctly fails (`401`); a different user (even an ADMIN) cannot obtain a token for someone else's file (`404`).
+
+## Upload pipeline (Phase 16)
+
+The reverse direction of Phase 13. No local client directory is ever mounted into a sandbox — the only way a file gets in is `POST /sessions/{id}/uploads` (`app/services/uploads.py`), the project brief §17 Upload Gateway:
+
+1. Hash, detect the real MIME type (magic bytes), derive the extension.
+2. Run the Phase 12 policy engine as the check (not merely a pre-check, since there's no deferred admin-review queue for uploads in MVP 1 — see below).
+3. Scan via ClamAV.
+4. On success, write the bytes into the sandbox's upload directory (`$HOME/uploads`) via the Session Agent.
+
+**Deliberate simplification vs. downloads:** an upload has no `QUARANTINED`-and-await-admin-review state. The user is actively waiting on this action inside their live session, so both a `QUARANTINE` and a `DENY` policy verdict are treated as an immediate block (`UPLOAD_BLOCKED`) — there's no async approval queue for uploads in MVP 1, and the project brief doesn't define one. An infected upload is blocked identically to an infected download: never written to the sandbox, `MALWARE_DETECTED` event, `CRITICAL` Incident. A scanner outage fails closed exactly like downloads — nothing gets written to the sandbox while the scanner is unreachable, regardless of policy.
+
+**Getting bytes into the sandbox** hits the same tmpfs limitation Phase 13 found on the read side: `put_archive` would fail for the same reason `get_archive` did (both go through the storage driver's layer-diff mechanism, which cannot see a tmpfs mount at all). The Session Agent instead opens a live `exec` process (`cat > path`) with a raw stdin socket and streams the bytes directly (`docker_provider.py`'s `write_upload`). A second real bug surfaced here during testing: `exec_inspect`'s reported exit code stayed `None` well after the write had actually completed correctly (confirmed by reading the file back) — plain socket `close()` doesn't reliably signal EOF to the remote process's stdin in time for the exit code to settle. Fixed by explicitly shutting down the write half of the socket first, and — since the exit code still couldn't always be trusted even after that — independently verifying the write via the file's actual size on disk rather than relying on the exec exit code at all.
+
+Verified end-to-end against the live stack: a clean upload with no group policy configured is correctly blocked by the same fail-closed `QUARANTINE` default used for downloads; after attaching an `AUTO_RELEASE` policy, the same file is correctly written into the sandbox with matching content; the EICAR test string is correctly detected and never written, with a `CRITICAL` incident recorded; and stopping ClamAV mid-test correctly blocks an otherwise-clean upload rather than allowing it through.
 
 ## Download pipeline
 

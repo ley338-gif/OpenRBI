@@ -38,7 +38,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 13. Download interception — **done** (real detection/staging/hashing/magic-byte MIME detection/policy pre-check; every file lands in PENDING_SCAN since no scanner exists yet — see docs/quarantine.md)
 14. File scanner — **done** (real ClamAV integration, fail-closed final decision matrix — see docs/quarantine.md#scanning-and-the-final-decision-phase-14)
 15. Quarantine — **done** (admin release/reject review, single-use download tokens via Redis GETDEL — see docs/quarantine.md#review-and-release-phase-15)
-16. Upload pipeline
+16. Upload pipeline — **done** (hash/detect/policy/scan/write-to-sandbox via a live exec socket, no async approval queue for uploads — see docs/quarantine.md#upload-pipeline-phase-16)
 17. Incidents
 18. Audit/security events
 19. Health monitoring

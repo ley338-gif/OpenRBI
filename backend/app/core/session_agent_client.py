@@ -125,3 +125,12 @@ async def fetch_download(session_id: str, filename: str) -> tuple[bytes, str | N
 
 async def delete_download(session_id: str, filename: str) -> None:
     await _request("DELETE", f"/v1/sandboxes/{session_id}/downloads/{filename}")
+
+
+async def write_upload(session_id: str, filename: str, data: bytes) -> None:
+    """The only way bytes get into the sandbox — never a direct mount
+    (docs/security-model.md), and never a network path the backend opens
+    into the sandbox itself; the Session Agent writes it via its own
+    Docker exec access (docs/adr/0005).
+    """
+    await _request("PUT", f"/v1/sandboxes/{session_id}/uploads/{filename}", content=data)

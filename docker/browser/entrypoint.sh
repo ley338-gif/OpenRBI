@@ -6,7 +6,8 @@ set -eu
 
 PROFILE_DIR="$HOME/firefox-profile"
 DOWNLOAD_DIR="$HOME/downloads"
-mkdir -p "$PROFILE_DIR" "$DOWNLOAD_DIR"
+UPLOAD_DIR="$HOME/uploads"
+mkdir -p "$PROFILE_DIR" "$DOWNLOAD_DIR" "$UPLOAD_DIR"
 
 # Silent auto-download to a fixed, known directory — Phase 13's download
 # interception polls exactly this path via the Session Agent's Docker API

@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import docker
 from docker.errors import NotFound
@@ -17,9 +18,10 @@ _MANAGED_LABEL = "openrbi.managed"
 _SESSION_LABEL = "openrbi.session_id"
 _NETWORK_LABEL = "openrbi.network"
 _VNC_PORT = 5900
-# Matches docker/browser/entrypoint.sh's $HOME/downloads (HOME=/tmp/home,
-# set in docker/browser/Dockerfile).
+# Matches docker/browser/entrypoint.sh's $HOME/downloads and $HOME/uploads
+# (HOME=/tmp/home, set in docker/browser/Dockerfile).
 _DOWNLOAD_DIR = "/tmp/home/downloads"
+_UPLOAD_DIR = "/tmp/home/uploads"
 
 
 def _container_name(session_id: str) -> str:
@@ -279,6 +281,52 @@ class DockerSandboxProvider:
     def _delete_download_sync(self, session_id: str, filename: str) -> None:
         container = self._get_managed_container(session_id)
         container.exec_run(["rm", "-f", f"{_DOWNLOAD_DIR}/{filename}"])
+
+    async def write_upload(self, session_id: str, filename: str, data: bytes) -> None:
+        await asyncio.to_thread(self._write_upload_sync, session_id, filename, data)
+
+    def _write_upload_sync(self, session_id: str, filename: str, data: bytes) -> None:
+        """Writes via a live exec process with a raw stdin socket, not
+        `put_archive` — the upload directory lives under the same
+        tmpfs-mounted /tmp as downloads, and Docker's archive API cannot
+        see (or, by the same mechanism, write) files there (see
+        fetch_download's docstring / docs/quarantine.md for the read-side
+        equivalent, confirmed empirically). `docker cp`'s two-way archive
+        transfer has no advantage here that would justify re-testing it —
+        the same layer-diff mechanism underlies both directions.
+        """
+        container = self._get_managed_container(session_id)
+        path = f"{_UPLOAD_DIR}/{filename}"
+        exec_id = self._client.api.exec_create(container.id, ["sh", "-c", f"cat > {path}"], stdin=True)["Id"]
+        sock = self._client.api.exec_start(exec_id, socket=True)
+        try:
+            sock._sock.sendall(data)
+            # A plain close() on this socket doesn't reliably signal EOF to
+            # the remote process's stdin in time for exec_inspect to see a
+            # settled exit code shortly after — shut down the write half
+            # explicitly first, which is the actual EOF signal `cat` is
+            # waiting for.
+            sock._sock.shutdown(1)  # SHUT_WR
+        finally:
+            sock.close()
+
+        exit_code = None
+        for _ in range(30):
+            exit_code = self._client.api.exec_inspect(exec_id).get("ExitCode")
+            if exit_code is not None:
+                break
+            time.sleep(0.1)
+
+        if exit_code not in (0, None):
+            raise RuntimeError(f"upload write failed for {filename}: exit {exit_code}")
+
+        # exec_inspect's exit code can still be unsettled at this point
+        # (observed in testing) despite the write having actually
+        # completed — independently confirm via the file's actual size
+        # rather than trusting an inconclusive exit code either way.
+        size_exit, size_output = container.exec_run(["stat", "-c", "%s", path])
+        if size_exit != 0 or int(size_output.strip() or -1) != len(data):
+            raise RuntimeError(f"upload write could not be verified for {filename} (exit_code={exit_code})")
 
     async def count_active_sessions(self) -> int:
         return await asyncio.to_thread(self._count_active_sessions_sync)

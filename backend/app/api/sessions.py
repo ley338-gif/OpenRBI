@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,12 @@ from app.models.user import User
 from app.services.sessions import NoCapacityError, QuotaExceededError, SessionServiceError
 from app.services.sessions import create_session as create_session_service
 from app.services.sessions import terminate_session as terminate_session_service
+from app.services.uploads import UploadBlockedError, process_upload
+
+# Modest cap for MVP 1 — no chunked/resumable upload support yet, and this
+# guards against a single request exhausting memory (the whole body is
+# buffered before scanning). Revisit if real usage needs larger files.
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -68,6 +74,34 @@ async def get_session_detail(
 ) -> SessionResponse:
     session = await _get_own_session_or_404(db, session_id, current_user)
     return SessionResponse.from_model(session)
+
+
+@router.post("/{session_id}/uploads", status_code=status.HTTP_201_CREATED)
+async def upload_file(
+    session_id: uuid.UUID,
+    file: UploadFile,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Project brief §17's Upload Gateway. No local directory is ever
+    mounted into a sandbox — this is the only path a file takes to reach
+    one, and only after hashing, type detection, a policy check, and a
+    real scan all pass (app/services/uploads.py).
+    """
+    session = await _get_own_session_or_404(db, session_id, current_user)
+    if session.status != SessionStatus.ACTIVE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"session is not active ({session.status.value})")
+
+    data = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="file too large")
+
+    try:
+        await process_upload(db, session, file.filename or "upload.bin", data)
+    except UploadBlockedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.reason) from exc
+
+    return {"status": "ok"}
 
 
 @router.post("/{session_id}/terminate", response_model=SessionResponse)
