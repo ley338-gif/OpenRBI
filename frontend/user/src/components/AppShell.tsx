@@ -3,6 +3,13 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@shared/auth/AuthContext";
 import { Icons } from "@shared/components/Icons";
 import { UserMenu } from "@shared/components/UserMenu";
+import { HelpMenu } from "@shared/components/HelpMenu";
+import { NotificationButton } from "@shared/components/NotificationButton";
+
+const HELP_LINKS = [
+  { label: "User Guide", href: "/docs/user-guide.md" },
+  { label: "Troubleshooting", href: "/docs/troubleshooting.md" },
+];
 
 const NAV = [
   { to: "/", label: "Dashboard", end: true, icon: Icons.Dashboard },
@@ -52,6 +59,8 @@ export function AppShell() {
       </aside>
       <div className="main-area">
         <div className="topbar">
+          <NotificationButton />
+          <HelpMenu links={HELP_LINKS} />
           {user && <UserMenu username={user.username} role={user.role} profileTo="/profile" onLogout={() => void logout()} />}
         </div>
         <Outlet />

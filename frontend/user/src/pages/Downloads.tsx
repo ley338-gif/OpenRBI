@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, EmptyState, ErrorState } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { Icons } from "@shared/components/Icons";
 import { useToast } from "@shared/components/Toast";
 import { formatBytes, formatDateTime } from "@shared/format";
 import type { QuarantineFileDto } from "@shared/api/types";
@@ -38,9 +40,11 @@ export function Downloads() {
 
   return (
     <div className="page">
-      <h1>Downloads</h1>
+      <PageHeader title="Downloads" subtitle="Files your Secure Browser sessions have downloaded and their review status." />
       {files.length === 0 ? (
-        <EmptyState>You haven't downloaded any files yet.</EmptyState>
+        <EmptyState icon={<Icons.Download width={20} height={20} />} title="No downloads yet">
+          Files you download in a Secure Browser session appear here once they've been scanned and reviewed.
+        </EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="data-table">
