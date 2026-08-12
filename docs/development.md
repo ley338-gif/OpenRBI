@@ -23,8 +23,8 @@ OpenRBI/
 
 MVP 1 is built in the following order (see the project's master brief §35). Track current status in the session's task list; this table is updated as phases complete.
 
-1. Repository/project foundation — **in progress**
-2. Data model & migrations
+1. Repository/project foundation — **done**
+2. Data model & migrations — **done**
 3. Local authentication
 4. TOTP MFA
 5. Roles/groups/authorization

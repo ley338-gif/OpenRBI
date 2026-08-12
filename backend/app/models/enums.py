@@ -1,0 +1,117 @@
+import enum
+
+
+class RoleName(str, enum.Enum):
+    USER = "USER"
+    SECURITY_REVIEWER = "SECURITY_REVIEWER"
+    ADMIN = "ADMIN"
+
+
+class PolicyType(str, enum.Enum):
+    NETWORK = "NETWORK"
+    DOWNLOADS = "DOWNLOADS"
+    UPLOADS = "UPLOADS"
+    CLIPBOARD = "CLIPBOARD"
+    BROWSER = "BROWSER"
+    SESSION = "SESSION"
+    MIME = "MIME"
+    SOURCE = "SOURCE"
+
+
+class PolicyVersionStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    SUPERSEDED = "SUPERSEDED"
+
+
+class FileRuleType(str, enum.Enum):
+    MIME = "MIME"
+    SOURCE = "SOURCE"
+
+
+class FileAction(str, enum.Enum):
+    """Precedence when multiple rules match (see docs/policies.md conflict
+    model): DENY > QUARANTINE > AUTO_RELEASE > default policy.
+    """
+
+    AUTO_RELEASE = "AUTO_RELEASE"
+    QUARANTINE = "QUARANTINE"
+    DENY = "DENY"
+
+
+class BrowserNodeStatus(str, enum.Enum):
+    ONLINE = "ONLINE"
+    DRAINING = "DRAINING"
+    OFFLINE = "OFFLINE"
+    DEGRADED = "DEGRADED"
+
+
+class SessionStatus(str, enum.Enum):
+    QUEUED = "QUEUED"
+    STARTING = "STARTING"
+    ACTIVE = "ACTIVE"
+    DISCONNECTED = "DISCONNECTED"
+    ISOLATING = "ISOLATING"
+    ISOLATED = "ISOLATED"
+    TERMINATING = "TERMINATING"
+    TERMINATED = "TERMINATED"
+    FAILED = "FAILED"
+
+
+class QuarantineStatus(str, enum.Enum):
+    PENDING_SCAN = "PENDING_SCAN"
+    SCANNING = "SCANNING"
+    QUARANTINED = "QUARANTINED"
+    RELEASED = "RELEASED"
+    REJECTED = "REJECTED"
+    DELETED = "DELETED"
+
+
+class ScannerStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    SCANNING = "SCANNING"
+    CLEAN = "CLEAN"
+    INFECTED = "INFECTED"
+    ERROR = "ERROR"
+
+
+class IncidentSeverity(str, enum.Enum):
+    INFO = "INFO"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class IncidentStatus(str, enum.Enum):
+    NEW = "NEW"
+    INVESTIGATING = "INVESTIGATING"
+    RESOLVED = "RESOLVED"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
+
+
+class SecurityEventType(str, enum.Enum):
+    USER_CREATED = "USER_CREATED"
+    USER_DISABLED = "USER_DISABLED"
+    USER_ENABLED = "USER_ENABLED"
+    USER_LOGIN = "USER_LOGIN"
+    USER_LOGIN_FAILED = "USER_LOGIN_FAILED"
+    MFA_ENROLLED = "MFA_ENROLLED"
+    MFA_FAILED = "MFA_FAILED"
+    MFA_RESET = "MFA_RESET"
+    RECOVERY_CODE_USED = "RECOVERY_CODE_USED"
+    SESSION_STARTED = "SESSION_STARTED"
+    SESSION_DISCONNECTED = "SESSION_DISCONNECTED"
+    SESSION_ISOLATED = "SESSION_ISOLATED"
+    SESSION_RESTORED = "SESSION_RESTORED"
+    SESSION_TERMINATED = "SESSION_TERMINATED"
+    NETWORK_ACCESS_BLOCKED = "NETWORK_ACCESS_BLOCKED"
+    DOWNLOAD_REQUESTED = "DOWNLOAD_REQUESTED"
+    DOWNLOAD_BLOCKED = "DOWNLOAD_BLOCKED"
+    FILE_QUARANTINED = "FILE_QUARANTINED"
+    FILE_RELEASED = "FILE_RELEASED"
+    FILE_REJECTED = "FILE_REJECTED"
+    MALWARE_DETECTED = "MALWARE_DETECTED"
+    POLICY_CHANGED = "POLICY_CHANGED"
+    POLICY_PUBLISHED = "POLICY_PUBLISHED"
+    NODE_DRAINED = "NODE_DRAINED"
