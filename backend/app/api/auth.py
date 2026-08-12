@@ -10,11 +10,14 @@ from app.config import get_settings
 from app.core.deps import get_current_user
 from app.core.security import verify_password
 from app.core.sessions import (
+    clear_login_failures,
     create_mfa_pending,
     create_session,
     delete_mfa_pending,
     delete_session,
     get_mfa_pending,
+    is_login_locked,
+    record_login_failure,
     record_mfa_pending_failure,
 )
 from app.db.session import get_db
@@ -35,11 +38,27 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
     """Fail closed: a nonexistent user, a disabled user, and a wrong password
     all produce the same generic 401 (no username enumeration), and every
     failure is recorded as USER_LOGIN_FAILED (docs/security-model.md).
+
+    Also fails closed against unlimited online password guessing (Phase 20
+    hardening): a username with too many recent failures is locked out for
+    the rest of the window and gets the same generic response shape (429,
+    not a distinct error), so this can't be used to enumerate usernames
+    either.
     """
+    if await is_login_locked(payload.username):
+        await record_security_event(
+            db, SecurityEventType.LOGIN_LOCKED, metadata={"username": payload.username}
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too many failed login attempts"
+        )
+
     result = await db.execute(select(User).where(User.username == payload.username))
     user = result.scalar_one_or_none()
 
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        await record_login_failure(payload.username)
         await record_security_event(
             db,
             SecurityEventType.USER_LOGIN_FAILED,
@@ -49,6 +68,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
+    await clear_login_failures(payload.username)
     role = await db.get(Role, user.role_id)
 
     if user.mfa_enabled:

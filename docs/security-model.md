@@ -13,6 +13,22 @@ Each browser session runs in its own container (see [ADR 0010](adr/0010-docker-s
 - seccomp/AppArmor profiles appropriate to a browser workload
 - a dedicated temporary browser-profile path, destroyed at session end (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md))
 
+## Control-plane container hardening (Phase 20)
+
+The sandbox hardening baseline above was always container-per-session and dynamically applied by the Session Agent. Phase 20 extends the same "no component runs unnecessarily privileged" principle to the *static* `docker-compose.yml` services:
+
+- `backend` and `session-agent` (the two custom-built, code-we-wrote services): `no-new-privileges`, all Linux capabilities dropped. `session-agent` — the one component with Docker-socket access — also runs as a non-root UID (`10001`), kept in group `0` because the bind-mounted `docker.sock` is typically `root:root`/`root:docker` with group read-write; this drops the process out of literal `uid 0` without depending on a host-specific docker-group GID. Verified end-to-end against the live Docker socket post-hardening: real sandbox create → start → status → terminate all still work as this non-root, capability-stripped user.
+- `frontend` and `reverse-proxy` (both nginx): all capabilities dropped except `NET_BIND_SERVICE` (bind port 80) and `CHOWN`/`SETUID`/`SETGID`, which nginx's own startup needs to drop its *worker* processes from root to the unprivileged `nginx` user — without them, nginx either fails outright or (if its config never declares `user nginx;`, as this project's custom `reverse-proxy` config originally didn't) silently never drops privilege at all. Both are now verified (`ps aux` inside each container) to run their master process as root only for the bind, with every worker process running as `nginx`.
+- `postgres`, `redis`, `clamav` (vendor images, not built by this project): `no-new-privileges` only. `cap_drop: ALL` was deliberately *not* applied to these — their own entrypoints need root-level setup capabilities (chown/setuid data directories, etc.) before dropping to their own unprivileged runtime user, and blanket-stripping capabilities at the container level risks breaking that startup sequence for images this project doesn't control. Documented as a scoped decision, not a silent gap.
+
+## Secrets — fail-closed startup validation (Phase 20)
+
+`.env.example` always documented "services refuse to start with missing/empty secrets" as a principle, but nothing enforced it until Phase 20: `Settings` in both `backend/app/config.py` and `session-agent/app/config.py` now reject, at startup, any critical secret (`OPENRBI_SESSION_AGENT_API_TOKEN`, `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`, `OPENRBI_AGENT_API_TOKEN`) that is empty *or* still the literal placeholder value from `.env.example`. This is not a hypothetical gap: enabling the check on this project's own long-running dev deployment immediately caught `POSTGRES_PASSWORD`, `OPENRBI_SESSION_AGENT_API_TOKEN`, and `OPENRBI_AGENT_API_TOKEN` all still holding that exact unedited example value — the backend↔session-agent shared-secret check had been silently "passing" the whole time because both sides matched on a secret sitting in git. All three were rotated (the Postgres role's password changed in-place via `ALTER USER`, not by wiping the data volume) and the stack re-verified end-to-end afterward.
+
+## Login brute-force protection (Phase 20)
+
+`POST /auth/login` now enforces a per-username lockout (`app/core/sessions.py`: `is_login_locked`/`record_login_failure`/`clear_login_failures`, Redis-backed, 15-minute window, 10 attempts) distinct from the Phase 4 MFA-challenge attempt cap — that one only ever engages *after* a password has already been guessed correctly. Keyed by username rather than IP, since an attacker behind NAT or a botnet defeats a per-IP limit trivially, but the account being guessed at is fixed. A lockout hit returns a generic `429` (not a distinct error shape that would leak whether the username exists) and records a `LOGIN_LOCKED` security event, separate from the per-attempt `USER_LOGIN_FAILED` events, so a reviewer can see an actual lockout rather than inferring one from a burst of failures. Verified end-to-end: 10 wrong-password attempts against a real account, then an 11th attempt with the *correct* password still returns 429 until the window clears.
+
 ## Network isolation
 
 ### Topology

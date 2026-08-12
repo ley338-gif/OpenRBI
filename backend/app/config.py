@@ -1,6 +1,13 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The literal placeholder from .env.example — rejecting exactly this value
+# (not just emptiness) closes a real gap: if two components both keep the
+# unedited example value, a shared-secret check between them would silently
+# "match" on a value that's sitting in git (Phase 20 hardening).
+_PLACEHOLDER_SECRET = "changeme-generate-a-strong-secret"
 
 
 class Settings(BaseSettings):
@@ -39,6 +46,16 @@ class Settings(BaseSettings):
 
     clamav_host: str = "clamav"
     clamav_port: int = 3310
+
+    @field_validator("session_agent_api_token", "totp_secret_encryption_key")
+    @classmethod
+    def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
+        if not value or value == _PLACEHOLDER_SECRET:
+            raise ValueError(
+                f"{info.field_name} must be set to a real generated secret (see .env.example) — "
+                "refusing to start with a missing or unedited placeholder value"
+            )
+        return value
 
 
 @lru_cache

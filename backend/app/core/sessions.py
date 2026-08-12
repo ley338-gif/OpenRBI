@@ -10,6 +10,10 @@ _MFA_PENDING_PREFIX = "mfa_pending:"
 _MFA_PENDING_TTL_SECONDS = 5 * 60
 _MFA_PENDING_MAX_ATTEMPTS = 5
 
+_LOGIN_FAILURE_PREFIX = "login_fail:"
+_LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
+_LOGIN_FAILURE_MAX_ATTEMPTS = 10
+
 
 async def create_session(user_id: uuid.UUID, role: str) -> str:
     """Full, MFA-satisfied session. Server-side state in Redis (not a JWT) so
@@ -70,6 +74,31 @@ async def get_mfa_pending(token: str) -> dict | None:
 async def delete_mfa_pending(token: str) -> None:
     redis_client = get_redis()
     await redis_client.delete(f"{_MFA_PENDING_PREFIX}{token}")
+
+
+async def is_login_locked(username: str) -> bool:
+    """Per-username brute-force guard on /auth/login itself (Phase 20
+    hardening) — distinct from the MFA-challenge attempt cap above, which
+    only kicks in *after* a password has already been guessed correctly.
+    Keyed by username, not IP: an attacker behind NAT/a botnet defeats
+    per-IP limits trivially, but the account being guessed at is fixed.
+    """
+    redis_client = get_redis()
+    raw = await redis_client.get(f"{_LOGIN_FAILURE_PREFIX}{username}")
+    return raw is not None and int(raw) >= _LOGIN_FAILURE_MAX_ATTEMPTS
+
+
+async def record_login_failure(username: str) -> None:
+    redis_client = get_redis()
+    key = f"{_LOGIN_FAILURE_PREFIX}{username}"
+    count = await redis_client.incr(key)
+    if count == 1:
+        await redis_client.expire(key, _LOGIN_FAILURE_WINDOW_SECONDS)
+
+
+async def clear_login_failures(username: str) -> None:
+    redis_client = get_redis()
+    await redis_client.delete(f"{_LOGIN_FAILURE_PREFIX}{username}")
 
 
 async def record_mfa_pending_failure(token: str) -> bool:
