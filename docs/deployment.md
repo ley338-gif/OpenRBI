@@ -71,6 +71,33 @@ Two named Docker volumes hold everything persistent (`docker-compose.yml`):
 
 Nothing about a browser session itself is persisted — no profile, cookies, history, or cache outlives the session (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md)); there is no volume for it because there is deliberately nothing to store.
 
+## Secret rotation
+
+Roadmap Phase A / A6. Every secret in `.env` can be rotated, but they are not all equally simple — one of them (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) encrypts data already at rest, and rotating it wrong locks every enrolled user out of MFA with no self-service recovery. Generate every new value with `openssl rand -hex 32`.
+
+**`POSTGRES_PASSWORD` / `OPENRBI_DATABASE_URL`** — change the role's actual password first, then the config, then restart:
+```bash
+docker compose exec postgres psql -U openrbi -c "ALTER USER openrbi WITH PASSWORD '<new-password>';"
+# Edit .env: POSTGRES_PASSWORD and the password embedded in OPENRBI_DATABASE_URL must both change to the same new value.
+docker compose up -d backend session-agent
+```
+This is the same in-place procedure ([docs/security-model.md](security-model.md#control-plane-container-hardening-phase-20)) used the one time this project's own dev deployment needed it — never wipe the data volume to "rotate" a password.
+
+**`OPENRBI_SESSION_AGENT_API_TOKEN` / `OPENRBI_AGENT_API_TOKEN`** — these two names hold the *same* shared secret (backend sends it, session-agent validates against it; see `docs/security-model.md`'s account of the real bug caused by them silently matching on the placeholder instead of a real value). Generate one new value, set both in `.env`, then restart both services together:
+```bash
+docker compose up -d backend session-agent
+```
+There is a brief window between the two containers restarting where they disagree — session lifecycle calls will fail with a clear auth error during it, not silently. Acceptable for a planned rotation; not zero-downtime.
+
+**`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`** — encrypts every enrolled user's TOTP secret at rest (`users.totp_secret_encrypted`, Fernet, `app/core/crypto.py`). Editing `.env` and restarting **without re-encrypting first** makes every existing secret permanently undecryptable — every enrolled admin/security-reviewer/user is locked out of MFA on their next login, with no self-service recovery (recovery codes are hashed and single-use, unrelated to this key). Use `scripts/rotate-totp-key.sh` instead:
+```bash
+./scripts/rotate-totp-key.sh <old-key> <new-key>            # dry run first — prints what would change
+./scripts/rotate-totp-key.sh <old-key> <new-key> --apply    # commits the re-encryption
+# Only then: update OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=<new-key> in .env
+docker compose up -d backend
+```
+Verified end-to-end against the live stack: enrolled a real TOTP secret, ran the rotation, restarted `backend` with the new key configured, and confirmed the app's own `decrypt_secret()` still recovered the original plaintext under the new key. Do the `.env` update and restart promptly after `--apply` succeeds — until then, the DB holds secrets encrypted under the new key while `backend` is still configured with the old one, and MFA verification fails for everyone in that window.
+
 ## Backup and restore
 
 ```bash
