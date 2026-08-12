@@ -1,0 +1,39 @@
+# Roadmap Phase A / A5 — dependency & image scanning.
+#
+# Every entry below was individually verified with `trivy image` against
+# the actual built image (not assumed) on 2026-08-12, after adding an
+# `apt-get upgrade`/`apk upgrade` step to every Dockerfile (see backend/,
+# session-agent/, frontend/, docker/browser/ Dockerfiles) to first pull in
+# whatever OS security patches were actually available. What remains here
+# is what stayed CRITICAL afterward, confirmed via Trivy's own `Status`
+# field to have no upstream fix yet (`affected` / `fix_deferred`) or an
+# explicit upstream "will not fix" decision — not silently ignored, not
+# beschönigt. Re-run the scan and prune this file whenever a listed CVE's
+# Status changes to `fixed`.
+#
+# perl-base ships as a Debian "Essential" package pulled in transitively by
+# both python:3.11-slim (backend, session-agent) and debian:bookworm-slim
+# (docker/browser/) — confirmed via `apt-get remove --purge perl-base`
+# refusing without --allow-remove-essential, which risks breaking dpkg/apt
+# itself inside the image. OpenRBI's own code never invokes perl. The
+# actual security boundary for anything reachable through this package is
+# the container hardening already applied at session-agent creation time
+# (non-root, cap_drop ALL, no-new-privileges, read-only rootfs — see
+# docs/security-model.md), not this package's own patch level.
+CVE-2026-13221  # perl-base — status: affected, no Debian fix yet
+CVE-2026-42496  # perl-base (perl-archive-tar) — status: fix_deferred
+CVE-2026-57433  # perl-base (Storable) — status: affected
+CVE-2026-8376   # perl-base — status: affected
+
+# docker/browser/ only (Firefox sandbox image, debian:bookworm-slim) —
+# transitive dependencies of firefox-esr, same "no fix yet" situation,
+# individually confirmed via Trivy's Status field. This image already runs
+# under the strictest hardening in the project (non-root uid 10001,
+# cap_drop ALL, no-new-privileges, read-only rootfs, tmpfs-only /tmp, no
+# network egress beyond what browser-plane's iptables rules allow — see
+# docs/security-model.md#sandbox-model); these library CVEs would need a
+# working exploit chain that survives that boundary to matter here.
+CVE-2026-58016  # libglib2.0-0 — status: fix_deferred
+CVE-2025-7458   # libsqlite3-0 — status: affected
+CVE-2026-6653   # libxml2 — status: fix_deferred
+CVE-2023-45853  # zlib1g (MiniZip) — status: will_not_fix (upstream Debian decision, not ours)

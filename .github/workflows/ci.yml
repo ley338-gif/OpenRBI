@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Roadmap Phase A / A5: dependency & image scanning. Builds every image
+  # OpenRBI actually ships (backend, session-agent, frontend, the browser
+  # sandbox) and fails the build on a known CRITICAL vulnerability that
+  # isn't explicitly documented in .trivyignore (see that file for why
+  # each currently-listed CVE is there — every entry was individually
+  # verified to have no upstream fix yet, not silently suppressed).
+  image-scan:
+    name: Image vulnerability scan (Trivy)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: openrbi-backend
+            context: backend
+            dockerfile: backend/Dockerfile
+          - image: openrbi-session-agent
+            context: session-agent
+            dockerfile: session-agent/Dockerfile
+          - image: openrbi-frontend
+            context: .
+            dockerfile: frontend/Dockerfile
+          - image: openrbi-browser
+            context: docker/browser
+            dockerfile: docker/browser/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.image }}
+        run: docker build -t ${{ matrix.image }}:ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
+
+      - name: Scan ${{ matrix.image }} for CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}:ci
+          scanners: vuln
+          severity: CRITICAL
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+  # Node dependency scan for the frontend workspace. The final frontend
+  # image is a static nginx build — node_modules never ships in it, so
+  # the image-scan job above can't see npm-level vulnerabilities at all;
+  # this is the only place they're actually checked.
+  dependency-scan-frontend:
+    name: Frontend dependency scan (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: frontend
+        run: npm install
+      - working-directory: frontend
+        run: npm audit --audit-level=critical
+
+  # Roadmap Phase A / A3: runs the existing backend/tests/ pytest suite
+  # (previously only ever run manually via scripts/run-integration-tests.sh)
+  # plus the new automated regression tests for the threat-model.md
+  # controls (network isolation, fail-closed on scanner outage, sandbox
+  # session isolation) that scripts/run-security-tests.sh could previously
+  # only check by hand on a host with Docker socket access.
+  backend-integration-tests:
+    name: Backend integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: |
+          # Phase 20's fail-closed startup check rejects .env.example's
+          # literal placeholder secrets (docs/security-model.md), so a
+          # plain `cp .env.example .env` would never actually boot —
+          # generate real random values for every secret CI needs instead.
+          # DB_PASSWORD is substituted into both POSTGRES_PASSWORD and the
+          # embedded credential in OPENRBI_DATABASE_URL so they still match.
+          cp .env.example .env
+          DB_PASSWORD=$(openssl rand -hex 32)
+          sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${DB_PASSWORD}#" .env
+          sed -i "s#^OPENRBI_DATABASE_URL=.*#OPENRBI_DATABASE_URL=postgresql+asyncpg://openrbi:${DB_PASSWORD}@postgres:5432/openrbi#" .env
+          # OPENRBI_SESSION_AGENT_API_TOKEN (backend, the token it sends) and
+          # OPENRBI_AGENT_API_TOKEN (session-agent, what it validates
+          # incoming requests against) must be the *same* shared secret —
+          # see CHANGELOG's Hardening entry for the real bug this exact
+          # mismatch caused when both sides silently matched on the
+          # placeholder instead.
+          AGENT_TOKEN=$(openssl rand -hex 32)
+          sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          docker compose up -d --build
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            sleep 2
+          done
+      - name: Run integration tests
+        run: sh scripts/run-integration-tests.sh
+      - name: Build browser sandbox image
+        run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
+      - name: Apply network isolation rules
+        # GitHub-hosted ubuntu-latest runners run real Docker with a real
+        # DOCKER-USER iptables chain (not nested/rootless), same as the
+        # bare-metal/VM host this script targets in docs/deployment.md.
+        run: sudo ./scripts/setup-network-isolation.sh
+      - name: Run host-level security regression tests
+        run: sh scripts/run-security-tests.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200

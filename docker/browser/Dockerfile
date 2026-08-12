@@ -11,7 +11,12 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# upgrade before install so firefox-esr's own dependency chain (glib,
+# sqlite3, libxml2, ...) resolves against whatever OS security patches
+# Debian has actually released, not just what apt's default resolver would
+# otherwise pick (A5).
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
         firefox-esr \
         xvfb \
         x11vnc \

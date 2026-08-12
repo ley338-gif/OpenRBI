@@ -75,6 +75,14 @@ npm run build --workspace=admin   # frontend/admin/dist
 
 Both apps read their API base URL from `VITE_API_BASE_URL` (`.env`/`.env.example` in each app's directory) at build time — see [deployment.md#user-portal-and-admin-portal-origins](deployment.md#user-portal-and-admin-portal-origins) for Compact vs. Segmented values. `frontend/shared/` has no build step of its own; both apps' own Vite config aliases `@shared` to it directly and compile its `.tsx`/`.ts` files as part of their own build.
 
+## CI
+
+Roadmap Phase A / A5, `.github/workflows/ci.yml` — until this landed, every check below only ran when someone remembered to run it by hand. Three jobs, all on `push` to `main` and every pull request:
+
+- **`image-scan`** — builds `openrbi-backend`, `openrbi-session-agent`, `openrbi-frontend`, and `openrbi-browser` and scans each with Trivy for CRITICAL vulnerabilities, failing the build on anything not explicitly listed in `.trivyignore` (every entry there is a CVE individually verified to have no upstream fix yet — see that file's header for how and when it was checked, and re-verify before trusting it as still accurate).
+- **`dependency-scan-frontend`** — `npm audit --audit-level=critical` against the frontend workspace. The only place npm-level CVEs are actually checked, since the final frontend image is a static nginx build that never ships `node_modules`.
+- **`backend-integration-tests`** — brings up the full `docker compose` stack (with freshly generated random secrets, not `.env.example`'s placeholders, which the Phase 20 fail-closed startup check would reject anyway) and runs `scripts/run-integration-tests.sh` and `scripts/run-security-tests.sh` — the same two suites described below, now actually gating merges instead of only running when someone remembered to.
+
 ## Tests
 
 Unit tests alone are not sufficient. Phase 21's checklist (project brief §30, non-exhaustive) is covered across two runners, split by what each one can actually reach:
