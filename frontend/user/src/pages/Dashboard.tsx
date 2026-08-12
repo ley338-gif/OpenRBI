@@ -53,7 +53,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card cta-card">
         <div className="flex-between" style={{ marginBottom: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Secure Browser</h2>
@@ -74,7 +74,9 @@ export function Dashboard() {
       <div className="card">
         <div className="flex-between" style={{ marginBottom: "8px" }}>
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Recent downloads</h2>
-          <Link to="/downloads">View all</Link>
+          <Link to="/downloads" className="btn btn-secondary btn-sm">
+            View all
+          </Link>
         </div>
         {recentFiles.length === 0 ? (
           <p className="text-muted">No downloads yet.</p>
