@@ -176,6 +176,7 @@ export function LoginFlow({
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-label="Password"
                   required
                 />
                 <button
