@@ -19,11 +19,12 @@ class Settings(BaseSettings):
     api_token: str = ""
     docker_base_url: str = "unix:///var/run/docker.sock"
 
-    # Placeholder image for Phase 6 lifecycle testing — replaced by the real
-    # hardened Firefox/noVNC image in Phase 7. Kept configurable so that
-    # swap requires no provider-logic change (docs/adr/0003).
-    sandbox_image: str = "alpine:3.20"
-    sandbox_command: list[str] = ["sleep", "infinity"]
+    # Hardened Firefox+Xvfb+x11vnc image built from docker/browser/ (Phase
+    # 7). Its own ENTRYPOINT starts everything, so no command override is
+    # needed. Kept configurable per docs/adr/0003 — swapping browser image
+    # or engine later needs no provider-logic change.
+    sandbox_image: str = "openrbi-browser:latest"
+    sandbox_command: list[str] | None = None
     sandbox_network_name: str = "bridge"
 
     # Defaults per the project brief §24; overridable per session by the

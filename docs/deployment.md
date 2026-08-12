@@ -7,6 +7,11 @@
 ```bash
 cp .env.example .env   # fill in real secrets — never commit .env
 docker compose up -d --build
+
+# The browser sandbox image isn't a compose service — the Session Agent
+# spawns per-session containers from it directly. Build it once (and
+# whenever docker/browser/ changes) before starting any Secure Browser session:
+./scripts/build-browser-image.sh
 ```
 
 This brings up the scaffolded services for local development only. It is **not** a production-ready deployment yet — hardening (Phase 20), network isolation (Phase 9), and the full security test suite (Phase 21) must land first.

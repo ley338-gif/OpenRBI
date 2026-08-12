@@ -29,7 +29,7 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 4. TOTP MFA — **done**
 5. Roles/groups/authorization — **done**
 6. Session Agent — **done** (lifecycle primitives against a placeholder image; the real hardened Firefox/noVNC image lands in Phase 7)
-7. Browser sandbox
+7. Browser sandbox — **done** (Firefox+Xvfb+x11vnc image; remote viewing wiring is Phase 8)
 8. noVNC remote browser
 9. Network isolation
 10. Session lifecycle

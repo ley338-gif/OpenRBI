@@ -1,0 +1,15 @@
+# Shell scripts and Docker build-context files run inside Linux containers
+# or are executed directly on Linux hosts — CRLF line endings break their
+# shebang line and general parsing. Force LF regardless of the checking-out
+# machine's core.autocrlf setting (Windows dev machines default to true).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+docker-compose.yml text eol=lf
+*.conf text eol=lf
+
+# Python/TS/etc. source is fine either way for execution, but keep it
+# consistent to avoid noisy whole-file diffs from mixed line endings.
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
