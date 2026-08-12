@@ -41,6 +41,13 @@ class AuthResult:
     success: bool
     username: str | None = None
     matched_user_id: uuid.UUID | None = None
+    # Populated only by LdapAuthProvider on success (Roadmap B1.3) — the
+    # raw group DNs from the directory's group-membership attribute
+    # (OPENRBI_LDAP_GROUP_ATTRIBUTE), for app/services/ldap_provisioning.py
+    # to resolve into an OpenRBI role. None for LocalAuthProvider, which
+    # has no equivalent concept — an existing local account's role is
+    # already authoritative on its own User row.
+    ldap_group_dns: list[str] | None = None
 
 
 class AuthProvider(Protocol):

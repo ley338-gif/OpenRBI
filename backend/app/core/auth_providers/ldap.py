@@ -83,7 +83,9 @@ class LdapAuthProvider:
             finally:
                 user_conn.unbind_s()
 
-            return AuthResult(success=True, username=username)
+            raw_groups = attrs.get(self._settings.ldap_group_attribute, [])
+            group_dns = [g.decode("utf-8") if isinstance(g, bytes) else g for g in raw_groups]
+            return AuthResult(success=True, username=username, ldap_group_dns=group_dns)
 
         except (ldap.SERVER_DOWN, ldap.CONNECT_ERROR, ldap.TIMEOUT, ldap.LDAPError):
             # Deliberately broad: any LDAP-layer failure not already
