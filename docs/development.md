@@ -49,6 +49,13 @@ MVP 1 is built in the following order (see the project's master brief §35). Tra
 
 After each phase: run tests, update documentation, record any known technical debt, and do not silently ignore a known security regression.
 
+## Post-MVP: Productization v0.1.1
+
+The 23 phases above are the original MVP 1 build order and are complete. Work after that point is tracked here rather than renumbered into the phase list, since it's genuinely post-MVP (the DoD walkthrough already passed against the 23-phase result).
+
+- **User/Admin listener separation** — **done**. `docs/analysis/productization-v0.1.1-zone-separation.md` analyzed whether User/Admin plane network segmentation should happen before building the User Portal/Admin Portal UIs and recommended `PREPARE FOR SEGMENTATION, IMPLEMENT LATER`. [ADR 0011](adr/0011-user-admin-listener-separation.md) implements that preparation: `OPENRBI_LISTENER_MODE` (`user`/`admin`/`both`, default `both`) makes `app/main.py`'s router registration conditional, so a `user`-mode process never has an admin route to serve at all (`404`, not `403`). `app/api/mfa.py`'s one admin-only endpoint moved to a new `app/api/admin_mfa.py` (same path, same logic, different router). See [ADR 0012](adr/0012-compact-vs-segmented-deployment.md) for the Compact/Segmented deployment-profile split (`docker-compose.segmented.yml`, illustrative and tested, not yet a complete production guide) and [ADR 0013](adr/0013-browser-isolation-zone.md) for why no new Browser Isolation Zone was built (it already exists as `browser-plane`). No business logic, session lifecycle, browser sandbox, noVNC, file pipeline, quarantine, or audit code changed — see `docs/security-model.md#useradmin-listener-separation-productization-v011` for exactly what this does and does not mitigate.
+- **User Portal / Admin Portal UI** — not started. Explicitly the next piece of work, not begun as part of this listener-separation task.
+
 ## Tests
 
 Unit tests alone are not sufficient. Phase 21's checklist (project brief §30, non-exhaustive) is covered across two runners, split by what each one can actually reach:
@@ -58,6 +65,8 @@ Unit tests alone are not sufficient. Phase 21's checklist (project brief §30, n
 **`scripts/run-security-tests.sh`** — the handful of checks that need the Docker socket or the ability to stop other containers, neither of which the backend has by design (ADR 0005), so these run from the host instead: sandbox network isolation (public internet reachable; Postgres's real IP, the cloud metadata address, and an arbitrary RFC1918 address all unreachable from `browser-plane`); an admin Isolate leaves the real sandbox container with zero Docker networks attached — the actual DENY-ALL primitive, not just a database flag; a scanner outage (ClamAV container actually stopped) is detected as an error rather than a silent clean result, which is the precondition `app/services/scanning.py`'s fail-closed decision matrix depends on.
 
 Both are meant to run against an already-running `docker compose up` stack, not a separate test-only environment — see each script's own header comment for details (test data is prefixed `pytest_` and swept up automatically; the security-tests script briefly stops ClamAV and a throwaway sandbox container, restoring/removing them itself).
+
+**`scripts/test-listener-modes.sh`** (Productization v0.1.1) — verifies `OPENRBI_LISTENER_MODE` actually changes which routes exist, run from the host for the same reason as `run-security-tests.sh` (needs Docker access to start throwaway sibling containers with different env vars): in `user` mode every admin route is a `404` and the OpenAPI schema contains no `/admin` paths; in `admin` mode every admin route exists (`401`, not `404`) and user-only routes are `404` with no leak in the OpenAPI schema; `both` mode is unchanged from prior behavior; an invalid `OPENRBI_LISTENER_MODE` value fails container startup immediately with a clear error.
 
 ## Migrations
 

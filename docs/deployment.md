@@ -99,6 +99,36 @@ docker compose restart reverse-proxy   # nginx caches upstream container IPs at 
 
 Take a backup first (`./scripts/backup.sh`) — migrations in this project are additive where possible (see the Alembic-gotchas notes in `docs/development.md`), but a backup taken immediately before an update is the cheapest insurance against the one that isn't.
 
+## Compact vs. Segmented (Productization v0.1.1)
+
+See [ADR 0011](adr/0011-user-admin-listener-separation.md) and [ADR 0012](adr/0012-compact-vs-segmented-deployment.md) for the full reasoning. Two deployment profiles exist, from the same codebase and image:
+
+### Compact
+
+Everything above on this page already describes Compact — it's the default, requires no `OPENRBI_LISTENER_MODE` setting (implicitly `both`), and is the only profile with a complete production guide today (TLS, firewall, backup/restore, update procedure, all above). Recommended for homelab, evaluation, development, and any deployment that doesn't have a specific reason to run two backend processes.
+
+### Segmented — preparatory, **not yet a complete production guide**
+
+```
+OPENRBI_LISTENER_MODE=user    →  a "User API" process instance
+OPENRBI_LISTENER_MODE=admin   →  an "Admin API" process instance
+```
+
+`docker-compose.segmented.yml` is a tested, additive overlay that runs both alongside (not instead of) the base `backend` service, for experimentation:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.segmented.yml \
+  up -d backend-user backend-admin
+```
+
+What this **does** give you today: a `backend-user` process where `/admin/*` genuinely does not exist (verified: a plain `404`, not a role-check rejection — see `scripts/test-listener-modes.sh`), and a `backend-admin` process where the user-facing session/file/display routes don't exist. What this **does not yet** give you, and would need further work before being a real production Segmented deployment:
+
+- **Separate reverse-proxy origins** — e.g. `https://browser.example.org` for the User API/Portal and `https://admin.example.internal` for the Admin API/Portal, each its own nginx vhost/TLS certificate, the admin one reachable only from a management network. Not wired up; `docker-compose.segmented.yml`'s two backend instances currently have no dedicated proxy path of their own.
+- **Separate Postgres roles** — both instances still connect with the same DB credentials/grants today. A `user-api` role with no access to admin-only tables/columns (role assignments, other users' TOTP secrets) is a documented, not-yet-implemented hardening option.
+- **Session Agent token scoping** — both instances hold the same shared `OPENRBI_SESSION_AGENT_API_TOKEN`. Per-listener tokens/scopes (so a compromised `backend-user` can't issue `isolate`/`terminate` on arbitrary sessions) are documented, not implemented.
+- **The display relay's network exemption** — `scripts/setup-network-isolation.sh`'s allow-list is hardcoded to the base `backend` service's pinned `browser-plane` address; `backend-user`'s own pinned address (see the overlay file's comments) is not yet exempted, so a real deployment running the display relay from `backend-user` instead of `backend` would need that script updated first — deliberately not done in this pass (see [ADR 0013](adr/0013-browser-isolation-zone.md); browser-plane itself is unchanged by this work).
+- **Firewall/VLAN enforcement** — entirely an operator decision once real separate origins exist; nothing in this repository automates it, on purpose (see the Productization v0.1.1 analysis's explicit anti-overengineering guardrail).
+
 ## Sizing
 
 MVP 1 has no host-resource-aware scheduler (see [architecture.md#multi-node-readiness](architecture.md#multi-node-readiness)) — capacity is a fixed ceiling (`session-agent`'s `default_cpu_limit`/`default_ram_limit_mb`, currently 2 CPUs / 2 GB per sandbox), not something this document can size for every deployment. As a starting point: plan for (number of concurrent sessions you want to support) × (per-sandbox CPU/RAM limit), plus headroom for Postgres/Redis/ClamAV/backend, which are comparatively light.

@@ -11,7 +11,7 @@ The **Admin and User portals** (frontend) remain the one component that's genuin
 | Component | Role | Status |
 |---|---|---|
 | Frontend | React/TypeScript SPA | noVNC test harness only — no admin/user portal UI (see above) |
-| Backend/API | FastAPI service: auth, users, groups, policies, sessions, incidents, quarantine, audit, health | done |
+| Backend/API | FastAPI service: auth, users, groups, policies, sessions, incidents, quarantine, audit, health | done — one codebase, runnable as `both`/`user`/`admin` listener modes (see below) |
 | PostgreSQL | Durable store for all persistent entities (§27/§28) | done |
 | Redis | Transient state: server-side sessions, MFA/login-lockout state, release tokens | done |
 | Background jobs | Download polling, incident aggregation | done, in-process (see note above, not a separate Worker) |
@@ -80,6 +80,18 @@ See [ADR 0004](adr/0004-separate-session-agent.md). The Session Agent exposes an
 `GET /admin/health` (ADMIN/SECURITY_REVIEWER) aggregates independent, non-fatal checks of every component named in §25 of the project brief: API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser image availability, ClamAV, and quarantine-storage writability. Each check is isolated — one dependency being down never breaks another's check or 500s the endpoint (`app/services/health.py`). Overall status is `HEALTHY` only if every component is; `UNAVAILABLE` if API or PostgreSQL itself is down (the control plane is unusable); otherwise `DEGRADED`.
 
 The plain `GET /health` liveness probe is deliberately separate and unauthenticated: because `/admin/health` requires a DB-backed session to authenticate, it is — like every other admin endpoint — unreachable during a full PostgreSQL outage. `/health` has no such dependency, so it stays the one signal guaranteed to answer regardless of what else is down.
+
+## User/Admin listener modes (Productization v0.1.1)
+
+Following `docs/analysis/productization-v0.1.1-zone-separation.md`'s recommendation (`PREPARE FOR SEGMENTATION, IMPLEMENT LATER`) and [ADR 0011](adr/0011-user-admin-listener-separation.md), the backend's router registration is now conditional on `OPENRBI_LISTENER_MODE` (`user` | `admin` | `both`, default `both`) — a single, central decision in `app/main.py`, not scattered per-endpoint checks:
+
+- **`both`** (default): every router registered, exactly MVP 1's prior behavior. This is what Compact/homelab/dev deployments use, unchanged.
+- **`user`**: only shared routes (health, auth, MFA enrollment/verification) plus user-facing routes (sessions, files, display) are registered. Admin routers are never imported into this process — a request to `/admin/*` gets a plain `404` (the route doesn't exist), not a `403` (RBAC rejected it). This is the actual point: a compromise of a user-mode process has no admin route to call, regardless of what credentials it might extract from its own environment.
+- **`admin`**: shared routes plus every admin router. User-only routes (sessions/files/display) are not registered.
+
+This is a **logical/process-level** separation, not yet a network-level one: both modes still reach the same PostgreSQL, the same Redis, and hold the same Session Agent shared token when run as separate processes. See [ADR 0011](adr/0011-user-admin-listener-separation.md) for the full reasoning, and [ADR 0012](adr/0012-compact-vs-segmented-deployment.md) for how this maps onto **Compact** (today's only shipped profile) vs. an illustrative, not-yet-complete **Segmented** profile (`docker-compose.segmented.yml`, two instances of the same image, no separate DB roles/Session Agent scopes/reverse-proxy vhosts yet — see `docs/deployment.md#segmented`).
+
+The Browser Isolation Zone this task's own preceding analysis considered building **already exists** — see [ADR 0013](adr/0013-browser-isolation-zone.md): it's `browser-plane` below, unchanged by any of this.
 
 ## Multi-node readiness
 

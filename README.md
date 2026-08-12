@@ -34,7 +34,7 @@ docker compose up -d --build
 
 OpenRBI separates a **control plane** (backend API, database, policy engine, admin/user frontends) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so MVP 1's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
 
-See [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown.
+The backend can also run as a `user`- or `admin`-only listener (`OPENRBI_LISTENER_MODE`, default `both`) — preparation for a future Segmented deployment, not a change to how Compact/homelab deployments work today. See [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown.
 
 ## Security
 
