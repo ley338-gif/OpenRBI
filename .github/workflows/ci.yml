@@ -38,7 +38,7 @@ jobs:
         run: docker build -t ${{ matrix.image }}:ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
 
       - name: Scan ${{ matrix.image }} for CRITICAL vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: ${{ matrix.image }}:ci
           scanners: vuln
@@ -104,6 +104,11 @@ jobs:
             docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
             sleep 2
           done
+      - name: Apply database migrations
+        # A fresh Postgres volume has no schema at all until this runs —
+        # docs/deployment.md's own install/update procedures always call
+        # this explicitly, it's never automatic on container start.
+        run: docker compose exec -T backend alembic upgrade head
       - name: Run integration tests
         run: sh scripts/run-integration-tests.sh
       - name: Build browser sandbox image
