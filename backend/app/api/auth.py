@@ -1,14 +1,13 @@
 import uuid
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse
 from app.api.schemas.mfa import MfaVerifyRequest
 from app.config import get_settings
+from app.core.auth_providers.factory import get_local_auth_provider
 from app.core.deps import get_current_user
-from app.core.security import verify_password
 from app.core.sessions import (
     clear_login_failures,
     create_mfa_pending,
@@ -54,21 +53,21 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too many failed login attempts"
         )
 
-    result = await db.execute(select(User).where(User.username == payload.username))
-    user = result.scalar_one_or_none()
+    auth_result = await get_local_auth_provider().authenticate(db, payload.username, payload.password)
 
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+    if not auth_result.success:
         await record_login_failure(payload.username)
         await record_security_event(
             db,
             SecurityEventType.USER_LOGIN_FAILED,
-            user_id=user.id if user is not None else None,
+            user_id=auth_result.matched_user_id,
             metadata={"username": payload.username},
         )
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
     await clear_login_failures(payload.username)
+    user = await db.get(User, auth_result.matched_user_id)
     role = await db.get(Role, user.role_id)
 
     if user.mfa_enabled:
