@@ -1,4 +1,5 @@
 import './App.css'
+import SecureBrowserTest from './SecureBrowserTest'
 
 /**
  * Placeholder landing page. User/admin portals are built out phase-by-phase
@@ -11,6 +12,7 @@ function App() {
       <h1>OpenRBI</h1>
       <p>Self-hosted Remote Browser Isolation — MVP 1 under active development.</p>
       <p>User and admin portals are not yet implemented.</p>
+      <SecureBrowserTest />
     </section>
   )
 }

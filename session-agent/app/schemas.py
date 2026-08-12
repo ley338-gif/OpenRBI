@@ -22,3 +22,8 @@ class MetricsResponse(BaseModel):
     memory_usage_mb: float
     memory_limit_mb: float
     pids: int
+
+
+class DisplayInfoResponse(BaseModel):
+    host: str
+    port: int

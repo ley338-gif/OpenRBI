@@ -3,11 +3,19 @@ import asyncio
 import docker
 from docker.errors import NotFound
 
-from app.providers.base import SandboxConfig, SandboxMetrics, SandboxProvider, SandboxRuntimeStatus, SandboxStatus
+from app.providers.base import (
+    SandboxConfig,
+    SandboxDisplayInfo,
+    SandboxMetrics,
+    SandboxProvider,
+    SandboxRuntimeStatus,
+    SandboxStatus,
+)
 
 _MANAGED_LABEL = "openrbi.managed"
 _SESSION_LABEL = "openrbi.session_id"
 _NETWORK_LABEL = "openrbi.network"
+_VNC_PORT = 5900
 
 
 def _container_name(session_id: str) -> str:
@@ -175,6 +183,25 @@ class DockerSandboxProvider:
             memory_limit_mb=round(mem_limit / (1024 * 1024), 2),
             pids=pids,
         )
+
+    async def get_display_info(self, session_id: str) -> SandboxDisplayInfo:
+        return await asyncio.to_thread(self._get_display_info_sync, session_id)
+
+    def _get_display_info_sync(self, session_id: str) -> SandboxDisplayInfo:
+        """Returns the container's IP on its recorded network so the control
+        plane can open a data-plane TCP connection to the VNC port it
+        exposes. This is not a privileged operation — the backend still
+        never touches the Docker socket (docs/adr/0005) — it's a plain
+        outbound connection to a port the container already listens on.
+        """
+        container = self._get_managed_container(session_id)
+        network_name = container.labels.get(_NETWORK_LABEL)
+        container.reload()
+        networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+        network = networks.get(network_name)
+        if not network or not network.get("IPAddress"):
+            raise RuntimeError(f"session {session_id} has no address on network {network_name}")
+        return SandboxDisplayInfo(host=network["IPAddress"], port=_VNC_PORT)
 
     async def count_active_sessions(self) -> int:
         return await asyncio.to_thread(self._count_active_sessions_sync)

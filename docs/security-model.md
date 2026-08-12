@@ -13,6 +13,13 @@ Each browser session runs in its own container (see [ADR 0010](adr/0010-docker-s
 - seccomp/AppArmor profiles appropriate to a browser workload
 - a dedicated temporary browser-profile path, destroyed at session end (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md))
 
+## Known interim gaps (tracked, not silent)
+
+Phases 6–8 built real sandbox lifecycle and remote-display mechanics ahead of Phase 9's network isolation. Until Phase 9 lands:
+
+- Browser sandboxes join the same docker network as the control plane (backend, Postgres, Redis) rather than an isolated network — there is currently no egress filtering at all for a running sandbox, and no barrier between it and the control-plane network segment. This is not a regression introduced by Phase 8; no egress restriction existed before it either. Phase 9 replaces this with a dedicated, egress-filtered browser-plane network plus a narrow, display-only path back to the control plane.
+- The VNC server inside each sandbox (x11vnc) runs without its own password (`-nopw`), relying entirely on network-level access control (only the backend's display relay can reach it) rather than VNC authentication. Once Phase 9's segmentation exists, this remains an intentional choice — the actual authorization boundary is the backend's session-ownership check on `/display/{id}/ws` (itself still pending full enforcement until Phase 10/11's BrowserSession model exists), not VNC's own weak auth.
+
 ## Network isolation
 
 Browser sandboxes may reach the public internet only. Blocked by default, at minimum:

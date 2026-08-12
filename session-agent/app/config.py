@@ -25,7 +25,14 @@ class Settings(BaseSettings):
     # or engine later needs no provider-logic change.
     sandbox_image: str = "openrbi-browser:latest"
     sandbox_command: list[str] | None = None
-    sandbox_network_name: str = "bridge"
+    # TEMPORARY pending Phase 9 (network isolation): sandboxes join the same
+    # docker network as the control plane so the backend can reach the VNC
+    # port for Phase 8's display relay. This does NOT newly regress
+    # anything — there is no egress filtering at all yet regardless of
+    # which network is used, and Phase 9 is exactly where that gets built
+    # (a dedicated, egress-filtered browser-plane network plus a
+    # display-only path back to the control plane). Must be revisited then.
+    sandbox_network_name: str = "openrbi_control-plane"
 
     # Defaults per the project brief §24; overridable per session by the
     # control plane's request payload.

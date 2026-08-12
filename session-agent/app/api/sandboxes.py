@@ -4,7 +4,7 @@ from app.auth import require_control_plane_token
 from app.config import get_settings
 from app.providers.base import SandboxConfig, SandboxRuntimeStatus
 from app.providers.factory import get_provider
-from app.schemas import CreateSandboxRequest, MetricsResponse, StatusResponse
+from app.schemas import CreateSandboxRequest, DisplayInfoResponse, MetricsResponse, StatusResponse
 
 router = APIRouter(
     prefix="/v1/sandboxes", tags=["sandboxes"], dependencies=[Depends(require_control_plane_token)]
@@ -77,6 +77,15 @@ async def sandbox_status(session_id: str) -> StatusResponse:
     return StatusResponse(
         status=result.status.value, container_id=result.container_id, started_at=result.started_at, detail=result.detail
     )
+
+
+@router.get("/{session_id}/display", response_model=DisplayInfoResponse)
+async def sandbox_display_info(session_id: str) -> DisplayInfoResponse:
+    try:
+        info = await get_provider().get_display_info(session_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return DisplayInfoResponse(host=info.host, port=info.port)
 
 
 @router.get("/{session_id}/metrics", response_model=MetricsResponse)

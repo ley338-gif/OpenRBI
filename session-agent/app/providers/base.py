@@ -48,6 +48,12 @@ class SandboxStatus:
 
 
 @dataclass
+class SandboxDisplayInfo:
+    host: str
+    port: int
+
+
+@dataclass
 class SandboxMetrics:
     cpu_percent: float
     memory_usage_mb: float
@@ -63,3 +69,4 @@ class SandboxProvider(Protocol):
     async def terminate_session(self, session_id: str) -> None: ...
     async def get_status(self, session_id: str) -> SandboxStatus: ...
     async def get_metrics(self, session_id: str) -> SandboxMetrics: ...
+    async def get_display_info(self, session_id: str) -> SandboxDisplayInfo: ...
