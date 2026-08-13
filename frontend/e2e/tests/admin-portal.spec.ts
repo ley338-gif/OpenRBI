@@ -73,12 +73,98 @@ test.describe("Admin Portal", () => {
     await expect(page.locator(".stat-card", { hasText: /system health/i })).toBeVisible();
   });
 
+  test("Dashboard's operations view (B1.10.2) shows real worker load and a working range selector", async ({ page }) => {
+    await loginAsAdmin(page);
+
+    // KPI cards backed by GET /admin/dashboard, not the old client-side
+    // aggregation — "Workers healthy" only exists on the new endpoint.
+    await expect(page.getByText(/workers healthy/i)).toBeVisible();
+    await expect(page.getByText(/avg cpu/i)).toBeVisible();
+    await expect(page.getByText(/avg ram/i)).toBeVisible();
+    await expect(page.getByText(/last updated \d{1,2}:\d{2}:\d{2}/i)).toBeVisible();
+
+    // Session history chart renders as a real SVG, not a placeholder box.
+    await expect(page.getByRole("img", { name: /active sessions over time/i })).toBeVisible();
+
+    // Worker load section lists the real seeded session-agent node.
+    await expect(page.getByText(/worker load/i)).toBeVisible();
+    await expect(page.locator(".load-bar-row")).toHaveCount(1);
+
+    // Range selector actually triggers a new fetch against the backend.
+    const historyResponse = page.waitForResponse((r) => r.url().includes("/admin/dashboard?range=7d") && r.ok());
+    await page.getByRole("button", { name: "7d", exact: true }).click();
+    await historyResponse;
+  });
+
   test("Users page lists the real seeded users", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Users", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
     await expect(page.getByRole("link", { name: USER_USERNAME })).toBeVisible();
     await expect(page.getByRole("link", { name: ADMIN_USERNAME, exact: true })).toBeVisible();
+  });
+
+  test("User Detail (B1.10.4) hides 'Terminate all sessions' when the user has no live sessions", async ({ page }) => {
+    // e2e_user is freshly seeded with no session — the button must not
+    // exist at all (not just be disabled), since its own confirm dialog
+    // assumes there's something real to terminate. The full terminate
+    // round-trip (session flips to TERMINATED, USER_SESSIONS_REVOKED is
+    // audited) is covered by backend/tests/integration/test_user_sessions_revoke.py
+    // against the real Session Agent — creating a real sandbox session
+    // from this suite would duplicate that coverage at much higher cost.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Users", exact: true }).click();
+    await page.getByRole("link", { name: USER_USERNAME }).click();
+    await expect(page.getByRole("heading", { name: USER_USERNAME })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Terminate all sessions" })).toHaveCount(0);
+  });
+
+  test("User Detail (B1.10.5) Lock/Unlock account really blocks and restores login", async ({ page, request }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Users", exact: true }).click();
+    await page.getByRole("link", { name: USER_USERNAME }).click();
+
+    await expect(page.getByText(/not locked/i)).toBeVisible();
+    await page.getByRole("button", { name: "Lock account", exact: true }).click();
+    await page.getByRole("button", { name: "Lock account", exact: true }).last().click();
+    await expect(page.getByText(/^LOCKED/)).toBeVisible();
+
+    // Real backend round-trip, not just a UI state flip: the actual login
+    // endpoint now rejects the account's real, correct password.
+    const lockedLogin = await request.post("/api/auth/login", {
+      data: { username: USER_USERNAME, password: PASSWORD },
+    });
+    expect(lockedLogin.status()).toBe(429);
+
+    await page.getByRole("button", { name: "Unlock account", exact: true }).click();
+    await page.getByRole("button", { name: "Unlock account", exact: true }).last().click();
+    await expect(page.getByText(/not locked/i)).toBeVisible();
+
+    const unlockedLogin = await request.post("/api/auth/login", {
+      data: { username: USER_USERNAME, password: PASSWORD },
+    });
+    expect(unlockedLogin.status()).toBe(200);
+  });
+
+  test("Login Diagnostics (B1.10.6) is read-only and correctly reports both a known and an unknown username", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Login Diagnostics" }).click();
+    await expect(page.getByRole("heading", { name: "Login Diagnostics" })).toBeVisible();
+
+    // A real seeded account: exists, active, no lockout.
+    await page.getByPlaceholder("Username").fill(USER_USERNAME);
+    await page.getByRole("button", { name: "Diagnose" }).click();
+    await expect(page.getByText("YES", { exact: true })).toBeVisible();
+    await expect(page.getByText("NOT LOCKED")).toBeVisible();
+    await expect(page.getByRole("link", { name: /view full user detail/i })).toBeVisible();
+
+    // A username that doesn't exist: no fabricated account data, an
+    // honest "no account found" reason, and no dangling detail link.
+    await page.getByPlaceholder("Username").fill("definitely_not_a_real_username_xyz");
+    await page.getByRole("button", { name: "Diagnose" }).click();
+    await expect(page.getByText("NO", { exact: true })).toBeVisible();
+    await expect(page.getByText(/no account found/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /view full user detail/i })).toHaveCount(0);
   });
 
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
@@ -91,6 +177,59 @@ test.describe("Admin Portal", () => {
     // string cell also happens to contain "ClamAV".
     for (const component of ["postgres", "redis", "clamav", "session_agent"]) {
       await expect(page.getByRole("cell", { name: component, exact: true })).toBeVisible();
+    }
+    // Roadmap B1.10.7 — a visible "Last updated" clock backed by real polling.
+    await expect(page.getByText(/last updated \d{1,2}:\d{2}:\d{2}/i)).toBeVisible();
+  });
+
+  test("Audit page (B1.10.7) filters by event type/user and links to the real user", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Audit", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
+
+    // Filtering by a real event type narrows the table to only that type.
+    const eventResponse = page.waitForResponse(
+      (r) => r.url().includes("/admin/security-events") && r.url().includes("event_type=USER_CREATED") && r.ok(),
+    );
+    await page.getByPlaceholder("Filter by event type").fill("USER_CREATED");
+    await eventResponse;
+    const rows = page.locator(".data-table tbody tr").filter({ hasText: "USER_CREATED" });
+    await expect(rows.first()).toBeVisible();
+    await expect(page.locator(".data-table tbody tr", { hasText: /SESSION_STARTED|MFA_ENROLLED/ })).toHaveCount(0);
+
+    // The user column is a real link to that user's detail page, not just text.
+    const userLink = page.locator(".data-table tbody tr").first().locator("a").first();
+    await expect(userLink).toHaveAttribute("href", /\/users\/[0-9a-f-]{36}/);
+
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.getByPlaceholder("Filter by event type")).toHaveValue("");
+  });
+
+  test("Workers page (B1.10.3) lists real workers and drilling into one shows drain/maintenance controls and history charts", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Workers" }).click();
+    await expect(page.getByRole("heading", { name: "Workers" })).toBeVisible();
+
+    const workerLink = page.locator(".data-table tbody tr td a").first();
+    await expect(workerLink).toBeVisible();
+    const hostname = await workerLink.textContent();
+    await workerLink.click();
+
+    await expect(page.getByRole("heading", { name: hostname ?? "" })).toBeVisible();
+    await expect(page.getByText(/scheduling status/i)).toBeVisible();
+    await expect(page.getByRole("img", { name: /cpu percent over time/i })).toBeVisible();
+    await expect(page.getByRole("img", { name: /ram percent over time/i })).toBeVisible();
+
+    // Drain -> confirm -> health flips to DRAINING -> undrain restores it,
+    // exercising the real backend state change end to end, not just a UI
+    // mock. Always restored, even if an assertion above fails first.
+    await page.getByRole("button", { name: "Drain", exact: true }).click();
+    await page.getByRole("button", { name: "Drain", exact: true }).last().click();
+    try {
+      await expect(page.getByText("DRAINING", { exact: true }).first()).toBeVisible();
+    } finally {
+      await page.getByRole("button", { name: "Undrain" }).click();
+      await page.getByRole("button", { name: "Undrain" }).last().click();
     }
   });
 
@@ -158,6 +297,19 @@ test.describe("Admin Portal", () => {
     await expect(page.getByText(`Delete group "${groupName}"?`)).toBeVisible();
     await page.getByRole("button", { name: "Delete", exact: true }).last().click();
     await expect(page.getByRole("cell", { name: groupName })).toHaveCount(0);
+  });
+
+  test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {
+    // Roadmap B1.8 — no fabricated defaults: the form must reflect
+    // whatever GET /admin/ldap/config actually returns, and the password
+    // field must never be pre-filled with anything, ever.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "LDAP" }).click();
+    await expect(page.getByRole("heading", { name: "Settings — Authentication — LDAP" })).toBeVisible();
+    await expect(page.getByLabel("Server URI")).toBeVisible();
+    await expect(page.getByLabel("Bind password")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Test connection" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save configuration" })).toBeVisible();
   });
 });
 

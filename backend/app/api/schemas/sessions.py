@@ -44,3 +44,12 @@ class AdminSessionResponse(SessionResponse):
     def from_model_with_user(cls, session, username: str) -> "AdminSessionResponse":
         base = SessionResponse.from_model(session)
         return cls(**base.model_dump(), user_id=session.user_id, username=username)
+
+
+class RevokeSessionsResponse(BaseModel):
+    """Roadmap B1.10.4 — result of terminating every live session a user
+    had. `session_ids` lets the caller confirm exactly which sessions were
+    affected, not just a count."""
+
+    terminated_count: int
+    session_ids: list[uuid.UUID]

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Integer, String
+from sqlalchemy import DateTime, Enum, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,3 +30,19 @@ class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
     last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     runtime: Mapped[str] = mapped_column(String(64), nullable=False, default="docker")
     version: Mapped[str | None] = mapped_column(String(64))
+
+    # Roadmap B1.10.1 — host-wide telemetry self-reported by the Session
+    # Agent (session-agent/app/main.py's /v1/nodes/self), refreshed by both
+    # select_node() (on session creation) and app/core/node_poller.py (on a
+    # fixed interval, so the dashboard stays current even with no session
+    # traffic). All nullable: a node that has never successfully reported
+    # has none of this yet, and app/services/worker_health.py treats that
+    # the same as a stale heartbeat (OFFLINE), never as 0%/idle.
+    cpu_percent: Mapped[float | None] = mapped_column(Float)
+    ram_total_mb: Mapped[int | None] = mapped_column(Integer)
+    ram_used_mb: Mapped[int | None] = mapped_column(Integer)
+    # When the Session Agent process serving this node last started —
+    # "worker uptime" in the admin UI is `now - node_started_at`, computed
+    # at read time rather than stored as a duration that would need
+    # constant re-writing to stay accurate.
+    node_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -111,7 +111,35 @@ Two separate Vite/React/TypeScript single-page apps, `frontend/user/` and `front
 MVP 1 runs on a single Linux host, but:
 
 - The Session Agent is addressed over the network, not assumed co-located with the backend.
-- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version) even though only one node exists in MVP 1.
+- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version, and — Roadmap B1.10.1 — host-wide `cpu_percent`/`ram_total_mb`/`ram_used_mb`/`node_started_at`) even though only one node exists in MVP 1.
 - The scheduler has an abstract `select_node()` seam, trivially returning the single node today, but built so real multi-node scheduling can replace it later without changing callers.
 
 Real multi-node scheduling, HA, and Kubernetes orchestration are explicitly out of MVP 1 scope (see README "Scope").
+
+### Worker telemetry and health (Roadmap B1.10.1)
+
+`app/core/node_poller.py` refreshes `BrowserNode` from the Session Agent's `GET /v1/nodes/self` on a fixed interval (`OPENRBI_NODE_POLL_INTERVAL_SECONDS`, default 15s) independent of session-creation traffic, using the same in-process-`asyncio.Task` pattern as `app/core/download_poller.py` — no new background-worker infrastructure. `app/services/worker_health.py`'s `compute_worker_health()` is the single, centrally-defined mapping from a node's raw state to an admin-facing `HEALTHY/DEGRADED/DRAINING/MAINTENANCE/OFFLINE` label (heartbeat-staleness checked first, before any status field is trusted) — see [ADR 0018](adr/0018-worker-telemetry-and-health.md) for the full design and why `MAINTENANCE` is a new, distinct state from `DRAINING`.
+
+### Operations Dashboard and metrics history (Roadmap B1.10.2)
+
+Each poll tick, `node_poller.py` also writes a `WorkerMetricSample` row (`app/models/worker_metric_sample.py`) — a small internal history table, pruned to `OPENRBI_METRICS_RETENTION_DAYS` (default 7), not a general time-series store. `GET /admin/dashboard?range=1h|6h|24h|7d` (`app/api/admin_dashboard.py`, `app/services/dashboard.py`) aggregates real session/worker/audit data into KPIs, a bucketed session-history series (`app/services/metrics_history.py`, using Postgres `date_bin()` to keep point counts bounded per range), per-worker load, and warnings — replacing `Dashboard.tsx`'s previous client-side aggregation of several list endpoints. See [ADR 0019](adr/0019-metrics-history-and-operations-dashboard.md) for the full design, including why averages/deltas are `null` rather than a fabricated `0` when there's no real data yet.
+
+### Worker Overview and Worker Detail (Roadmap B1.10.3)
+
+The Admin Portal's **Workers** page (`frontend/admin/src/pages/Workers.tsx`) and Worker Detail page (`WorkerDetail.tsx`) are the first UI surfaces to actually display the telemetry/health B1.10.1 added and the history B1.10.2's `worker_metric_samples` table enables — the System page previously only showed a bare drain/undrain table with no telemetry at all, and now links to Workers instead. Two new read-only endpoints support the detail view: `GET /admin/nodes/{id}` and `GET /admin/nodes/{id}/metrics?range=...` (`metrics_history.node_history()`, the same bucketing as the dashboard's session history, scoped to one node). `admin_nodes.py`'s router-level RBAC was widened from `ADMIN`-only to `ADMIN`/`SECURITY_REVIEWER` for reads, matching the dashboard's access level; the four mutating routes (drain/undrain/maintenance/unmaintenance) each carry their own explicit `ADMIN`-only dependency, so read access and mutation access are independently enforced server-side.
+
+### Bulk session termination (Roadmap B1.10.4)
+
+Single-session control (disconnect/isolate/restore/kill) already existed (Phase 11, `app/api/admin_sessions.py`). `POST /admin/users/{id}/sessions/revoke` (`app/api/admin.py`) adds the by-user counterpart: `app/services/sessions.py`'s `revoke_user_sessions()` terminates every one of a user's live sessions by calling the existing `terminate_session()` per session (so each still gets its own idempotent-terminate behavior and `SESSION_TERMINATED` event), then records one additional `USER_SESSIONS_REVOKED` event summarizing the batch. Surfaced on User Detail as "Terminate all sessions", shown only when the user has at least one live session.
+
+### Account Lock/Unlock and MFA-reset session revocation (Roadmap B1.10.5)
+
+`app/core/sessions.py` gained two additions to the existing Redis-backed session/lockout module: `revoke_all_sessions_for_user()` (deletes every login session belonging to a user, by scanning the small `session:*` keyspace — login sessions have no user-id index, a deliberate design choice given how infrequent this admin-only operation is) and `force_login_lock()` (sets the *existing* brute-force-lockout counter — the same one `is_login_locked`/`record_login_failure` already maintain — to its threshold, rather than introducing a second lockout concept). `reset_mfa()` now calls the first so an MFA reset takes effect immediately, not only on the account's next login. `app/services/users.py`'s new `lock_account()`/`unlock_account()`/`get_lockout_status()` wrap the second for the new `GET/POST /admin/users/{id}/lock`/`unlock`/`lockout` endpoints, surfaced on User Detail — distinct from the pre-existing Disable/Enable (`set_active`), which is a separate DB-persisted state, not a login-lockout. `get_lockout_status()` is designed to be reused by Login Diagnostics (Roadmap B1.10.6).
+
+### Login Diagnostics (Roadmap B1.10.6)
+
+`GET /admin/login-diagnostics?username=...` (`app/api/admin_login_diagnostics.py`, `app/services/login_diagnostics.py`) answers "why can't this user log in" by re-reading the same signals `POST /auth/login` already checks — it never re-implements or approximates them. `MFA_MANDATORY_ROLES` moved from a private constant in `app/api/auth.py` to `app/models/enums.py` so this module checks the identical rule rather than a second copy that could drift. Strictly read-only and structurally incapable of testing a password: no code path here calls `verify_password()` or issues a session. Registered as its own small `ADMIN`/`SECURITY_REVIEWER` router (not nested under `/admin/users/{id}/...`) since it accepts any username, including ones with no matching account — a real, common case this feature needs to diagnose, not an edge case to route around.
+
+### System Health polling and Audit filters (Roadmap B1.10.7)
+
+No new backend surface — both are frontend-only completions of B1.10.3's System-page split and Phase 18's existing `GET /admin/security-events`. **System** now polls on the same 15s interval as the Dashboard, with a "Last updated" clock, instead of loading once. **Audit** now exposes the `user_id` filter `GET /admin/security-events` already accepted but the UI never surfaced, adds an autocomplete `<datalist>` of every known `SecurityEventType` for the existing event-type filter, and makes the user/session ID columns real links to their detail pages.

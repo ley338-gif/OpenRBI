@@ -36,6 +36,20 @@ sudo ./scripts/setup-network-isolation.sh
 
 At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
 
+## First-run setup (Roadmap B1.9)
+
+A fresh installation has no user accounts at all yet — there is no default `admin`/`admin` or any other built-in credential, and **no manual database access or SQL is ever required** to create the first one. Open the Admin Portal (`/admin/`); since no administrator exists yet, it shows **Initial System Setup** instead of the normal login form.
+
+Retrieve the one-time setup token from the backend container's own console output:
+
+```bash
+docker compose logs backend | grep -A3 "initial setup token"
+```
+
+Enter that token together with a username and password for the first administrator, then complete the mandatory TOTP enrollment exactly like any other first-time `ADMIN` login (QR code, confirm, save the one-time recovery codes). Once that finishes, the installation is **permanently initialized** — the setup token and setup endpoints stop working immediately, and deleting every user later does not reopen them (see [ADR 0017](adr/0017-first-run-bootstrap.md) for why `COUNT(users) == 0` was deliberately rejected as the check). If the token is lost or expires before setup completes, restart the backend (`docker compose restart backend`) — a fresh token is generated and logged on every startup for as long as the system remains uninitialized.
+
+**Keep at least one local `ADMIN` account with a real password at all times** — see `docs/admin-guide.md`'s break-glass note. There is currently no separate account-recovery process if every local administrator is lost.
+
 ## TLS
 
 `docker-compose.prod.yml` is an overlay that switches the reverse proxy to `docker/nginx/nginx.tls.conf`: TLS termination on 443, HSTS, and a 301 redirect from plain 80. It expects a certificate at `./certs/fullchain.pem` and `./certs/privkey.pem` on the host (standard certbot/Let's Encrypt output layout — a certbot renewal hook can drop renewed files straight into `./certs/` with no config change here). nginx refuses to start without them, which is the correct fail-closed behavior for a reverse proxy whose entire job is terminating TLS.
@@ -71,6 +85,33 @@ Two named Docker volumes hold everything persistent (`docker-compose.yml`):
 
 Nothing about a browser session itself is persisted — no profile, cookies, history, or cache outlives the session (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md)); there is no volume for it because there is deliberately nothing to store.
 
+## Secret rotation
+
+Roadmap Phase A / A6. Every secret in `.env` can be rotated, but they are not all equally simple — one of them (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) encrypts data already at rest, and rotating it wrong locks every enrolled user out of MFA with no self-service recovery. Generate every new value with `openssl rand -hex 32`.
+
+**`POSTGRES_PASSWORD` / `OPENRBI_DATABASE_URL`** — change the role's actual password first, then the config, then restart:
+```bash
+docker compose exec postgres psql -U openrbi -c "ALTER USER openrbi WITH PASSWORD '<new-password>';"
+# Edit .env: POSTGRES_PASSWORD and the password embedded in OPENRBI_DATABASE_URL must both change to the same new value.
+docker compose up -d backend session-agent
+```
+This is the same in-place procedure ([docs/security-model.md](security-model.md#control-plane-container-hardening-phase-20)) used the one time this project's own dev deployment needed it — never wipe the data volume to "rotate" a password.
+
+**`OPENRBI_SESSION_AGENT_API_TOKEN` / `OPENRBI_AGENT_API_TOKEN`** — these two names hold the *same* shared secret (backend sends it, session-agent validates against it; see `docs/security-model.md`'s account of the real bug caused by them silently matching on the placeholder instead of a real value). Generate one new value, set both in `.env`, then restart both services together:
+```bash
+docker compose up -d backend session-agent
+```
+There is a brief window between the two containers restarting where they disagree — session lifecycle calls will fail with a clear auth error during it, not silently. Acceptable for a planned rotation; not zero-downtime.
+
+**`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`** — encrypts every enrolled user's TOTP secret at rest (`users.totp_secret_encrypted`, Fernet, `app/core/crypto.py`). Editing `.env` and restarting **without re-encrypting first** makes every existing secret permanently undecryptable — every enrolled admin/security-reviewer/user is locked out of MFA on their next login, with no self-service recovery (recovery codes are hashed and single-use, unrelated to this key). Use `scripts/rotate-totp-key.sh` instead:
+```bash
+./scripts/rotate-totp-key.sh <old-key> <new-key>            # dry run first — prints what would change
+./scripts/rotate-totp-key.sh <old-key> <new-key> --apply    # commits the re-encryption
+# Only then: update OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=<new-key> in .env
+docker compose up -d backend
+```
+Verified end-to-end against the live stack: enrolled a real TOTP secret, ran the rotation, restarted `backend` with the new key configured, and confirmed the app's own `decrypt_secret()` still recovered the original plaintext under the new key. Do the `.env` update and restart promptly after `--apply` succeeds — until then, the DB holds secrets encrypted under the new key while `backend` is still configured with the old one, and MFA verification fails for everyone in that window.
+
 ## Backup and restore
 
 ```bash
@@ -85,7 +126,23 @@ Produces a gzip'd `pg_dump` (built with `--clean --if-exists`, so restoring it i
 
 **Destructive** — overwrites the live database and quarantine storage. Asks for an explicit `yes` before doing anything. Stops `backend`/`session-agent` for the database restore (nothing should be querying mid-restore) and restarts them afterward. If the backup predates the current schema, run the [update procedure](#update-procedure)'s `alembic upgrade head` step afterward.
 
-Verified end-to-end against the live stack: a real backup taken, restored back over the running system, and the user/security-event counts confirmed unchanged afterward.
+**Restart `reverse-proxy` after a restore** — the same upstream-IP-caching issue [Troubleshooting](troubleshooting.md#reverse-proxy-returns-502-after-rebuilding-a-service) documents for rebuilds applies here too: `restore.sh` recreates `backend`/`session-agent`, so nginx is left holding their old IPs until it's restarted.
+```bash
+docker compose restart reverse-proxy
+```
+
+### Restore test protocol (Roadmap Phase A / A4)
+
+Run end to end against the live stack on 2026-08-12 (PostgreSQL 16.14, `docker-compose.yml`'s Compact profile):
+
+1. Captured baseline row counts: `SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM security_events), (SELECT count(*) FROM policies), (SELECT count(*) FROM quarantine_files);` → `4 | 92 | 0 | 1`.
+2. `./scripts/backup.sh` — produced a real `.sql.gz` + `.tar.gz` pair.
+3. `./scripts/restore.sh <the backup just taken>` — restored it back over the same running stack (a genuine full DROP/CREATE/COPY cycle, not a no-op skip; confirmed from the script's own `psql` output: `COPY 4` for `users`, `COPY 92` for `security_events`, matching step 1 exactly).
+4. Re-ran the same count query post-restore: `4 | 92 | 0 | 1` — unchanged.
+5. `reverse-proxy` needed the restart noted above (`502` until then) — a real, previously-undocumented interaction between this specific procedure and the existing upstream-IP-caching issue, not a new bug.
+6. Functional smoke test, not just row counts: `POST /auth/login` with a wrong password against the restored database returned the correct `{"detail":"invalid credentials"}` — the restored data is actually queryable by the running application, not just present in the table.
+
+This is the reproducible protocol referenced by the Phase A roadmap's A4 acceptance criterion; re-run it (with fresh counts and a fresh date) before treating an old result as still representative of the current schema.
 
 ## Update procedure
 

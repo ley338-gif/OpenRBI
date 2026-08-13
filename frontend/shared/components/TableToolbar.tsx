@@ -9,6 +9,7 @@ export function TableToolbar({
   search,
   onSearchChange,
   searchPlaceholder = "Search…",
+  searchListId,
   filters,
   onRefresh,
   actions,
@@ -16,6 +17,10 @@ export function TableToolbar({
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  /** Optional id of a <datalist> rendered by the caller, for autocomplete
+   * suggestions on the search box (e.g. Audit's known event types) —
+   * suggestions only, never validated against by this component. */
+  searchListId?: string;
   filters?: ReactNode;
   onRefresh?: () => void;
   actions?: ReactNode;
@@ -31,6 +36,7 @@ export function TableToolbar({
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
             aria-label="Search"
+            list={searchListId}
           />
         )}
         {filters}

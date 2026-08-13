@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Roadmap Phase A / A5: dependency & image scanning. Builds every image
+  # OpenRBI actually ships (backend, session-agent, frontend, the browser
+  # sandbox) and fails the build on a known CRITICAL vulnerability that
+  # isn't explicitly documented in .trivyignore (see that file for why
+  # each currently-listed CVE is there — every entry was individually
+  # verified to have no upstream fix yet, not silently suppressed).
+  image-scan:
+    name: Image vulnerability scan (Trivy)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: openrbi-backend
+            context: backend
+            dockerfile: backend/Dockerfile
+          - image: openrbi-session-agent
+            context: session-agent
+            dockerfile: session-agent/Dockerfile
+          - image: openrbi-frontend
+            # frontend/ itself, not the repo root: matches this branch's
+            # Dockerfile (COPY package.json ./ etc. assume that context).
+            # NOTE: the not-yet-merged feat/ui-polish branch moves this
+            # image's build context to the repo root (to COPY in docs/ for
+            # real Help-menu links) — whichever of these two branches
+            # merges second will need this value re-checked against
+            # frontend/Dockerfile's actual COPY paths at that point.
+            context: frontend
+            dockerfile: frontend/Dockerfile
+          - image: openrbi-browser
+            context: docker/browser
+            dockerfile: docker/browser/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.image }}
+        run: docker build -t ${{ matrix.image }}:ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
+
+      - name: Scan ${{ matrix.image }} for CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:ci
+          scanners: vuln
+          severity: CRITICAL
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+  # Node dependency scan for the frontend workspace. The final frontend
+  # image is a static nginx build — node_modules never ships in it, so
+  # the image-scan job above can't see npm-level vulnerabilities at all;
+  # this is the only place they're actually checked.
+  dependency-scan-frontend:
+    name: Frontend dependency scan (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - working-directory: frontend
+        run: npm install
+      - working-directory: frontend
+        run: npm audit --audit-level=critical
+
+  # Roadmap Phase A / A3: runs the existing backend/tests/ pytest suite
+  # (previously only ever run manually via scripts/run-integration-tests.sh)
+  # plus the new automated regression tests for the threat-model.md
+  # controls (network isolation, fail-closed on scanner outage, sandbox
+  # session isolation) that scripts/run-security-tests.sh could previously
+  # only check by hand on a host with Docker socket access.
+  backend-integration-tests:
+    name: Backend integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        # session-agent runs as uid 10001, group 0 — deliberately not full
+        # root (Phase 20 hardening) but still in group 0 specifically
+        # because a real deployment host's docker.sock is typically
+        # root:root or root:docker with group read-write (see
+        # session-agent/Dockerfile's own comment). GitHub-hosted runners
+        # instead put it in a real, separate "docker" group unrelated to
+        # GID 0, so that assumption doesn't hold here. This only loosens
+        # the *runner VM's* socket permissions for this ephemeral job, not
+        # anything about the image or its hardening.
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Build and start the stack
+        run: |
+          # Phase 20's fail-closed startup check rejects .env.example's
+          # literal placeholder secrets (docs/security-model.md), so a
+          # plain `cp .env.example .env` would never actually boot —
+          # generate real random values for every secret CI needs instead.
+          # DB_PASSWORD is substituted into both POSTGRES_PASSWORD and the
+          # embedded credential in OPENRBI_DATABASE_URL so they still match.
+          cp .env.example .env
+          DB_PASSWORD=$(openssl rand -hex 32)
+          sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${DB_PASSWORD}#" .env
+          sed -i "s#^OPENRBI_DATABASE_URL=.*#OPENRBI_DATABASE_URL=postgresql+asyncpg://openrbi:${DB_PASSWORD}@postgres:5432/openrbi#" .env
+          # OPENRBI_SESSION_AGENT_API_TOKEN (backend, the token it sends) and
+          # OPENRBI_AGENT_API_TOKEN (session-agent, what it validates
+          # incoming requests against) must be the *same* shared secret —
+          # see CHANGELOG's Hardening entry for the real bug this exact
+          # mismatch caused when both sides silently matched on the
+          # placeholder instead.
+          AGENT_TOKEN=$(openssl rand -hex 32)
+          sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          docker compose up -d --build
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            sleep 2
+          done
+      - name: Apply database migrations
+        # A fresh Postgres volume has no schema at all until this runs —
+        # docs/deployment.md's own install/update procedures always call
+        # this explicitly, it's never automatic on container start.
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Build browser sandbox image
+        # Must happen before the integration tests below: session-agent's
+        # DockerSandboxProvider needs this image to exist to create a real
+        # sandbox, and test_isolate_disconnect_kill_are_audited_and_kill_
+        # is_admin_only does exactly that.
+        run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
+      - name: Run integration tests
+        run: sh scripts/run-integration-tests.sh
+      - name: Apply network isolation rules
+        # GitHub-hosted ubuntu-latest runners run real Docker with a real
+        # DOCKER-USER iptables chain (not nested/rootless), same as the
+        # bare-metal/VM host this script targets in docs/deployment.md.
+        run: sudo sh scripts/setup-network-isolation.sh
+      - name: Run host-level security regression tests
+        run: sh scripts/run-security-tests.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200

@@ -4,6 +4,11 @@
 # inside a browser sandbox (see docs/adr/0004, 0005).
 FROM python:3.11-slim AS base
 
+# Pulls in whatever OS security patches Debian has actually released for
+# this base image since it was last pulled (A5) — some CVEs still show up
+# afterward with no upstream fix yet, tracked explicitly in .trivyignore.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY pyproject.toml ./

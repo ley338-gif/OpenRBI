@@ -59,17 +59,18 @@ async def _wait_for_display_ready(
     raise SessionAgentError(f"display never became ready: {last_error}")
 
 
-async def select_node(db: AsyncSession) -> BrowserNode:
+async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
     """Refreshes the (single, in MVP 1) BrowserNode row from the Session
-    Agent's live self-report and returns it if it has free capacity. This
-    is the abstract scheduling seam docs/architecture.md describes — trivial
-    today, but callers never assume a specific node, so real multi-node
-    selection can replace this body later without changing callers.
+    Agent's live self-report (status/capacity/active_sessions/runtime/
+    version/CPU/RAM — Roadmap B1.10.1) and returns it, without judging
+    whether it's usable for scheduling — that's select_node()'s job below.
+    Shared by select_node() (refreshed on every session creation) and
+    app/core/node_poller.py (refreshed on a fixed interval regardless of
+    session traffic, so telemetry doesn't go stale between creations).
+    Raises SessionAgentError, not NoCapacityError — callers that care about
+    scheduling wrap this; the poller doesn't.
     """
-    try:
-        status = await session_agent_client.get_node_status()
-    except SessionAgentError as exc:
-        raise NoCapacityError(f"session agent unavailable: {exc}") from exc
+    status = await session_agent_client.get_node_status()
 
     result = await db.execute(select(BrowserNode).where(BrowserNode.hostname == status.hostname))
     node = result.scalar_one_or_none()
@@ -77,18 +78,36 @@ async def select_node(db: AsyncSession) -> BrowserNode:
         node = BrowserNode(hostname=status.hostname)
         db.add(node)
 
-    # DRAINING is an admin-set scheduling gate (project brief §23), not
-    # something the Session Agent itself knows about or reports — it will
-    # always self-report ONLINE. Don't let this heartbeat refresh silently
-    # undo an admin's drain; only overwrite status when it isn't DRAINING.
-    if node.status != BrowserNodeStatus.DRAINING:
+    # DRAINING/MAINTENANCE are admin-set scheduling gates (project brief
+    # §23, extended by Roadmap B1.10.1), not something the Session Agent
+    # itself knows about or reports — it will always self-report ONLINE.
+    # Don't let this heartbeat refresh silently undo an admin's drain or
+    # maintenance hold; only overwrite status when it's neither.
+    if node.status not in (BrowserNodeStatus.DRAINING, BrowserNodeStatus.MAINTENANCE):
         node.status = BrowserNodeStatus(status.status)
     node.capacity = status.capacity
     node.active_sessions = status.active_sessions
     node.runtime = status.runtime
     node.version = status.version
+    node.cpu_percent = status.cpu_percent
+    node.ram_total_mb = status.ram_total_mb
+    node.ram_used_mb = status.ram_used_mb
+    node.node_started_at = status.node_started_at
     node.last_heartbeat = datetime.now(UTC)
     await db.flush()
+    return node
+
+
+async def select_node(db: AsyncSession) -> BrowserNode:
+    """The abstract scheduling seam docs/architecture.md describes —
+    trivial today, but callers never assume a specific node, so real
+    multi-node selection can replace this body later without changing
+    callers.
+    """
+    try:
+        node = await refresh_node_from_agent(db)
+    except SessionAgentError as exc:
+        raise NoCapacityError(f"session agent unavailable: {exc}") from exc
 
     if node.status != BrowserNodeStatus.ONLINE:
         raise NoCapacityError(f"node {node.hostname} is {node.status.value}, not accepting new sessions")
@@ -188,6 +207,52 @@ async def terminate_session(db: AsyncSession, session: BrowserSession, *, actor_
         metadata={"actor": str(actor_id)},
     )
     await db.flush()
+
+
+_LIVE_STATUSES = (
+    SessionStatus.QUEUED,
+    SessionStatus.STARTING,
+    SessionStatus.ACTIVE,
+    SessionStatus.DISCONNECTED,
+    SessionStatus.ISOLATING,
+    SessionStatus.ISOLATED,
+)
+
+
+async def revoke_user_sessions(db: AsyncSession, user: User, *, actor_id: uuid.UUID) -> list[BrowserSession]:
+    """Roadmap B1.10.4 — terminate every live session a user currently has,
+    as one admin action from the User Detail page. Reuses terminate_session()
+    per session (so each one still gets its own idempotent-terminate
+    behavior and its own SESSION_TERMINATED event), then records one
+    additional USER_SESSIONS_REVOKED event summarizing the batch — a
+    reviewer should be able to see both "this session ended" and "an admin
+    revoked this user's sessions" without inferring the latter from a run
+    of same-actor SESSION_TERMINATED events.
+
+    A session that fails to terminate (SessionServiceError, e.g. the
+    sandbox runtime is unreachable) is skipped, not fatal to the rest of
+    the batch — the caller gets back only the sessions that actually
+    terminated.
+    """
+    result = await db.execute(
+        select(BrowserSession).where(BrowserSession.user_id == user.id, BrowserSession.status.in_(_LIVE_STATUSES))
+    )
+    sessions = list(result.scalars())
+    terminated: list[BrowserSession] = []
+    for session in sessions:
+        try:
+            await terminate_session(db, session, actor_id=actor_id)
+        except SessionServiceError:
+            continue
+        terminated.append(session)
+
+    if terminated:
+        await record_security_event(
+            db, SecurityEventType.USER_SESSIONS_REVOKED, user_id=user.id,
+            metadata={"actor": str(actor_id), "session_count": len(terminated)},
+        )
+        await db.flush()
+    return terminated
 
 
 async def isolate_session(db: AsyncSession, session: BrowserSession, *, actor_id: uuid.UUID) -> None:

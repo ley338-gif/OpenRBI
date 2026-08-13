@@ -522,6 +522,132 @@ table.data-table tbody tr:hover {
   justify-content: center;
 }
 
+/* Roadmap B1.10.2 — LineChart (frontend/shared/components/LineChart.tsx) */
+.line-chart {
+  position: relative;
+  width: 100%;
+}
+
+.line-chart svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.chart-state-error {
+  color: var(--status-critical-fg);
+}
+
+.chart-gridline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-axis-label {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+}
+
+.chart-line {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-hover-line {
+  stroke: var(--color-text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-hover-dot {
+  fill: var(--color-accent);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.75rem;
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.chart-tooltip-value {
+  font-weight: 600;
+}
+
+.chart-tooltip-label {
+  color: var(--color-text-muted);
+}
+
+/* Roadmap B1.10.2 — worker load bars (Dashboard, Workers overview) */
+.load-bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.load-bar-track {
+  position: relative;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.load-bar-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: var(--color-accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.load-bar-fill.warn {
+  background: var(--status-warning-fg);
+}
+
+.load-bar-fill.critical {
+  background: var(--status-critical-fg);
+}
+
+.dashboard-warning-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+
+.dashboard-warning-row:last-child {
+  border-bottom: none;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

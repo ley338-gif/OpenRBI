@@ -18,7 +18,11 @@ class User(UUIDPKMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
     username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # NULL means this account is LDAP-only (Roadmap Phase B / B1.3, docs/
+    # adr/0015) — just-in-time-provisioned from a successful LDAP bind,
+    # with no local password ever stored. LocalAuthProvider explicitly
+    # rejects a NULL hash rather than attempting to verify against one.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     role_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("roles.id"), nullable=False

@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States";
 import { PageHeader } from "@shared/components/PageHeader";
 import { TableToolbar } from "@shared/components/TableToolbar";
 import { formatDateTime } from "@shared/format";
-import type { SecurityEventDto } from "@shared/api/types";
+import { SECURITY_EVENT_TYPES, type SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
 const PAGE_SIZE = 50;
@@ -11,23 +12,34 @@ const PAGE_SIZE = 50;
 /**
  * Structured event summary by default; raw metadata only behind an
  * explicit toggle (section 36) — never a JSON blob as the default view.
+ * Roadmap B1.10.7: added the user filter and a datalist of known event
+ * types (autocomplete only, not validated — the backend remains
+ * authoritative on what's a real filter value) plus clickable user/session
+ * links, reusing GET /admin/security-events' existing filters, never a
+ * second audit store.
  */
 export function Audit() {
   const [events, setEvents] = useState<SecurityEventDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [eventType, setEventType] = useState("");
+  const [userId, setUserId] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
   function load() {
     setError(null);
     adminApi
-      .listSecurityEvents({ event_type: eventType || undefined, limit: PAGE_SIZE, offset })
+      .listSecurityEvents({
+        event_type: eventType || undefined,
+        user_id: userId || undefined,
+        limit: PAGE_SIZE,
+        offset,
+      })
       .then(setEvents)
       .catch(() => setError("Could not load the audit trail. The backend may be unavailable."));
   }
 
-  useEffect(load, [offset, eventType]);
+  useEffect(load, [offset, eventType, userId]);
 
   if (error) {
     return (
@@ -51,8 +63,41 @@ export function Audit() {
           setEventType(v);
         }}
         searchPlaceholder="Filter by event type (e.g. SESSION_ISOLATED)…"
+        searchListId="security-event-types"
         onRefresh={load}
+        filters={
+          <input
+            placeholder="Filter by user ID"
+            value={userId}
+            onChange={(e) => {
+              setOffset(0);
+              setUserId(e.target.value);
+            }}
+            className="mono"
+            style={{ width: "260px" }}
+          />
+        }
+        actions={
+          (eventType || userId) && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setOffset(0);
+                setEventType("");
+                setUserId("");
+              }}
+            >
+              Clear filters
+            </button>
+          )
+        }
       />
+      <datalist id="security-event-types">
+        {SECURITY_EVENT_TYPES.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
 
       {events.length === 0 ? (
         <EmptyState title="No security events match">Try a different event-type filter.</EmptyState>
@@ -74,8 +119,12 @@ export function Audit() {
                   <tr>
                     <td>{formatDateTime(e.created_at)}</td>
                     <td>{e.event_type}</td>
-                    <td className="mono" style={{ fontSize: "0.8rem" }}>{e.user_id?.slice(0, 8) ?? "—"}</td>
-                    <td className="mono" style={{ fontSize: "0.8rem" }}>{e.session_id?.slice(0, 8) ?? "—"}</td>
+                    <td className="mono" style={{ fontSize: "0.8rem" }}>
+                      {e.user_id ? <Link to={`/users/${e.user_id}`}>{e.user_id.slice(0, 8)}</Link> : "—"}
+                    </td>
+                    <td className="mono" style={{ fontSize: "0.8rem" }}>
+                      {e.session_id ? <Link to={`/sessions/${e.session_id}`}>{e.session_id.slice(0, 8)}</Link> : "—"}
+                    </td>
                     <td>
                       <button
                         type="button"

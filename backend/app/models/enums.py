@@ -7,6 +7,13 @@ class RoleName(str, enum.Enum):
     ADMIN = "ADMIN"
 
 
+# Roles MFA is mandatory for (docs/security-model.md). Previously a private
+# constant duplicated in app/api/auth.py's own module scope; pulled out
+# here so Roadmap B1.10.6's Login Diagnostics can check the same rule
+# without importing a private name from another router module.
+MFA_MANDATORY_ROLES = (RoleName.ADMIN.value, RoleName.SECURITY_REVIEWER.value)
+
+
 class PolicyType(str, enum.Enum):
     NETWORK = "NETWORK"
     DOWNLOADS = "DOWNLOADS"
@@ -44,6 +51,13 @@ class BrowserNodeStatus(str, enum.Enum):
     DRAINING = "DRAINING"
     OFFLINE = "OFFLINE"
     DEGRADED = "DEGRADED"
+    # Roadmap B1.10.1 — admin-set, like DRAINING: unlike DRAINING (which
+    # still counts toward "the scheduler could use this node once it's
+    # done draining"), MAINTENANCE means "don't consider this node at all,
+    # an admin took it out of service on purpose." See
+    # app/services/worker_health.py for the full Healthy/Degraded/
+    # Draining/Maintenance/Offline definitions this feeds into.
+    MAINTENANCE = "MAINTENANCE"
 
 
 class SessionStatus(str, enum.Enum):
@@ -127,3 +141,53 @@ class SecurityEventType(str, enum.Enum):
     GROUP_DELETED = "GROUP_DELETED"
     UPLOAD_REQUESTED = "UPLOAD_REQUESTED"
     UPLOAD_BLOCKED = "UPLOAD_BLOCKED"
+
+    # Roadmap Phase B / B1.3 — a just-in-time-provisioned LDAP account is a
+    # real account-creation event, distinct from an admin-issued
+    # USER_CREATED (see backend/migrations/versions/b3d8f1a29c47_*).
+    USER_PROVISIONED_VIA_LDAP = "USER_PROVISIONED_VIA_LDAP"
+
+    # Roadmap Phase B / B1.8 — LDAP is now configurable through the admin
+    # portal instead of only .env; these mirror POLICY_CHANGED/PUBLISHED's
+    # separation of "content changed" from "the thing actually took
+    # effect" for the same reason (a reviewer needs to see both, not infer
+    # one from the other).
+    LDAP_CONFIG_CHANGED = "LDAP_CONFIG_CHANGED"
+    LDAP_ENABLED = "LDAP_ENABLED"
+    LDAP_DISABLED = "LDAP_DISABLED"
+    LDAP_CONNECTION_TESTED = "LDAP_CONNECTION_TESTED"
+
+    # Roadmap Phase B / B1.9 — first-run bootstrap of the initial local
+    # administrator. INITIAL_ADMIN_CREATED fires when the bootstrap admin
+    # row is created (password set, MFA not yet enrolled); SYSTEM_INITIALIZED
+    # fires once, when the mandatory MFA enrollment for that same account
+    # completes and the installation becomes permanently closed to further
+    # bootstrap attempts — mirrors POLICY_CHANGED vs. POLICY_PUBLISHED's
+    # "content changed" vs. "the thing actually took effect" split.
+    INITIAL_ADMIN_CREATED = "INITIAL_ADMIN_CREATED"
+    SYSTEM_INITIALIZED = "SYSTEM_INITIALIZED"
+
+    # Roadmap Phase B / B1.10 — worker/session operations. WORKER_DRAINED
+    # was NODE_DRAINED before this (kept, still a valid historical value —
+    # Postgres enums can't drop values); WORKER_DRAIN_DISABLED is the
+    # previously-missing complement (undrain_node() never audited before).
+    WORKER_DRAIN_ENABLED = "WORKER_DRAIN_ENABLED"
+    WORKER_DRAIN_DISABLED = "WORKER_DRAIN_DISABLED"
+    WORKER_MAINTENANCE_ENABLED = "WORKER_MAINTENANCE_ENABLED"
+    WORKER_MAINTENANCE_DISABLED = "WORKER_MAINTENANCE_DISABLED"
+
+    # Roadmap Phase B / B1.10.4 — bulk termination of every live session a
+    # user has, from the User Detail page. Distinct from SESSION_TERMINATED
+    # (still emitted once per session terminated this way, same as a single
+    # Kill) so a reviewer can see both "this session ended" and "an admin
+    # revoked this user's sessions as one action" without inferring one
+    # from a run of several SESSION_TERMINATED events with the same actor.
+    USER_SESSIONS_REVOKED = "USER_SESSIONS_REVOKED"
+
+    # Roadmap Phase B / B1.10.5 — Account Lock/Unlock: an admin-triggered
+    # equivalent of the automatic brute-force login lockout (same Redis
+    # mechanism and window, see app/core/sessions.py's force_login_lock()),
+    # not a second, DB-persisted "disabled" concept — that's USER_DISABLED,
+    # unchanged and distinct.
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    ACCOUNT_UNLOCKED = "ACCOUNT_UNLOCKED"

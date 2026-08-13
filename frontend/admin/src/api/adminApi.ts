@@ -13,10 +13,24 @@ function queryString(params: Record<string, string | number | undefined>): strin
 import type {
   AdminSessionDto,
   BrowserNodeDto,
+  DashboardRange,
+  DashboardResponseDto,
   EnrollResponse,
+  FirstRunAdminRequest,
+  FirstRunAdminResponse,
+  FirstRunMfaConfirmResponse,
+  FirstRunStatusResponse,
   GroupSummaryDto,
   IncidentDto,
+  LdapConfigDto,
+  LdapConfigUpdateRequest,
+  LdapTestRequest,
+  LdapTestResponseDto,
+  LockoutStatusDto,
+  LoginDiagnosticsResponseDto,
+  NodeHistoryPointDto,
   PolicyDetailDto,
+  RevokeSessionsResponseDto,
   PolicySummaryDto,
   QuarantineFileDto,
   Role,
@@ -47,6 +61,10 @@ export const adminApi = {
   updateGroups: (id: string, groupIds: string[]) =>
     api.put<UserSummaryDto>(`/admin/users/${id}/groups`, { group_ids: groupIds }),
   userSessions: (id: string) => api.get<AdminSessionDto[]>(`/admin/users/${id}/sessions`),
+  revokeUserSessions: (id: string) => api.post<RevokeSessionsResponseDto>(`/admin/users/${id}/sessions/revoke`),
+  getLockoutStatus: (id: string) => api.get<LockoutStatusDto>(`/admin/users/${id}/lockout`),
+  lockAccount: (id: string) => api.post<LockoutStatusDto>(`/admin/users/${id}/lock`),
+  unlockAccount: (id: string) => api.post<LockoutStatusDto>(`/admin/users/${id}/unlock`),
 
   // Groups
   listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),
@@ -104,10 +122,31 @@ export const adminApi = {
   // Health
   getHealth: () => api.get<SystemHealthDto>("/admin/health"),
 
-  // Nodes
+  // Nodes (Workers)
   listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
+  getNode: (id: string) => api.get<BrowserNodeDto>(`/admin/nodes/${id}`),
+  getNodeMetrics: (id: string, range: DashboardRange) =>
+    api.get<NodeHistoryPointDto[]>(`/admin/nodes/${id}/metrics?range=${range}`),
   drainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/drain`),
   undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
+  maintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/maintenance`),
+  unmaintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/unmaintenance`),
+
+  // Operations dashboard (app/api/admin_dashboard.py — B1.10.2)
+  getDashboard: (range: DashboardRange) => api.get<DashboardResponseDto>(`/admin/dashboard?range=${range}`),
+
+  // LDAP configuration (app/api/admin_ldap.py — B1.8)
+  getLdapConfig: () => api.get<LdapConfigDto>("/admin/ldap/config"),
+  updateLdapConfig: (payload: LdapConfigUpdateRequest) => api.put<LdapConfigDto>("/admin/ldap/config", payload),
+  testLdapConfig: (payload: LdapTestRequest) => api.post<LdapTestResponseDto>("/admin/ldap/test", payload),
+
+  // First-run bootstrap (app/api/setup.py — B1.9). Deliberately
+  // unauthenticated on the backend side; this client sends no cookie logic
+  // of its own beyond the ApiClient's default credentials:"include".
+  firstRunStatus: () => api.get<FirstRunStatusResponse>("/setup/status"),
+  firstRunCreateAdmin: (payload: FirstRunAdminRequest) => api.post<FirstRunAdminResponse>("/setup/admin", payload),
+  firstRunMfaConfirm: (mfaToken: string, code: string) =>
+    api.post<FirstRunMfaConfirmResponse>("/setup/mfa/confirm", { mfa_token: mfaToken, code }),
 
   // Shared MFA (app/api/mfa.py — registered in every listener mode)
   mfaSetupEnroll: (mfaToken: string) => api.post<EnrollResponse>("/mfa/setup/enroll", { mfa_token: mfaToken }),
@@ -116,6 +155,10 @@ export const adminApi = {
   mfaVerify: (mfaToken: string, code: string) => api.post("/auth/mfa/verify", { mfa_token: mfaToken, code }),
   // Admin-only MFA (app/api/admin_mfa.py)
   resetUserMfa: (userId: string) => api.post<{ status: string }>(`/mfa/admin/users/${userId}/reset`),
+
+  // Login Diagnostics (app/api/admin_login_diagnostics.py — B1.10.6)
+  loginDiagnostics: (username: string) =>
+    api.get<LoginDiagnosticsResponseDto>(`/admin/login-diagnostics?username=${encodeURIComponent(username)}`),
 };
 
 export type { SessionStatus };

@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@shared/auth/AuthContext";
 import { LoginFlow } from "@shared/auth/LoginFlow";
+import { SetupFlow } from "@shared/auth/SetupFlow";
 import { ToastProvider } from "@shared/components/Toast";
 import { LoadingBlock } from "@shared/components/States";
 import { api } from "./api/client";
@@ -21,11 +23,44 @@ import { Incidents } from "./pages/Incidents";
 import { IncidentDetail } from "./pages/IncidentDetail";
 import { Audit } from "./pages/Audit";
 import { System } from "./pages/System";
+import { Workers } from "./pages/Workers";
+import { WorkerDetail } from "./pages/WorkerDetail";
+import { LoginDiagnostics } from "./pages/LoginDiagnostics";
+import { LdapSettings } from "./pages/LdapSettings";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingBlock label="Checking your session…" />;
   if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+/**
+ * Roadmap B1.9 — shown instead of the entire app (any route, not just
+ * /login) whenever the backend reports setup_required. The server, not
+ * this check, is what actually closes the setup endpoints once
+ * initialized (409 on every one of them, app/api/setup.py) — this is
+ * routing/UX only. Skipped entirely once a real session exists (`user`
+ * truthy): a logged-in admin never needs to see it, and it's also how
+ * SetupFlow's own "I've saved these, continue" step (which calls
+ * refresh(), setting `user`) naturally transitions the app back to the
+ * normal routes without this component needing to re-poll anything.
+ */
+function SetupGate({ children }: { children: React.ReactNode }) {
+  const { user, loading: authLoading } = useAuth();
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (user) return;
+    adminApi
+      .firstRunStatus()
+      .then((r) => setSetupRequired(r.setup_required))
+      .catch(() => setSetupRequired(false));
+  }, [user]);
+
+  if (user) return <>{children}</>;
+  if (authLoading || setupRequired === null) return <LoadingBlock />;
+  if (setupRequired) return <SetupFlow setupApi={adminApi} portalLabel="ADMIN PORTAL" />;
   return <>{children}</>;
 }
 
@@ -67,7 +102,11 @@ function Routed() {
         <Route path="incidents" element={<Incidents />} />
         <Route path="incidents/:id" element={<IncidentDetail />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="workers" element={<Workers />} />
+        <Route path="workers/:id" element={<WorkerDetail />} />
+        <Route path="login-diagnostics" element={<LoginDiagnostics />} />
         <Route path="system" element={<System />} />
+        <Route path="settings/ldap" element={<LdapSettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
@@ -79,7 +118,9 @@ export default function App() {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AuthProvider api={api}>
         <ToastProvider>
-          <Routed />
+          <SetupGate>
+            <Routed />
+          </SetupGate>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

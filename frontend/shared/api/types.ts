@@ -32,6 +32,30 @@ export interface SetupConfirmResponse {
   recovery_codes: string[];
 }
 
+// Roadmap B1.9 — first-run bootstrap (backend/app/api/schemas/setup.py).
+// Deliberately a different name/shape from SetupConfirmResponse above,
+// which is the *mandatory-MFA-enrollment* response every ADMIN's first
+// login can hit — these two are unrelated flows that happen to share the
+// word "setup".
+export interface FirstRunStatusResponse {
+  setup_required: boolean;
+}
+
+export interface FirstRunAdminRequest {
+  setup_token: string;
+  username: string;
+  password: string;
+}
+
+export interface FirstRunAdminResponse {
+  mfa_token: string;
+}
+
+export interface FirstRunMfaConfirmResponse {
+  status: string;
+  recovery_codes: string[];
+}
+
 export type SessionStatus =
   | "QUEUED"
   | "STARTING"
@@ -61,6 +85,39 @@ export interface SessionResponseDto {
 export interface AdminSessionDto extends SessionResponseDto {
   user_id: string;
   username: string;
+}
+
+// Roadmap B1.10.4 — bulk session revocation from the User Detail page
+export interface RevokeSessionsResponseDto {
+  terminated_count: number;
+  session_ids: string[];
+}
+
+// Roadmap B1.10.5 — Account Lock/Unlock, the same brute-force-lockout
+// state /auth/login itself checks (backend/app/api/schemas/admin.py's LockoutStatus)
+export interface LockoutStatusDto {
+  locked: boolean;
+  failure_count: number;
+  locked_seconds_remaining: number | null;
+}
+
+// Roadmap B1.10.6 — Login Diagnostics
+export interface RecentFailedAttemptDto {
+  event_type: string;
+  created_at: string;
+}
+
+export interface LoginDiagnosticsResponseDto {
+  username: string;
+  user_id: string | null;
+  account_exists: boolean;
+  is_active: boolean | null;
+  mfa_enabled: boolean | null;
+  auth_source: string | null;
+  ldap_enabled: boolean;
+  lockout: LockoutStatusDto;
+  recent_failed_attempts: RecentFailedAttemptDto[];
+  possible_reasons: string[];
 }
 
 export type QuarantineStatus = "PENDING_SCAN" | "SCANNING" | "QUARANTINED" | "RELEASED" | "REJECTED" | "DELETED";
@@ -176,6 +233,60 @@ export interface SecurityEventDto {
   created_at: string;
 }
 
+// Every value of backend/app/models/enums.py's SecurityEventType, kept in
+// sync by hand like this project's other backend-enum mirrors (e.g.
+// Sessions.tsx's own STATUSES constant) — used only to populate the Audit
+// page's event-type filter suggestions, not to validate/reject anything;
+// the backend remains authoritative on what's a real event type.
+export const SECURITY_EVENT_TYPES = [
+  "USER_CREATED",
+  "USER_DISABLED",
+  "USER_ENABLED",
+  "USER_LOGIN",
+  "USER_LOGIN_FAILED",
+  "LOGIN_LOCKED",
+  "MFA_ENROLLED",
+  "MFA_FAILED",
+  "MFA_RESET",
+  "RECOVERY_CODE_USED",
+  "SESSION_STARTED",
+  "SESSION_DISCONNECTED",
+  "SESSION_ISOLATED",
+  "SESSION_RESTORED",
+  "SESSION_TERMINATED",
+  "NETWORK_ACCESS_BLOCKED",
+  "DOWNLOAD_REQUESTED",
+  "DOWNLOAD_BLOCKED",
+  "FILE_QUARANTINED",
+  "FILE_RELEASED",
+  "FILE_REJECTED",
+  "MALWARE_DETECTED",
+  "POLICY_CHANGED",
+  "POLICY_PUBLISHED",
+  "NODE_DRAINED", // superseded by WORKER_DRAIN_ENABLED (B1.10.1) but kept for filtering older rows
+  "USER_ROLE_CHANGED",
+  "USER_GROUPS_CHANGED",
+  "PASSWORD_RESET_BY_ADMIN",
+  "GROUP_CREATED",
+  "GROUP_DELETED",
+  "UPLOAD_REQUESTED",
+  "UPLOAD_BLOCKED",
+  "USER_PROVISIONED_VIA_LDAP",
+  "LDAP_CONFIG_CHANGED",
+  "LDAP_ENABLED",
+  "LDAP_DISABLED",
+  "LDAP_CONNECTION_TESTED",
+  "INITIAL_ADMIN_CREATED",
+  "SYSTEM_INITIALIZED",
+  "WORKER_DRAIN_ENABLED",
+  "WORKER_DRAIN_DISABLED",
+  "WORKER_MAINTENANCE_ENABLED",
+  "WORKER_MAINTENANCE_DISABLED",
+  "USER_SESSIONS_REVOKED",
+  "ACCOUNT_LOCKED",
+  "ACCOUNT_UNLOCKED",
+] as const;
+
 export type ComponentStatus = "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
 
 export interface ComponentHealthDto {
@@ -189,15 +300,129 @@ export interface SystemHealthDto {
   components: ComponentHealthDto[];
 }
 
-export type BrowserNodeStatus = "ONLINE" | "DRAINING" | "OFFLINE" | "DEGRADED";
+export type BrowserNodeStatus = "ONLINE" | "DRAINING" | "OFFLINE" | "DEGRADED" | "MAINTENANCE";
 
 export interface BrowserNodeDto {
   id: string;
   hostname: string;
   status: BrowserNodeStatus;
+  // Roadmap B1.10.1 — the centrally-computed label; read this for display,
+  // not `status` (the raw scheduling flag).
+  health: WorkerHealthLabel;
   capacity: number;
   active_sessions: number;
   runtime: string;
   version: string | null;
   last_heartbeat: string | null;
+  cpu_percent: number | null;
+  ram_total_mb: number | null;
+  ram_used_mb: number | null;
+  uptime_seconds: number | null;
+}
+
+// Roadmap B1.10.3 — per-worker bucketed metric history (Worker Detail view)
+export interface NodeHistoryPointDto {
+  t: string;
+  cpu_percent: number | null;
+  ram_percent: number | null;
+  active_sessions: number;
+}
+
+// Roadmap B1.8 — admin-portal-managed LDAP configuration
+// (backend/app/api/schemas/admin_ldap.py). LdapConfigDto never carries the
+// bind password, structurally — only bind_password_configured — matching
+// the backend response shape exactly.
+export interface LdapConfigDto {
+  enabled: boolean;
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  bind_password_configured: boolean;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  group_role_mapping: Record<string, string>;
+  updated_by: string | null;
+}
+
+export interface LdapConfigUpdateRequest {
+  enabled: boolean;
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  // Omit entirely to keep the existing stored secret.
+  bind_password?: string;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  group_role_mapping: Record<string, string>;
+}
+
+export interface LdapTestRequest {
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  bind_password: string;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  test_username?: string | null;
+}
+
+export interface LdapTestStepDto {
+  name: string;
+  ok: boolean;
+  detail: string | null;
+}
+
+export interface LdapTestResponseDto {
+  success: boolean;
+  steps: LdapTestStepDto[];
+  groups_discovered: number | null;
+}
+
+// Roadmap B1.10.2 — Operations Dashboard (backend/app/api/schemas/dashboard.py)
+export type DashboardRange = "1h" | "6h" | "24h" | "7d";
+
+export interface DashboardKpisDto {
+  active_sessions: number;
+  active_sessions_delta_last_hour: number | null;
+  workers_healthy: number;
+  workers_total: number;
+  system_health: string;
+  avg_cpu_percent: number | null;
+  avg_ram_percent: number | null;
+}
+
+export interface SessionHistoryPointDto {
+  t: string;
+  count: number;
+}
+
+export type WorkerHealthLabel = "HEALTHY" | "DEGRADED" | "DRAINING" | "MAINTENANCE" | "OFFLINE";
+
+export interface WorkerSummaryDto {
+  id: string;
+  hostname: string;
+  health: WorkerHealthLabel;
+  cpu_percent: number | null;
+  ram_percent: number | null;
+  active_sessions: number;
+  capacity: number;
+}
+
+export interface DashboardWarningDto {
+  kind: string;
+  message: string;
+  worker_hostname: string | null;
+  username: string | null;
+}
+
+export interface DashboardResponseDto {
+  generated_at: string;
+  telemetry_stale: boolean;
+  kpis: DashboardKpisDto;
+  session_history: SessionHistoryPointDto[];
+  workers: WorkerSummaryDto[];
+  warnings: DashboardWarningDto[];
 }

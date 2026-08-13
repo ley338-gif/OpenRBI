@@ -12,6 +12,7 @@ const CRITICAL = new Set([
   "CRITICAL",
   "REJECTED",
   "OFFLINE",
+  "LOCKED",
 ]);
 const WARNING = new Set([
   "DEGRADED",
@@ -22,6 +23,7 @@ const WARNING = new Set([
   "HIGH",
   "MEDIUM",
   "DRAINING",
+  "MAINTENANCE",
   "INVESTIGATING",
 ]);
 const INFO = new Set(["QUEUED", "STARTING", "NEW", "PENDING", "DRAFT"]);

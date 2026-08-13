@@ -9,13 +9,16 @@ import { DefinitionList } from "@shared/components/DefinitionList";
 import { ActionMenu } from "@shared/components/ActionMenu";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
-import type { AdminSessionDto, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
+import type { AdminSessionDto, LockoutStatusDto, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
 type PendingAction =
   | { kind: "disable" }
   | { kind: "enable" }
   | { kind: "reset-mfa" }
+  | { kind: "revoke-sessions" }
+  | { kind: "lock" }
+  | { kind: "unlock" }
   | { kind: "session"; action: "disconnect" | "isolate" | "restore" | "kill"; sessionId: string };
 
 export function UserDetail() {
@@ -24,6 +27,7 @@ export function UserDetail() {
   const [user, setUser] = useState<UserSummaryDto | null>(null);
   const [sessions, setSessions] = useState<AdminSessionDto[] | null>(null);
   const [events, setEvents] = useState<SecurityEventDto[]>([]);
+  const [lockout, setLockout] = useState<LockoutStatusDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,11 +36,17 @@ export function UserDetail() {
 
   function load() {
     if (!id) return;
-    Promise.all([adminApi.getUser(id), adminApi.userSessions(id), adminApi.listSecurityEvents({ user_id: id, limit: 15 })])
-      .then(([u, s, e]) => {
+    Promise.all([
+      adminApi.getUser(id),
+      adminApi.userSessions(id),
+      adminApi.listSecurityEvents({ user_id: id, limit: 15 }),
+      adminApi.getLockoutStatus(id),
+    ])
+      .then(([u, s, e, l]) => {
         setUser(u);
         setSessions(s);
         setEvents(e);
+        setLockout(l);
       })
       .catch(() => setError("Could not load this user. They may not exist, or the backend is unavailable."));
   }
@@ -56,6 +66,18 @@ export function UserDetail() {
       } else if (pending.kind === "reset-mfa") {
         await adminApi.resetUserMfa(id);
         notify("MFA reset — the user will be asked to re-enroll on next login");
+        load();
+      } else if (pending.kind === "revoke-sessions") {
+        const result = await adminApi.revokeUserSessions(id);
+        notify(result.terminated_count === 0 ? "No live sessions to terminate" : `Terminated ${result.terminated_count} session(s)`);
+        load();
+      } else if (pending.kind === "lock") {
+        await adminApi.lockAccount(id);
+        notify("Account locked — logins are blocked and any active session was revoked");
+        load();
+      } else if (pending.kind === "unlock") {
+        await adminApi.unlockAccount(id);
+        notify("Account unlocked");
         load();
       } else {
         const call = {
@@ -93,7 +115,7 @@ export function UserDetail() {
   }
 
   if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
-  if (!user || !sessions) return <LoadingBlock label="Loading user…" />;
+  if (!user || !sessions || !lockout) return <LoadingBlock label="Loading user…" />;
 
   return (
     <div className="page">
@@ -120,6 +142,15 @@ export function UserDetail() {
                 Reset MFA
               </button>
             )}
+            {lockout.locked ? (
+              <button type="button" className="btn btn-secondary" onClick={() => setPending({ kind: "unlock" })}>
+                Unlock account
+              </button>
+            ) : (
+              <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "lock" })}>
+                Lock account
+              </button>
+            )}
           </>
         }
       />
@@ -133,6 +164,19 @@ export function UserDetail() {
             { label: "Role", value: user.role },
             { label: "Groups", value: user.groups.join(", ") || "—" },
             { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
+            {
+              label: "Login lockout",
+              value: (
+                <>
+                  <StatusBadge value={lockout.locked ? "LOCKED" : "NOT LOCKED"} />
+                  {lockout.locked && lockout.locked_seconds_remaining !== null && (
+                    <span className="text-muted" style={{ marginLeft: "6px", fontSize: "0.85rem" }}>
+                      clears in {Math.ceil(lockout.locked_seconds_remaining / 60)} min
+                    </span>
+                  )}
+                </>
+              ),
+            },
             { label: "Created", value: formatDateTime(user.created_at) },
           ]}
         />
@@ -157,6 +201,11 @@ export function UserDetail() {
       <div className="card">
         <div className="section-header">
           <h2>Sessions</h2>
+          {sessions.some((s) => s.status !== "TERMINATED" && s.status !== "FAILED") && (
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => setPending({ kind: "revoke-sessions" })}>
+              Terminate all sessions
+            </button>
+          )}
         </div>
         {sessions.length === 0 ? (
           <EmptyState title="No sessions">This user has never started a Secure Browser session.</EmptyState>
@@ -247,6 +296,38 @@ export function UserDetail() {
           title={`Reset MFA for ${user.username}?`}
           description="This disables their current TOTP enrollment and invalidates all their recovery codes. They will be required to re-enroll on their next login."
           confirmLabel="Reset MFA"
+          danger
+          busy={busy}
+          onConfirm={() => void confirmPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
+      {pending?.kind === "lock" && (
+        <ConfirmDialog
+          title={`Lock ${user.username}'s account?`}
+          description="Immediately blocks new logins for 15 minutes (the same lockout the system applies automatically after repeated failed attempts) and revokes any session they currently have."
+          confirmLabel="Lock account"
+          danger
+          busy={busy}
+          onConfirm={() => void confirmPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
+      {pending?.kind === "unlock" && (
+        <ConfirmDialog
+          title={`Unlock ${user.username}'s account?`}
+          description="Allows the user to log in again immediately, instead of waiting for the lockout to clear on its own."
+          confirmLabel="Unlock account"
+          busy={busy}
+          onConfirm={() => void confirmPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
+      {pending?.kind === "revoke-sessions" && (
+        <ConfirmDialog
+          title={`Terminate all sessions for ${user.username}?`}
+          description="Immediately terminates every live browser sandbox this user currently has. Unsaved browser state in each will be lost. This cannot be undone."
+          confirmLabel="Terminate all"
           danger
           busy={busy}
           onConfirm={() => void confirmPending()}

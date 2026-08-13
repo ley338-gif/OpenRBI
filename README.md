@@ -30,7 +30,7 @@ cp .env.example .env   # fill in secrets before first run
 docker compose up -d --build
 ```
 
-Then open the **User Portal** at `http://localhost:8080/` and the **Admin Portal** at `http://localhost:8080/admin/`. Both are real, API-backed UIs — see [docs/user-guide.md](docs/user-guide.md) and [docs/admin-guide.md](docs/admin-guide.md). Admin/Security Reviewer accounts are walked through mandatory TOTP enrollment on first login.
+Then open the **Admin Portal** at `http://localhost:8080/admin/` — a fresh install has no accounts yet, so it shows **Initial System Setup** instead of a login form. Retrieve the one-time setup token with `docker compose logs backend | grep -A3 "initial setup token"`, create the first administrator, and complete TOTP enrollment; no manual database access is ever required (see [docs/deployment.md#first-run-setup-roadmap-b19](docs/deployment.md#first-run-setup-roadmap-b19)). After that, the **User Portal** is at `http://localhost:8080/`. Both are real, API-backed UIs — see [docs/user-guide.md](docs/user-guide.md) and [docs/admin-guide.md](docs/admin-guide.md). Admin/Security Reviewer accounts are walked through mandatory TOTP enrollment on first login.
 
 ## Architecture overview
 
@@ -44,6 +44,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 - [docs/security-model.md](docs/security-model.md) — sandbox model, network isolation, fail-closed rules, MFA, secrets, audit
 - [docs/threat-model.md](docs/threat-model.md) — assets, trust boundaries, attacker models, explicit non-goals
+- [docs/security-self-assessment.md](docs/security-self-assessment.md) — a structured first-party check of every claimed control against the actual code, with file/line evidence and open gaps stated explicitly. **Not** a substitute for the independent external review still pending before any production use.
 - [SECURITY.md](SECURITY.md) — supported versions and how to report a vulnerability
 
 **OpenRBI never claims a file is "safe."** Status wording is deliberately limited to things it can actually verify: *No threat detected*, *Scan completed*, *Policy allowed*, *Quarantined*.
@@ -55,6 +56,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/architecture.md](docs/architecture.md) | Components, data flows, trust boundaries, provider architecture |
 | [docs/threat-model.md](docs/threat-model.md) | Threat model and non-goals |
 | [docs/security-model.md](docs/security-model.md) | Sandbox, network, file-transfer, MFA, secrets, audit rules |
+| [docs/security-self-assessment.md](docs/security-self-assessment.md) | Every claimed control checked against the actual code, with evidence and open gaps |
 | [docs/policies.md](docs/policies.md) | Roles vs. groups, policy model, MIME/source matching |
 | [docs/session-lifecycle.md](docs/session-lifecycle.md) | Session states and transitions |
 | [docs/quarantine.md](docs/quarantine.md) | Download pipeline, scanning, quarantine, release/reject |
@@ -68,8 +70,10 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 ## Scope
 
-MVP 1 deliberately excludes LDAP/AD/Entra ID/OIDC/SAML/WebAuthn, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+MVP 1 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+
+LDAP/LDAPS authentication against an existing Active Directory (Roadmap Phase B / B1) is implemented as an equal, parallel option alongside local login, fully configurable through the Admin Portal — no `.env` editing or backend restart needed (Roadmap B1.8, [ADR 0016](docs/adr/0016-ldap-admin-configuration.md)) — see [docs/admin-guide.md](docs/admin-guide.md#ldapldaps-authentication-roadmap-phase-b--b1) for configuration and [ADR 0015](docs/adr/0015-auth-provider-abstraction.md) for the underlying design.
 
 ## License
 
-TBD.
+[GNU AGPLv3](LICENSE). Chosen to keep this an open-core project — if you run a modified version of OpenRBI as a network service (including a hosted/managed offering), the AGPL's core obligation is that your users get access to your modified source, closing the loophole plain GPL leaves for SaaS-style use without ever distributing the binary.

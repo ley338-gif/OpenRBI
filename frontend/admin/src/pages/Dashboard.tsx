@@ -1,20 +1,37 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { StatCard } from "@shared/components/StatCard";
 import { PageHeader } from "@shared/components/PageHeader";
-import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
+import { ErrorState, EmptyState } from "@shared/components/States";
 import { Icons } from "@shared/components/Icons";
+import { LineChart, type LineChartPoint } from "@shared/components/LineChart";
 import { formatDateTime } from "@shared/format";
-import type { AdminSessionDto, IncidentDto, QuarantineFileDto, SecurityEventDto, SystemHealthDto } from "@shared/api/types";
+import type { DashboardRange, DashboardResponseDto, SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
-interface DashboardData {
-  sessions: AdminSessionDto[];
-  incidents: IncidentDto[];
-  quarantine: QuarantineFileDto[];
-  health: SystemHealthDto;
-  recentEvents: SecurityEventDto[];
+const RANGES: { key: DashboardRange; label: string }[] = [
+  { key: "1h", label: "1h" },
+  { key: "6h", label: "6h" },
+  { key: "24h", label: "24h" },
+  { key: "7d", label: "7d" },
+];
+
+const POLL_INTERVAL_MS = 15_000;
+
+function loadBarClass(percent: number | null): string {
+  if (percent === null) return "load-bar-fill";
+  if (percent >= 90) return "load-bar-fill critical";
+  if (percent >= 75) return "load-bar-fill warn";
+  return "load-bar-fill";
+}
+
+function formatXForRange(range: DashboardRange) {
+  return (iso: string) => {
+    const d = new Date(iso);
+    if (range === "7d") return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  };
 }
 
 const CRITICAL_EVENTS = new Set(["MALWARE_DETECTED", "SESSION_ISOLATED", "LOGIN_LOCKED"]);
@@ -27,119 +44,185 @@ function eventSeverityClass(eventType: string): string {
 }
 
 /**
- * Every number here comes from a real list/health endpoint, aggregated
- * client-side (section 3/21) — there is no dedicated dashboard-stats
- * endpoint in the backend today. That's a real, documented gap (see
- * docs/architecture.md#user-portal--admin-portal), not hidden behind a
- * fake chart: if the operator has thousands of sessions/incidents, this
- * page will get slower before the backend gets a summary endpoint.
+ * Roadmap B1.10.2 — real operations dashboard backed by GET /admin/dashboard
+ * (backend/app/api/admin_dashboard.py). Every number here is computed
+ * server-side from real session/worker/audit data — this component only
+ * renders what the endpoint returns, it never fabricates a KPI or a chart
+ * point. Uses moderate polling (task's own "robustes Polling ist für MVP
+ * vollkommen akzeptabel" guidance) rather than WebSocket/SSE, with a visible
+ * "Last updated" clock and a "Telemetry delayed" indicator driven by the
+ * response's own `telemetry_stale` field, so stale data is never shown as
+ * fresh.
+ *
+ * The UI-polish pass's original "Needs attention" panel was built from a
+ * separate client-side aggregation of incidents/isolated-sessions/
+ * quarantine (see git history) that predates this real endpoint — kept
+ * here as visual language (icon + list rows, EmptyState when calm) but now
+ * fed from the dashboard's own real `warnings` array instead of a second,
+ * parallel aggregation, so there's exactly one definition of "needs
+ * attention" for this page, not two that could disagree.
  */
 export function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [range, setRange] = useState<DashboardRange>("24h");
+  const [data, setData] = useState<DashboardResponseDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [recentEvents, setRecentEvents] = useState<SecurityEventDto[] | null>(null);
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
 
-  function load() {
-    setError(null);
-    Promise.all([
-      adminApi.listSessions(),
-      adminApi.listIncidents({ status_filter: undefined }),
-      adminApi.listQuarantine("QUARANTINED"),
-      adminApi.getHealth(),
-      adminApi.listSecurityEvents({ limit: 10 }),
-    ])
-      .then(([sessions, incidents, quarantine, health, recentEvents]) =>
-        setData({ sessions, incidents, quarantine, health, recentEvents }),
-      )
+  const load = useCallback((r: DashboardRange) => {
+    adminApi
+      .getDashboard(r)
+      .then((d) => {
+        // Guard against a stale response landing after the user has since
+        // switched ranges (poll tick fired mid-flight).
+        if (rangeRef.current !== r) return;
+        setData(d);
+        setError(null);
+        setLastUpdated(new Date());
+      })
       .catch(() => setError("Could not load the dashboard. The backend may be unavailable."));
-  }
+  }, []);
 
-  useEffect(load, []);
+  useEffect(() => {
+    load(range);
+    const id = setInterval(() => load(rangeRef.current), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [range, load]);
 
-  if (error) {
+  useEffect(() => {
+    adminApi
+      .listSecurityEvents({ limit: 10 })
+      .then(setRecentEvents)
+      .catch(() => setRecentEvents([]));
+  }, []);
+
+  if (error && !data) {
     return (
       <div className="page">
-        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => load(range)}>Try again</button>}>
           {error}
         </ErrorState>
       </div>
     );
   }
-  if (!data) return <LoadingBlock label="Loading dashboard…" />;
 
-  const activeSessions = data.sessions.filter((s) => s.status === "ACTIVE" || s.status === "DISCONNECTED");
-  const isolatedSessions = data.sessions.filter((s) => s.status === "ISOLATED" || s.status === "ISOLATING");
-  const openIncidents = data.incidents.filter((i) => i.status === "NEW" || i.status === "INVESTIGATING");
-  const criticalIncidents = openIncidents.filter((i) => i.severity === "CRITICAL" || i.severity === "HIGH");
-  const degradedComponents = data.health.components.filter((c) => c.status !== "HEALTHY");
-
-  // Only real conditions, computed from the same data as the KPI row —
-  // never an invented alert (section 17/19).
-  const attention: { key: string; label: string; meta: string; to: string }[] = [];
-  if (criticalIncidents.length > 0) {
-    attention.push({
-      key: "incidents",
-      label: `${criticalIncidents.length} high/critical incident${criticalIncidents.length === 1 ? "" : "s"} open`,
-      meta: criticalIncidents[0].title,
-      to: "/incidents",
-    });
-  }
-  if (isolatedSessions.length > 0) {
-    attention.push({
-      key: "isolated",
-      label: `${isolatedSessions.length} session${isolatedSessions.length === 1 ? "" : "s"} isolated`,
-      meta: isolatedSessions.map((s) => s.username).slice(0, 3).join(", "),
-      to: "/sessions",
-    });
-  }
-  if (data.quarantine.length > 0) {
-    attention.push({
-      key: "quarantine",
-      label: `${data.quarantine.length} file${data.quarantine.length === 1 ? "" : "s"} awaiting review`,
-      meta: data.quarantine[0].original_name,
-      to: "/quarantine",
-    });
-  }
-  if (degradedComponents.length > 0) {
-    attention.push({
-      key: "health",
-      label: `${degradedComponents.length} system component${degradedComponents.length === 1 ? "" : "s"} degraded`,
-      meta: degradedComponents.map((c) => c.name).join(", "),
-      to: "/system",
-    });
-  }
+  const chartPoints: LineChartPoint[] | null = data
+    ? data.session_history.map((p) => ({ t: p.t, value: p.count }))
+    : null;
 
   return (
     <div className="page">
-      <PageHeader title="Dashboard" subtitle="Operational overview of sessions, incidents, and system health." />
+      <PageHeader
+        title="Dashboard"
+        subtitle="Operational overview of sessions, workers, and system health."
+        actions={
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            {data?.telemetry_stale && <span className="badge badge-warning">Telemetry delayed</span>}
+            <span className="text-muted" style={{ fontSize: "0.85rem" }}>
+              {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"}
+            </span>
+          </div>
+        }
+      />
 
       <div className="stat-grid">
-        <StatCard label="Active sessions" value={activeSessions.length} />
-        <StatCard label="Isolated sessions" value={isolatedSessions.length} />
-        <StatCard label="Open incidents" value={openIncidents.length} />
-        <StatCard label="Quarantine" value={data.quarantine.length} />
-        <StatCard label="System health" value={<StatusBadge value={data.health.status} />} />
+        <StatCard
+          label="Active sessions"
+          value={data ? data.kpis.active_sessions : "—"}
+          hint={
+            data
+              ? data.kpis.active_sessions_delta_last_hour === null
+                ? "no hour-old history yet"
+                : `${data.kpis.active_sessions_delta_last_hour >= 0 ? "+" : ""}${data.kpis.active_sessions_delta_last_hour} last hour`
+              : undefined
+          }
+        />
+        <StatCard label="Workers healthy" value={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total}` : "—"} />
+        <StatCard label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} />
+        <StatCard label="Avg CPU" value={data && data.kpis.avg_cpu_percent !== null ? `${data.kpis.avg_cpu_percent.toFixed(0)}%` : "—"} />
+        <StatCard label="Avg RAM" value={data && data.kpis.avg_ram_percent !== null ? `${data.kpis.avg_ram_percent.toFixed(0)}%` : "—"} />
       </div>
 
       <div className="card">
         <div className="section-header">
           <h2>Needs attention</h2>
         </div>
-        {attention.length === 0 ? (
+        {!data || data.warnings.length === 0 ? (
           <EmptyState icon={<Icons.Shield width={20} height={20} />} title="Nothing needs attention">
-            No open high-severity incidents, isolated sessions, quarantined files, or degraded components right now.
+            No sustained high load, draining/maintenance/offline workers, or repeated failed logins right now.
           </EmptyState>
         ) : (
           <div className="attention-list">
-            {attention.map((item) => (
-              <Link key={item.key} to={item.to} className="attention-item" style={{ textDecoration: "none", color: "inherit" }}>
+            {data.warnings.map((w, i) => (
+              <div key={i} className="attention-item">
                 <div>
-                  <div className="attention-label">{item.label}</div>
-                  <div className="attention-meta">{item.meta}</div>
+                  <div className="attention-label">{w.kind}</div>
+                  <div className="attention-meta">{w.message}</div>
                 </div>
-                <Icons.ChevronDown width={16} height={16} style={{ transform: "rotate(-90deg)" }} />
-              </Link>
+              </div>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="flex-between" style={{ marginBottom: "8px" }}>
+          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Session history</h2>
+          <div style={{ display: "flex", gap: "4px" }}>
+            {RANGES.map((r) => (
+              <button
+                key={r.key}
+                className={`btn btn-sm ${range === r.key ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setRange(r.key)}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <LineChart
+          data={chartPoints}
+          error={error}
+          yLabel="Active sessions"
+          formatX={formatXForRange(range)}
+          formatY={(v) => String(Math.round(v))}
+        />
+      </div>
+
+      <div className="card">
+        <h2 style={{ margin: "0 0 8px 0", fontSize: "1.1rem" }}>Worker load</h2>
+        {!data ? (
+          <p className="text-muted">Loading…</p>
+        ) : data.workers.length === 0 ? (
+          <p className="text-muted">No workers registered.</p>
+        ) : (
+          data.workers.map((w) => (
+            <div key={w.id} className="load-bar-row">
+              <div>
+                <div><Link to={`/workers/${w.id}`}>{w.hostname}</Link></div>
+                <StatusBadge value={w.health} />
+              </div>
+              <div>
+                <div className="text-muted" style={{ fontSize: "0.75rem", marginBottom: "2px" }}>
+                  CPU {w.cpu_percent !== null ? `${w.cpu_percent.toFixed(0)}%` : "n/a"}
+                </div>
+                <div className="load-bar-track">
+                  <div className={loadBarClass(w.cpu_percent)} style={{ width: `${w.cpu_percent ?? 0}%` }} />
+                </div>
+                <div className="text-muted" style={{ fontSize: "0.75rem", margin: "6px 0 2px" }}>
+                  RAM {w.ram_percent !== null ? `${w.ram_percent.toFixed(0)}%` : "n/a"}
+                </div>
+                <div className="load-bar-track">
+                  <div className={loadBarClass(w.ram_percent)} style={{ width: `${w.ram_percent ?? 0}%` }} />
+                </div>
+              </div>
+              <div className="text-muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
+                {w.active_sessions} / {w.capacity} sessions
+              </div>
+            </div>
+          ))
         )}
       </div>
 
@@ -150,11 +233,13 @@ export function Dashboard() {
             View all
           </Link>
         </div>
-        {data.recentEvents.length === 0 ? (
+        {recentEvents === null ? (
+          <p className="text-muted">Loading…</p>
+        ) : recentEvents.length === 0 ? (
           <EmptyState title="No events yet">Security events will appear here as they happen.</EmptyState>
         ) : (
           <div className="activity-feed">
-            {data.recentEvents.map((e) => (
+            {recentEvents.map((e) => (
               <div className="activity-item" key={e.id}>
                 <div className={`activity-dot ${eventSeverityClass(e.event_type)}`} />
                 <div style={{ flex: 1 }}>
