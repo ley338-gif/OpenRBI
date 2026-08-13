@@ -25,6 +25,7 @@ from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
+from app.services.ldap_config_service import get_effective_group_role_mapping, get_effective_ldap_config
 from app.services.ldap_provisioning import resolve_or_provision_ldap_user
 from app.services.mfa import verify_login_factor
 from app.services.security_events import record_security_event
@@ -50,10 +51,17 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
     Roadmap Phase B / B1.3: local is always tried first (fast, no network
     round-trip, and authoritative for any account with a real local
     password — docs/adr/0015). LDAP is only attempted if local fails *and*
-    OPENRBI_LDAP_ENABLED is true, and only one lockout/failure event is
+    LDAP is currently enabled, and only one lockout/failure event is
     recorded per login attempt regardless of how many providers were
     tried, not one per provider — otherwise a single guessed password
     would burn through the lockout budget twice as fast.
+
+    Roadmap B1.8: "currently enabled" is resolved per-request via
+    get_effective_ldap_config — the admin-portal-configured database row
+    if one exists, otherwise the original OPENRBI_LDAP_* env vars
+    (docs/adr/0016) — rather than the module-level `settings` object,
+    since LDAP can now be turned on/off and reconfigured at runtime
+    without a backend restart.
     """
     if await is_login_locked(payload.username):
         await record_security_event(
@@ -69,10 +77,17 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
 
     if auth_result.success:
         user = await db.get(User, auth_result.matched_user_id)
-    elif settings.ldap_enabled:
-        ldap_result: AuthResult = await LdapAuthProvider().authenticate(db, payload.username, payload.password)
-        if ldap_result.success:
-            user = await resolve_or_provision_ldap_user(db, payload.username, ldap_result.ldap_group_dns or [])
+    else:
+        ldap_config = await get_effective_ldap_config(db)
+        if ldap_config is not None:
+            ldap_result: AuthResult = await LdapAuthProvider(ldap_config).authenticate(
+                db, payload.username, payload.password
+            )
+            if ldap_result.success:
+                group_role_mapping = await get_effective_group_role_mapping(db)
+                user = await resolve_or_provision_ldap_user(
+                    db, payload.username, ldap_result.ldap_group_dns or [], group_role_mapping
+                )
 
     if user is None:
         await record_login_failure(payload.username)

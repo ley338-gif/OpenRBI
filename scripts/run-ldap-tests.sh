@@ -8,6 +8,15 @@
 # test file into the already-running backend container (which already has
 # python-ldap installed) and invoke pytest there.
 #
+# This exercises LdapAuthProvider directly, in-process within pytest — it
+# never restarts the backend or talks to a running server, so the
+# LDAPTLS_REQCERT=never override below only has to apply to *this* pytest
+# process. The admin LDAP HTTP API (app/api/admin_ldap.py) is different: it
+# runs inside the already-running uvicorn process, which needs its own TLS
+# trust for this throwaway self-signed cert — that's covered by
+# scripts/run-ldap-integration-tests.sh instead, which actually restarts
+# the backend with the right environment (see test_admin_ldap.py there).
+#
 # Uses OpenLDAP's own native schema (uid=...) rather than Active
 # Directory's sAMAccountName — there is no real AD available to test
 # against here. OPENRBI_LDAP_USER_SEARCH_FILTER is overridden accordingly

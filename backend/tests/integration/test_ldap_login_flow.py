@@ -96,6 +96,62 @@ async def test_failed_ldap_bind_counts_toward_the_same_lockout_as_local(client):
 
 
 @pytest.mark.asyncio
+async def test_admin_editable_group_role_mapping_is_used_at_real_login(db, client):
+    """Roadmap B1.8 regression coverage: resolve_role_from_ldap_groups was
+    originally wired to always read Settings.ldap_group_role_mapping (the
+    env var), so an admin-portal-saved mapping in ldap_configs was silently
+    ignored by the real login path — found and fixed while building this
+    test, not assumed correct. Proves the DB-persisted mapping (via
+    PUT /admin/ldap/config) actually changes the role a real LDAP login
+    resolves to, not just what GET returns.
+    """
+    admin, admin_password = await make_user(db, role_name="ADMIN")
+    admin_cookie = await login_with_mfa_enrollment(client, admin.username, admin_password)
+
+    ldap_group_dn = "cn=openrbi-admins,ou=groups,dc=example,dc=org"
+    payload = {
+        "enabled": True,
+        "server_uri": os.environ["OPENRBI_LDAP_SERVER_URI"],
+        "use_starttls": os.environ.get("OPENRBI_LDAP_USE_STARTTLS", "true").lower() == "true",
+        "bind_dn": os.environ["OPENRBI_LDAP_BIND_DN"],
+        "bind_password": os.environ["OPENRBI_LDAP_BIND_PASSWORD"],
+        "base_dn": os.environ["OPENRBI_LDAP_BASE_DN"],
+        "user_search_filter": os.environ.get("OPENRBI_LDAP_USER_SEARCH_FILTER", "(uid={username})"),
+        "group_attribute": os.environ.get("OPENRBI_LDAP_GROUP_ATTRIBUTE", "memberOf"),
+        # Deliberately different from the env's OPENRBI_LDAP_GROUP_ROLE_MAPPING
+        # (which maps this same group to ADMIN) — if the login path still
+        # reads the env var, this test's own assertion below fails.
+        "group_role_mapping": {ldap_group_dn: "SECURITY_REVIEWER"},
+    }
+    try:
+        r = await client.put("/admin/ldap/config", json=payload, cookies={"openrbi_session": admin_cookie})
+        assert r.status_code == 200, r.text
+
+        # LDAP_ADMIN_USERNAME already completed MFA enrollment in an
+        # earlier test in this file, so this attempt returns mfa_required,
+        # not mfa_enrollment_required/ok — but role resolution and its
+        # commit happen before that branch in app/api/auth.py's login(),
+        # so the DB is already updated by the time this response returns.
+        r = await client.post(
+            "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "mfa_required"
+
+        result = await db.execute(
+            text("SELECT r.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = :u"),
+            {"u": LDAP_ADMIN_USERNAME},
+        )
+        assert result.scalar_one() == "SECURITY_REVIEWER"
+    finally:
+        # Leaves the DB config removed (falls back to the env mapping,
+        # which maps this user back to ADMIN) so this test doesn't change
+        # what any later test in this file/session observes.
+        await db.execute(text("DELETE FROM ldap_configs"))
+        await db.commit()
+
+
+@pytest.mark.asyncio
 async def test_ldap_server_unreachable_denies_login_no_fallback(client):
     """Deliberately does NOT stop/start the LDAP container itself — the
     backend has no Docker socket access at all (ADR 0005), so it cannot

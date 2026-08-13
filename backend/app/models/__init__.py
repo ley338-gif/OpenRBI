@@ -8,6 +8,7 @@ from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
 from app.models.group import Group, UserGroup
 from app.models.incident import Incident
+from app.models.ldap_config import LdapConfig
 from app.models.mfa import RecoveryCode
 from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.models.quarantine import QuarantineFile
@@ -22,6 +23,7 @@ __all__ = [
     "Group",
     "GroupPolicy",
     "Incident",
+    "LdapConfig",
     "Policy",
     "PolicyVersion",
     "QuarantineFile",

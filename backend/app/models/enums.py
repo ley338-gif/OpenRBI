@@ -132,3 +132,13 @@ class SecurityEventType(str, enum.Enum):
     # real account-creation event, distinct from an admin-issued
     # USER_CREATED (see backend/migrations/versions/b3d8f1a29c47_*).
     USER_PROVISIONED_VIA_LDAP = "USER_PROVISIONED_VIA_LDAP"
+
+    # Roadmap Phase B / B1.8 — LDAP is now configurable through the admin
+    # portal instead of only .env; these mirror POLICY_CHANGED/PUBLISHED's
+    # separation of "content changed" from "the thing actually took
+    # effect" for the same reason (a reviewer needs to see both, not infer
+    # one from the other).
+    LDAP_CONFIG_CHANGED = "LDAP_CONFIG_CHANGED"
+    LDAP_ENABLED = "LDAP_ENABLED"
+    LDAP_DISABLED = "LDAP_DISABLED"
+    LDAP_CONNECTION_TESTED = "LDAP_CONNECTION_TESTED"
