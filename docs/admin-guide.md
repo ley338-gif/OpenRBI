@@ -87,6 +87,15 @@ The Sessions page lists every session on the system with client-side status/user
 `GET /admin/sessions`, `GET /admin/sessions/{id}`, `GET /admin/users/{id}/sessions`, `POST /admin/sessions/{id}/{disconnect,isolate,restore,kill}`. Disconnect and Isolate are available to both ADMIN and SECURITY_REVIEWER; Kill is ADMIN-only (the project brief doesn't specify which role Kill needs — read as the more restrictive option when ambiguous, see [session-lifecycle.md](session-lifecycle.md)). Isolating a session always opens an Incident in addition to the `SESSION_ISOLATED` security event.
 </details>
 
+## Login Diagnostics (Roadmap B1.10.6)
+
+A read-only "why can't this user log in?" page: enter a username and it reports whether the account exists, is active, has MFA enrolled (and whether their role requires it), which auth source applies (local password vs. LDAP), whether LDAP is enabled system-wide, the current login-lockout status, and recent failed-login events for that username in the last hour — then a plain-language list of possible reasons. It never tests a password and never logs in as the user; if it finds no structural blocker, it says so rather than implying the password was checked. Available to ADMIN and SECURITY_REVIEWER.
+
+<details><summary>Underlying API</summary>
+
+`GET /admin/login-diagnostics?username=...` (`app/api/admin_login_diagnostics.py`).
+</details>
+
 ## Nodes (System page)
 
 Lists every `BrowserNode` (single node in MVP 1, but modeled as a real list) with a **Drain**/**Undrain** action. Draining stops new sessions from being scheduled onto that node without disturbing sessions already running on it.

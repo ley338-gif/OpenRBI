@@ -22,7 +22,7 @@ from app.core.sessions import (
     record_mfa_pending_failure,
 )
 from app.db.session import get_db
-from app.models.enums import SecurityEventType
+from app.models.enums import MFA_MANDATORY_ROLES, SecurityEventType
 from app.models.role import Role
 from app.models.user import User
 from app.services.ldap_config_service import get_effective_group_role_mapping, get_effective_ldap_config
@@ -32,8 +32,6 @@ from app.services.security_events import record_security_event
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
-
-_MFA_MANDATORY_ROLES = ("ADMIN", "SECURITY_REVIEWER")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -118,7 +116,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         await db.commit()
         return LoginResponse(status="mfa_required", mfa_token=mfa_token)
 
-    if role.name in _MFA_MANDATORY_ROLES:
+    if role.name in MFA_MANDATORY_ROLES:
         # MFA is mandatory for ADMIN/SECURITY_REVIEWER (docs/security-model.md)
         # — an account in this role with no TOTP enrolled yet must complete
         # enrollment before it ever gets a session, not after. Same commit

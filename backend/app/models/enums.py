@@ -7,6 +7,13 @@ class RoleName(str, enum.Enum):
     ADMIN = "ADMIN"
 
 
+# Roles MFA is mandatory for (docs/security-model.md). Previously a private
+# constant duplicated in app/api/auth.py's own module scope; pulled out
+# here so Roadmap B1.10.6's Login Diagnostics can check the same rule
+# without importing a private name from another router module.
+MFA_MANDATORY_ROLES = (RoleName.ADMIN.value, RoleName.SECURITY_REVIEWER.value)
+
+
 class PolicyType(str, enum.Enum):
     NETWORK = "NETWORK"
     DOWNLOADS = "DOWNLOADS"
