@@ -26,6 +26,7 @@ import type {
   LdapConfigUpdateRequest,
   LdapTestRequest,
   LdapTestResponseDto,
+  NodeHistoryPointDto,
   PolicyDetailDto,
   PolicySummaryDto,
   QuarantineFileDto,
@@ -114,10 +115,15 @@ export const adminApi = {
   // Health
   getHealth: () => api.get<SystemHealthDto>("/admin/health"),
 
-  // Nodes
+  // Nodes (Workers)
   listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
+  getNode: (id: string) => api.get<BrowserNodeDto>(`/admin/nodes/${id}`),
+  getNodeMetrics: (id: string, range: DashboardRange) =>
+    api.get<NodeHistoryPointDto[]>(`/admin/nodes/${id}/metrics?range=${range}`),
   drainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/drain`),
   undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
+  maintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/maintenance`),
+  unmaintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/unmaintenance`),
 
   // Operations dashboard (app/api/admin_dashboard.py — B1.10.2)
   getDashboard: (range: DashboardRange) => api.get<DashboardResponseDto>(`/admin/dashboard?range=${range}`),

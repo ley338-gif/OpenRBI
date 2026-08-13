@@ -233,6 +233,14 @@ export interface BrowserNodeDto {
   uptime_seconds: number | null;
 }
 
+// Roadmap B1.10.3 — per-worker bucketed metric history (Worker Detail view)
+export interface NodeHistoryPointDto {
+  t: string;
+  cpu_percent: number | null;
+  ram_percent: number | null;
+  active_sessions: number;
+}
+
 // Roadmap B1.8 — admin-portal-managed LDAP configuration
 // (backend/app/api/schemas/admin_ldap.py). LdapConfigDto never carries the
 // bind password, structurally — only bind_password_configured — matching

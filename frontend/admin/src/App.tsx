@@ -23,6 +23,8 @@ import { Incidents } from "./pages/Incidents";
 import { IncidentDetail } from "./pages/IncidentDetail";
 import { Audit } from "./pages/Audit";
 import { System } from "./pages/System";
+import { Workers } from "./pages/Workers";
+import { WorkerDetail } from "./pages/WorkerDetail";
 import { LdapSettings } from "./pages/LdapSettings";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -99,6 +101,8 @@ function Routed() {
         <Route path="incidents" element={<Incidents />} />
         <Route path="incidents/:id" element={<IncidentDetail />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="workers" element={<Workers />} />
+        <Route path="workers/:id" element={<WorkerDetail />} />
         <Route path="system" element={<System />} />
         <Route path="settings/ldap" element={<LdapSettings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

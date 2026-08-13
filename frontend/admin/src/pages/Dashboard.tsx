@@ -170,7 +170,7 @@ export function Dashboard() {
           data.workers.map((w) => (
             <div key={w.id} className="load-bar-row">
               <div>
-                <div>{w.hostname}</div>
+                <div><Link to={`/workers/${w.id}`}>{w.hostname}</Link></div>
                 <StatusBadge value={w.health} />
               </div>
               <div>
