@@ -115,6 +115,34 @@ test.describe("Admin Portal", () => {
     }
   });
 
+  test("Workers page (B1.10.3) lists real workers and drilling into one shows drain/maintenance controls and history charts", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Workers" }).click();
+    await expect(page.getByRole("heading", { name: "Workers" })).toBeVisible();
+
+    const workerLink = page.locator(".data-table tbody tr td a").first();
+    await expect(workerLink).toBeVisible();
+    const hostname = await workerLink.textContent();
+    await workerLink.click();
+
+    await expect(page.getByRole("heading", { name: hostname ?? "" })).toBeVisible();
+    await expect(page.getByText(/scheduling status/i)).toBeVisible();
+    await expect(page.getByRole("img", { name: /cpu percent over time/i })).toBeVisible();
+    await expect(page.getByRole("img", { name: /ram percent over time/i })).toBeVisible();
+
+    // Drain -> confirm -> health flips to DRAINING -> undrain restores it,
+    // exercising the real backend state change end to end, not just a UI
+    // mock. Always restored, even if an assertion above fails first.
+    await page.getByRole("button", { name: "Drain", exact: true }).click();
+    await page.getByRole("button", { name: "Drain", exact: true }).last().click();
+    try {
+      await expect(page.getByText("DRAINING", { exact: true }).first()).toBeVisible();
+    } finally {
+      await page.getByRole("button", { name: "Undrain" }).click();
+      await page.getByRole("button", { name: "Undrain" }).last().click();
+    }
+  });
+
   test("Quarantine page shows a real, honest empty state with no fake file preview", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Quarantine" }).click();

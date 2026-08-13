@@ -42,3 +42,13 @@ class BrowserNodeResponse(BaseModel):
             ram_used_mb=node.ram_used_mb,
             uptime_seconds=worker_uptime_seconds(node),
         )
+
+
+class NodeHistoryPointResponse(BaseModel):
+    """Roadmap B1.10.3 — one bucketed point of a single worker's CPU/RAM/
+    session history (Worker Detail view graphs)."""
+
+    t: datetime
+    cpu_percent: float | None
+    ram_percent: float | None
+    active_sessions: int

@@ -13,6 +13,7 @@ const NAV = [
   { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
   { to: "/incidents", label: "Incidents", icon: Icons.Incident },
   { to: "/audit", label: "Audit", icon: Icons.Audit },
+  { to: "/workers", label: "Workers", icon: Icons.Worker },
   { to: "/system", label: "System", icon: Icons.System },
   { to: "/settings/ldap", label: "LDAP", icon: Icons.Settings },
 ];

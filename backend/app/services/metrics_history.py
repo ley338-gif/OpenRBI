@@ -6,6 +6,7 @@ history for a given lookback window," because those are the only two
 things the dashboard/worker-detail graphs actually need.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
@@ -76,3 +77,41 @@ async def session_history(db: AsyncSession, *, range_key: str, now: datetime | N
         .order_by(per_node.c.bucket)
     )
     return [{"t": row[0], "count": round(float(row[1]))} for row in result.all()]
+
+
+async def node_history(db: AsyncSession, *, node_id: uuid.UUID, range_key: str, now: datetime | None = None) -> list[dict]:
+    """Bucketed CPU/RAM/session history for a single worker (Worker Detail
+    view, Roadmap B1.10.3) — same bucketing as session_history() above, but
+    scoped to one node's own samples instead of summed across the fleet.
+    """
+    if range_key not in RANGE_CONFIG:
+        raise ValueError(f"unknown range: {range_key}")
+    lookback, bucket_width = RANGE_CONFIG[range_key]
+    now = now or datetime.now(UTC)
+    since = now - lookback
+
+    bucket = func.date_bin(bucket_width, WorkerMetricSample.recorded_at, since)
+    result = await db.execute(
+        select(
+            bucket.label("bucket"),
+            func.avg(WorkerMetricSample.cpu_percent),
+            func.avg(WorkerMetricSample.ram_used_mb),
+            func.avg(WorkerMetricSample.ram_total_mb),
+            func.avg(WorkerMetricSample.active_sessions),
+        )
+        .where(WorkerMetricSample.recorded_at >= since, WorkerMetricSample.node_id == node_id)
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+    points = []
+    for t, cpu, ram_used, ram_total, sessions in result.all():
+        ram_percent = round(float(ram_used) / float(ram_total) * 100, 1) if ram_used is not None and ram_total else None
+        points.append(
+            {
+                "t": t,
+                "cpu_percent": round(float(cpu), 1) if cpu is not None else None,
+                "ram_percent": ram_percent,
+                "active_sessions": round(float(sessions)) if sessions is not None else 0,
+            }
+        )
+    return points

@@ -123,6 +123,15 @@ export const Icons = {
       </>,
       p,
     ),
+  Worker: (p: IconProps) =>
+    base(
+      <>
+        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+        <rect x="10" y="10" width="4" height="4" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2 2M17.1 17.1l2 2M4.9 19.1l2-2M17.1 6.9l2-2" />
+      </>,
+      p,
+    ),
   Logout: (p: IconProps) =>
     base(
       <>

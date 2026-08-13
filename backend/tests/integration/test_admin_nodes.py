@@ -65,6 +65,48 @@ async def test_node_list_includes_real_telemetry_and_computed_health(db, client)
 
 
 @pytest.mark.asyncio
+async def test_security_reviewer_can_read_but_not_change_nodes(db, client):
+    reviewer, password = await make_user(db, role_name="SECURITY_REVIEWER")
+    cookie = await login_with_mfa_enrollment(client, reviewer.username, password)
+    node = await _get_the_node(db)
+
+    r = await client.get("/admin/nodes", cookies={"openrbi_session": cookie})
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/admin/nodes/{node.id}", cookies={"openrbi_session": cookie})
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/admin/nodes/{node.id}/metrics", cookies={"openrbi_session": cookie})
+    assert r.status_code == 200, r.text
+
+    r = await client.post(f"/admin/nodes/{node.id}/drain", cookies={"openrbi_session": cookie})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_single_node_returns_404_for_unknown_id(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    import uuid as uuid_module
+
+    r = await client.get(f"/admin/nodes/{uuid_module.uuid4()}", cookies={"openrbi_session": cookie})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_node_metrics_rejects_unknown_range_and_unknown_node(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    node = await _get_the_node(db)
+    import uuid as uuid_module
+
+    r = await client.get(f"/admin/nodes/{node.id}/metrics?range=3y", cookies={"openrbi_session": cookie})
+    assert r.status_code == 400
+    assert "Traceback" not in r.text
+
+    r = await client.get(f"/admin/nodes/{uuid_module.uuid4()}/metrics", cookies={"openrbi_session": cookie})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_maintenance_round_trip_is_audited_and_blocks_scheduling(db, client):
     admin, password = await make_user(db, role_name="ADMIN")
     cookie = await login_with_mfa_enrollment(client, admin.username, password)
