@@ -93,6 +93,14 @@ export interface RevokeSessionsResponseDto {
   session_ids: string[];
 }
 
+// Roadmap B1.10.5 — Account Lock/Unlock, the same brute-force-lockout
+// state /auth/login itself checks (backend/app/api/schemas/admin.py's LockoutStatus)
+export interface LockoutStatusDto {
+  locked: boolean;
+  failure_count: number;
+  locked_seconds_remaining: number | null;
+}
+
 export type QuarantineStatus = "PENDING_SCAN" | "SCANNING" | "QUARANTINED" | "RELEASED" | "REJECTED" | "DELETED";
 export type ScannerStatus = "PENDING" | "SCANNING" | "CLEAN" | "INFECTED" | "ERROR";
 export type FileAction = "AUTO_RELEASE" | "QUARANTINE" | "DENY";

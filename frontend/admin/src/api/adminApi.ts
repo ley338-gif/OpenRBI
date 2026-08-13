@@ -26,6 +26,7 @@ import type {
   LdapConfigUpdateRequest,
   LdapTestRequest,
   LdapTestResponseDto,
+  LockoutStatusDto,
   NodeHistoryPointDto,
   PolicyDetailDto,
   RevokeSessionsResponseDto,
@@ -60,6 +61,9 @@ export const adminApi = {
     api.put<UserSummaryDto>(`/admin/users/${id}/groups`, { group_ids: groupIds }),
   userSessions: (id: string) => api.get<AdminSessionDto[]>(`/admin/users/${id}/sessions`),
   revokeUserSessions: (id: string) => api.post<RevokeSessionsResponseDto>(`/admin/users/${id}/sessions/revoke`),
+  getLockoutStatus: (id: string) => api.get<LockoutStatusDto>(`/admin/users/${id}/lockout`),
+  lockAccount: (id: string) => api.post<LockoutStatusDto>(`/admin/users/${id}/lock`),
+  unlockAccount: (id: string) => api.post<LockoutStatusDto>(`/admin/users/${id}/unlock`),
 
   // Groups
   listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),

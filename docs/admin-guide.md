@@ -65,15 +65,17 @@ Shows active/isolated session counts, open incidents, quarantine items awaiting 
 
 ## Users and groups
 
-**Users**: create, view, enable/disable, reset password, reset MFA. Creating a user is a real form against `POST /admin/users` (username, initial password, role, groups) — the backend, not the form, is authoritative on password rules. A user's detail page shows their groups, MFA status, and their sessions, with the same Disconnect/Isolate/Restore/Kill actions available inline. Promoting a user to ADMIN/SECURITY_REVIEWER doesn't retroactively force MFA — it's re-checked from the user's *current* role at their very next login.
+**Users**: create, view, enable/disable, reset password, reset MFA, lock/unlock the login, terminate all sessions. Creating a user is a real form against `POST /admin/users` (username, initial password, role, groups) — the backend, not the form, is authoritative on password rules. A user's detail page shows their groups, MFA status, current login-lockout state, and their sessions, with the same Disconnect/Isolate/Restore/Kill actions available inline, plus a **Terminate all sessions** button (Roadmap B1.10.4) shown only when the user has at least one live session. Promoting a user to ADMIN/SECURITY_REVIEWER doesn't retroactively force MFA — it's re-checked from the user's *current* role at their very next login.
+
+**Login lockout / Account Lock (Roadmap B1.10.5)**: the same brute-force lockout the system already applies automatically after repeated failed logins is now visible and admin-controllable — the User Detail page shows whether the account is currently locked (and, while locked, roughly how long until it clears on its own), with **Lock account**/**Unlock account** buttons. Lock is not the same thing as Disable: Disable is a separate, persistent "account deactivated" state; Lock only blocks new logins for the same window an automatic lockout would, and also immediately revokes any session the account currently has. An MFA reset does the same session-revocation, since MFA is otherwise only re-checked at login time — a reset previously left an already-issued session valid until it expired on its own.
 
 **Groups**: create/delete from the Groups page. Group membership is set when creating a user or from their detail page.
 
-Every disable, MFA reset, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
+Every disable, MFA reset, lock, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
 
 <details><summary>Underlying API</summary>
 
-`POST/GET /admin/users`, disable/enable, admin password reset, role reassignment, group membership (`app/api/admin.py`), plus `POST/GET /admin/groups` and `DELETE /admin/groups/{id}`, and `POST /mfa/admin/users/{id}/reset` (`app/api/admin_mfa.py`).
+`POST/GET /admin/users`, disable/enable, admin password reset, role reassignment, group membership, `GET /admin/users/{id}/lockout`, `POST /admin/users/{id}/{lock,unlock}`, `POST /admin/users/{id}/sessions/revoke` (`app/api/admin.py`), plus `POST/GET /admin/groups` and `DELETE /admin/groups/{id}`, and `POST /mfa/admin/users/{id}/reset` (`app/api/admin_mfa.py`).
 </details>
 
 ## Sessions

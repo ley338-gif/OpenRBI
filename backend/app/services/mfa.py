@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.recovery_codes import generate_recovery_codes
 from app.core.security import hash_password, verify_password
+from app.core.sessions import revoke_all_sessions_for_user
 from app.core.totp import verify_code
 from app.models.enums import SecurityEventType
 from app.models.mfa import RecoveryCode
@@ -67,14 +68,22 @@ async def verify_login_factor(db: AsyncSession, user: User, code: str) -> bool:
 
 
 async def reset_mfa(db: AsyncSession, target_user: User, admin_user_id: uuid.UUID) -> None:
+    """Never returns or logs the old TOTP secret — it's simply discarded.
+    Roadmap B1.10.5: also revokes every one of the user's active login
+    sessions, so a reset triggered by a suspected compromise (lost device,
+    etc.) takes effect immediately rather than leaving an already-issued
+    session valid until it naturally expires — MFA is otherwise only
+    re-checked at login time, not on every request.
+    """
     target_user.mfa_enabled = False
     target_user.totp_secret_encrypted = None
     db.add(target_user)
     await db.execute(delete(RecoveryCode).where(RecoveryCode.user_id == target_user.id))
+    revoked = await revoke_all_sessions_for_user(target_user.id)
     await record_security_event(
         db,
         SecurityEventType.MFA_RESET,
         user_id=target_user.id,
-        metadata={"reset_by": str(admin_user_id)},
+        metadata={"reset_by": str(admin_user_id), "sessions_revoked": revoked},
     )
     await db.flush()
