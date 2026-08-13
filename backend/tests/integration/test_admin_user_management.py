@@ -5,7 +5,7 @@ from tests.conftest import login_with_mfa_enrollment, make_user
 
 @pytest.mark.asyncio
 async def test_user_list_is_admin_only_and_paginated(db, client):
-    normal, normal_password = await make_user(db, username="iam-normal", role_name="USER")
+    normal, normal_password = await make_user(db, role_name="USER")
     response = await client.post(
         "/auth/login", json={"username": normal.username, "password": normal_password}
     )
@@ -14,7 +14,7 @@ async def test_user_list_is_admin_only_and_paginated(db, client):
     )
     assert forbidden.status_code == 403
 
-    admin, password = await make_user(db, username="iam-admin", role_name="ADMIN")
+    admin, password = await make_user(db, role_name="ADMIN")
     cookie = await login_with_mfa_enrollment(client, admin.username, password)
     result = await client.get("/admin/users?limit=1&offset=0", cookies={"openrbi_session": cookie})
     assert result.status_code == 200, result.text
@@ -27,9 +27,9 @@ async def test_user_list_is_admin_only_and_paginated(db, client):
 
 @pytest.mark.asyncio
 async def test_user_search_role_status_and_source_filters(db, client):
-    admin, password = await make_user(db, username="filter-admin", role_name="ADMIN")
-    local, _ = await make_user(db, username="distinct-local-user", role_name="USER")
-    ldap, _ = await make_user(db, username="distinct-ldap-user", role_name="USER")
+    admin, password = await make_user(db, role_name="ADMIN")
+    local, _ = await make_user(db, role_name="USER")
+    ldap, _ = await make_user(db, role_name="USER")
     ldap.password_hash = None
     ldap.is_active = False
     db.add(ldap)
@@ -37,7 +37,7 @@ async def test_user_search_role_status_and_source_filters(db, client):
     cookie = await login_with_mfa_enrollment(client, admin.username, password)
 
     result = await client.get(
-        "/admin/users?search=distinct&role=USER&status=DISABLED&auth_source=LDAP",
+        f"/admin/users?search={ldap.username}&role=USER&status=DISABLED&auth_source=LDAP",
         cookies={"openrbi_session": cookie},
     )
     assert result.status_code == 200, result.text
@@ -48,8 +48,8 @@ async def test_user_search_role_status_and_source_filters(db, client):
 
 @pytest.mark.asyncio
 async def test_ldap_password_reset_and_admin_self_disable_are_rejected(db, client):
-    admin, password = await make_user(db, username="guard-admin", role_name="ADMIN")
-    ldap, _ = await make_user(db, username="guard-ldap", role_name="USER")
+    admin, password = await make_user(db, role_name="ADMIN")
+    ldap, _ = await make_user(db, role_name="USER")
     ldap.password_hash = None
     db.add(ldap)
     await db.commit()

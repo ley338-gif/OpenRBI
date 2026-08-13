@@ -9,7 +9,7 @@ from tests.conftest import login_with_mfa_enrollment, make_user
 
 @pytest.mark.asyncio
 async def test_session_overview_is_admin_data(db, client):
-    user, password = await make_user(db, username="sessions-normal", role_name="USER")
+    user, password = await make_user(db, role_name="USER")
     login = await client.post("/auth/login", json={"username": user.username, "password": password})
     response = await client.get(
         "/admin/sessions", cookies={"openrbi_session": login.cookies.get("openrbi_session")}
@@ -19,8 +19,8 @@ async def test_session_overview_is_admin_data(db, client):
 
 @pytest.mark.asyncio
 async def test_session_overview_search_filter_pagination_and_stats(db, client):
-    admin, password = await make_user(db, username="sessions-admin", role_name="ADMIN")
-    owner, _ = await make_user(db, username="session-distinct-owner", role_name="USER")
+    admin, password = await make_user(db, role_name="ADMIN")
+    owner, _ = await make_user(db, role_name="USER")
     session = BrowserSession(
         user_id=owner.id,
         status=SessionStatus.DISCONNECTED,
@@ -32,7 +32,7 @@ async def test_session_overview_search_filter_pagination_and_stats(db, client):
     cookie = await login_with_mfa_enrollment(client, admin.username, password)
 
     response = await client.get(
-        "/admin/sessions?search=distinct&session_status=DISCONNECTED&limit=1&offset=0",
+        f"/admin/sessions?search={owner.username}&session_status=DISCONNECTED&limit=1&offset=0",
         cookies={"openrbi_session": cookie},
     )
     assert response.status_code == 200, response.text
@@ -48,8 +48,8 @@ async def test_session_overview_search_filter_pagination_and_stats(db, client):
 
 @pytest.mark.asyncio
 async def test_session_detail_idor_is_rejected_for_normal_user(db, client):
-    owner, owner_password = await make_user(db, username="session-idor-owner", role_name="USER")
-    other, _ = await make_user(db, username="session-idor-other", role_name="USER")
+    owner, owner_password = await make_user(db, role_name="USER")
+    other, _ = await make_user(db, role_name="USER")
     session = BrowserSession(user_id=other.id, status=SessionStatus.TERMINATED)
     db.add(session)
     await db.commit()
