@@ -8,9 +8,25 @@ Open the Admin Portal (Compact: `/admin/` on the same origin as the reverse prox
 
 ## LDAP/LDAPS authentication (Roadmap Phase B / B1)
 
-An equal, parallel login option alongside local accounts — never a replacement. Local login always stays available, including for the entire duration of an LDAP outage; there is no way to disable it. See [ADR 0015](adr/0015-auth-provider-abstraction.md) for the full design and its security rationale.
+An equal, parallel login option alongside local accounts — never a replacement. Local login always stays available, including for the entire duration of an LDAP outage; there is no way to disable it. See [ADR 0015](adr/0015-auth-provider-abstraction.md) for the authentication design and [ADR 0016](adr/0016-ldap-admin-configuration.md) for the admin-portal configuration layer described below (Roadmap B1.8).
 
-**Enabling it** — set in `.env` and restart `backend` (see `.env.example` for the full list with descriptions):
+### Configuring LDAP via the Admin Portal (recommended)
+
+Go to **Settings → Authentication → LDAP** (`ADMIN` role required — `SECURITY_REVIEWER` cannot read or change this). The page is available whether or not LDAP has ever been configured before; a fresh install shows an empty form.
+
+Fill in the connection fields (server URI, StartTLS, bind DN, bind password, base DN, user search filter, group attribute) and use **Test connection** before saving — this runs the exact same connection/bind/search code a real login uses, reports each step (TLS/connection, service bind, search base, and, if a test username is given, user search and group resolution) as OK or FAILED with an admin-readable reason, and never touches the saved configuration either way.
+
+Click **Save configuration**. If the `Enabled` checkbox is on, the save itself re-runs that same connection test server-side first — a broken configuration is rejected (the form stays as you left it, with a toast explaining the test failed) and the **previously saved, working configuration is left completely untouched**. Saving with `Enabled` off never requires a passing test, so you can save a work-in-progress configuration without risking the currently-active one.
+
+**Secret handling**: the bind password is never returned by any API response and never appears in the audit log — the field is always shown empty, with a "Bind password: configured — leave empty to keep the existing password" hint once one has been saved. Leaving it empty on a later save keeps the existing password; typing a new value replaces it. It is encrypted at rest using the same key that protects TOTP secrets (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`).
+
+**Group → role mapping** is an editable table on the same page — LDAP group DN → OpenRBI role. It replaces `OPENRBI_LDAP_GROUP_ROLE_MAPPING` for any installation that has saved a configuration through the portal (see priority below); the matching semantics are unchanged (exact-string DN match, `ADMIN` > `SECURITY_REVIEWER` > `USER` precedence, no match → `USER`).
+
+Once any configuration has been saved through the Admin Portal, it is fully authoritative — the `OPENRBI_LDAP_*` environment variables are no longer consulted at all, not even for fields left at their default. LDAP can be enabled, reconfigured, or disabled entirely from the portal, with no backend restart required.
+
+### Configuring LDAP via environment variables (bootstrap / fresh install only)
+
+Set in `.env` and restart `backend` (see `.env.example` for the full list with descriptions) — this is only consulted when **no configuration has ever been saved through the Admin Portal**:
 
 ```
 OPENRBI_LDAP_ENABLED=true
@@ -21,9 +37,11 @@ OPENRBI_LDAP_BASE_DN=DC=example,DC=org
 OPENRBI_LDAP_GROUP_ROLE_MAPPING={"CN=OpenRBI-Admins,OU=Groups,DC=example,DC=org": "ADMIN"}
 ```
 
-A plain `ldap://` URI with StartTLS turned off is refused at startup — there is no supported way to configure an unencrypted bind. `OPENRBI_LDAP_GROUP_ROLE_MAPPING` is a JSON object mapping a full group DN to one of `USER`/`SECURITY_REVIEWER`/`ADMIN`; a login whose groups match none of these mapped DNs gets `USER`, never an implicit elevated default. If multiple mapped groups apply, `ADMIN` wins over `SECURITY_REVIEWER` wins over `USER`.
+A plain `ldap://` URI with StartTLS turned off is refused (both here and in the Admin Portal) — there is no supported way to configure an unencrypted bind. `OPENRBI_LDAP_GROUP_ROLE_MAPPING` is a JSON object with the same shape and matching rules as the portal's mapping table.
 
-**How a login is resolved** — on `/auth/login`, local is always tried first. LDAP is only attempted if the local check fails *and* LDAP is enabled — so an account with a real local password is checked against that password first, with no network round-trip, before LDAP is ever consulted.
+**Required LDAP permissions for the service account** (the bind DN) — read access to the base DN subtree, sufficient to search for a user by the configured filter and read the configured group attribute. No write access of any kind is needed; OpenRBI never modifies anything in the directory.
+
+**How a login is resolved** — on `/auth/login`, local is always tried first. LDAP is only attempted if the local check fails *and* LDAP is currently enabled (Admin Portal configuration if one exists, otherwise the environment variables above) — so an account with a real local password is checked against that password first, with no network round-trip, before LDAP is ever consulted.
 
 **First login for a new AD user** — if no local account exists for that exact username, one is created automatically ("just-in-time provisioning") with the role resolved from the bind's group membership, and no local password stored (LDAP credentials are never cached). Matching is by **exact username string only** — no name/birthdate/other-attribute matching is attempted, deliberately: a fuzzy match risks linking the wrong local account to a different real person, which is a direct account-takeover path. If your local and LDAP usernames genuinely differ for the same person, they are treated as two separate accounts.
 
@@ -31,7 +49,11 @@ A plain `ldap://` URI with StartTLS turned off is refused at startup — there i
 
 **If the LDAP server is unreachable or a TLS handshake fails**, login for LDAP-only accounts is denied — the same generic "invalid credentials" response as a wrong password, never a silent fallback to any outcome that grants access. Local accounts are completely unaffected and keep working throughout. There is currently no dedicated "LDAP is down" indicator in the Admin Portal beyond this — an admin noticing a wave of LDAP-account login failures during a real outage should check LDAP server reachability directly.
 
-**Known limitation**: group DN matching in `OPENRBI_LDAP_GROUP_ROLE_MAPPING` is exact-string, case-sensitive — it does not normalize DN casing or attribute ordering. Configure the mapping using the DN exactly as your directory returns it (verify with a real `ldapsearch` against a test account if login resolves to `USER` unexpectedly).
+**Known limitation**: group DN matching (env or Admin Portal mapping table) is exact-string, case-sensitive — it does not normalize DN casing or attribute ordering. Configure the mapping using the DN exactly as your directory returns it (verify with a real `ldapsearch` against a test account, or the portal's "Test connection" with a test username, if login resolves to `USER` unexpectedly).
+
+**Break-glass / local admin access**: keep at least one local `ADMIN` account with a real password at all times. Because local login is always tried first and a local password is always authoritative for its own account (see role-authority rule above), this account keeps working through any LDAP outage or misconfiguration — including one introduced while editing the LDAP settings themselves — and can always be used to fix a broken LDAP configuration from the Admin Portal. There is no other account-recovery mechanism today; losing access to every local `ADMIN` account is a known Productization gap, tracked as a follow-up (a dedicated recovery process, separate from the public first-run setup, is out of scope for B1.8/B1.9 and not yet implemented).
+
+**Audit**: every LDAP configuration change, enable, disable, and connection test is recorded as a security event (`LDAP_CONFIG_CHANGED`, `LDAP_ENABLED`, `LDAP_DISABLED`, `LDAP_CONNECTION_TESTED`, viewable under Audit) with the actor and safe metadata (server URI, StartTLS, base DN, whether the password changed) — never the bind password, TOTP secrets, or any other credential.
 
 ## Dashboard
 
