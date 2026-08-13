@@ -37,6 +37,8 @@ async def test_non_admin_cannot_read_or_change_nodes(db, client):
 
     r = await client.get("/admin/nodes", cookies={"openrbi_session": cookie})
     assert r.status_code == 403
+    r = await client.get("/admin/nodes/overview", cookies={"openrbi_session": cookie})
+    assert r.status_code == 403
     r = await client.post(f"/admin/nodes/{node.id}/drain", cookies={"openrbi_session": cookie})
     assert r.status_code == 403
     r = await client.post(f"/admin/nodes/{node.id}/maintenance", cookies={"openrbi_session": cookie})
@@ -62,6 +64,43 @@ async def test_node_list_includes_real_telemetry_and_computed_health(db, client)
     assert node["uptime_seconds"] >= 0
     assert node["health"] in ("HEALTHY", "DEGRADED", "DRAINING", "MAINTENANCE", "OFFLINE")
     assert "bind_password" not in node  # sanity: never leaking unrelated secrets via a shared serializer bug
+
+
+@pytest.mark.asyncio
+async def test_worker_overview_filters_sorts_and_paginates_real_nodes(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    node = await _get_the_node(db)
+
+    r = await client.get(
+        "/admin/nodes/overview",
+        params={
+            "search": node.hostname,
+            "node_status": node.status.value,
+            "sort_by": "heartbeat",
+            "sort_dir": "desc",
+            "offset": 0,
+            "limit": 1,
+        },
+        cookies={"openrbi_session": cookie},
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["total"] >= 1
+    assert payload["offset"] == 0
+    assert payload["limit"] == 1
+    assert payload["items"][0]["hostname"] == node.hostname
+    assert payload["stats"]["total"] >= payload["total"]
+    assert payload["stats"]["healthy"] + payload["stats"]["needs_attention"] <= payload["stats"]["total"]
+    assert payload["stats"]["active_sessions"] >= 0
+    assert payload["stats"]["total_capacity"] >= payload["stats"]["active_sessions"]
+
+    r = await client.get(
+        "/admin/nodes/overview",
+        params={"sort_by": "unknown"},
+        cookies={"openrbi_session": cookie},
+    )
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

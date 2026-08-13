@@ -46,6 +46,8 @@ The most common cause is clock drift between the server and the device running t
 
 The User Portal polls `GET /sessions/{id}` once a second and only advances once the session's real status changes — it never fabricates progress. "Waiting for capacity…" (`QUEUED`) staying up for a long time means no browser-node capacity is free; check `GET /admin/nodes` (Admin Portal → System) for whether the node is drained or already at its session limit. "Preparing sandbox…" (`STARTING`) staying up means the Session Agent hasn't reported the sandbox as ready yet — see "Session Agent unreachable" and "Browser sandbox won't start" above; check `docker logs openrbi-session-agent-1` for the specific session ID shown under the portal's status line.
 
+The Admin Portal → Workers view uses the same backend health classification as scheduling and system health. An **Offline** worker normally has a heartbeat older than the configured stale threshold; verify Session Agent reachability and its logs. **Degraded** indicates reported CPU or RAM pressure. **Draining** and **Maintenance** are operator-controlled states rather than heartbeat failures; open the worker detail to restore scheduling when the operational reason has been resolved.
+
 ## Portal: noVNC cannot connect ("Connecting display…" never finishes)
 
 First check the browser console/network tab for a WebSocket attempt to `/api/display/{id}/ws` at all:

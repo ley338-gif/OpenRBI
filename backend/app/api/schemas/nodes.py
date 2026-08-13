@@ -52,3 +52,22 @@ class NodeHistoryPointResponse(BaseModel):
     cpu_percent: float | None
     ram_percent: float | None
     active_sessions: int
+
+
+class WorkerOverviewStats(BaseModel):
+    total: int
+    healthy: int
+    needs_attention: int
+    active_sessions: int
+    total_capacity: int
+    average_cpu_percent: float | None
+    average_ram_percent: float | None
+    latest_heartbeat: datetime | None
+
+
+class WorkerOverviewResponse(BaseModel):
+    items: list[BrowserNodeResponse]
+    total: int
+    offset: int
+    limit: int
+    stats: WorkerOverviewStats

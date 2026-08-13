@@ -1,17 +1,29 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.nodes import BrowserNodeResponse, NodeHistoryPointResponse
+from app.api.schemas.nodes import (
+    BrowserNodeResponse,
+    NodeHistoryPointResponse,
+    WorkerOverviewResponse,
+    WorkerOverviewStats,
+)
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
 from app.models.browser_node import BrowserNode
 from app.models.user import User
 from app.services import metrics_history
 from app.services.metrics_history import RANGE_CONFIG
-from app.services.nodes import NodeServiceError, drain_node, maintenance_node, undrain_node, unmaintenance_node
+from app.services.nodes import (
+    NodeServiceError,
+    drain_node,
+    maintenance_node,
+    undrain_node,
+    unmaintenance_node,
+)
 
 # ADMIN and SECURITY_REVIEWER can both read node state/history (matching the
 # dashboard's own read access); only ADMIN can drain/undrain/maintenance —
@@ -31,6 +43,69 @@ async def _get_or_404(db: AsyncSession, node_id: uuid.UUID) -> BrowserNode:
 async def list_nodes(db: AsyncSession = Depends(get_db)) -> list[BrowserNodeResponse]:
     result = await db.execute(select(BrowserNode).order_by(BrowserNode.hostname))
     return [BrowserNodeResponse.from_model(n) for n in result.scalars()]
+
+
+@router.get("/overview", response_model=WorkerOverviewResponse)
+async def worker_overview(
+    search: str | None = None,
+    health: str | None = None,
+    node_status: str | None = None,
+    sort_by: str = "hostname",
+    sort_dir: str = "asc",
+    offset: int = 0,
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db),
+) -> WorkerOverviewResponse:
+    if offset < 0 or limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="invalid pagination")
+    nodes = (await db.execute(select(BrowserNode))).scalars().all()
+    responses = [BrowserNodeResponse.from_model(node) for node in nodes]
+    cpu_values = [node.cpu_percent for node in responses if node.cpu_percent is not None]
+    ram_values = [
+        node.ram_used_mb / node.ram_total_mb * 100
+        for node in responses
+        if node.ram_total_mb and node.ram_used_mb is not None
+    ]
+    stats = WorkerOverviewStats(
+        total=len(responses),
+        healthy=sum(node.health == "HEALTHY" for node in responses),
+        needs_attention=sum(node.health in {"DEGRADED", "OFFLINE"} for node in responses),
+        active_sessions=sum(node.active_sessions for node in responses),
+        total_capacity=sum(node.capacity for node in responses),
+        average_cpu_percent=sum(cpu_values) / len(cpu_values) if cpu_values else None,
+        average_ram_percent=sum(ram_values) / len(ram_values) if ram_values else None,
+        latest_heartbeat=max((node.last_heartbeat for node in responses if node.last_heartbeat), default=None),
+    )
+    filtered = responses
+    if search:
+        needle = search.casefold()
+        filtered = [node for node in filtered if needle in node.hostname.casefold()]
+    if health:
+        filtered = [node for node in filtered if node.health == health]
+    if node_status:
+        filtered = [node for node in filtered if node.status == node_status]
+    if sort_by not in {"hostname", "health", "cpu", "ram", "sessions", "heartbeat"} or sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="invalid sort")
+
+    def ram_percent(node: BrowserNodeResponse) -> float:
+        return node.ram_used_mb / node.ram_total_mb * 100 if node.ram_total_mb and node.ram_used_mb is not None else -1
+
+    keys = {
+        "hostname": lambda node: node.hostname.casefold(),
+        "health": lambda node: node.health,
+        "cpu": lambda node: node.cpu_percent if node.cpu_percent is not None else -1,
+        "ram": ram_percent,
+        "sessions": lambda node: node.active_sessions,
+        "heartbeat": lambda node: node.last_heartbeat or datetime.min.replace(tzinfo=UTC),
+    }
+    filtered.sort(key=keys[sort_by], reverse=sort_dir == "desc")
+    return WorkerOverviewResponse(
+        items=filtered[offset : offset + limit],
+        total=len(filtered),
+        offset=offset,
+        limit=limit,
+        stats=stats,
+    )
 
 
 @router.get("/{node_id}", response_model=BrowserNodeResponse)

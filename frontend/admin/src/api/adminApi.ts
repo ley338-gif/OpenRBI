@@ -43,6 +43,7 @@ import type {
   SystemHealthDto,
   UserSummaryDto,
   UserListResponseDto,
+  WorkerOverviewDto,
 } from "@shared/api/types";
 
 // Only endpoints that actually exist on the Admin listener (section 48) —
@@ -132,6 +133,7 @@ export const adminApi = {
 
   // Nodes (Workers)
   listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
+  getWorkersOverview: (params?: { search?: string; health?: string; node_status?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) => api.get<WorkerOverviewDto>(`/admin/nodes/overview${queryString(params ?? {})}`),
   getNode: (id: string) => api.get<BrowserNodeDto>(`/admin/nodes/${id}`),
   getNodeMetrics: (id: string, range: DashboardRange) =>
     api.get<NodeHistoryPointDto[]>(`/admin/nodes/${id}/metrics?range=${range}`),

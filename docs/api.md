@@ -31,6 +31,10 @@ All user mutation endpoints remain ADMIN-only. `POST /admin/users/{id}/reset-pas
 
 `GET /admin/sessions` (ADMIN/SECURITY_REVIEWER) returns a paginated session operations response with global KPIs and actual lifecycle-state values. It supports `search` (session UUID/username), `session_status`, `worker_id`, `since`, `sort_by` (`started_at`, `duration`, `username`, `status`), `sort_dir`, `offset`, and `limit` (maximum 100). User and worker information are joined in one query. Session detail and lifecycle-action authorization remain unchanged; `kill` is ADMIN-only.
 
+### Worker overview
+
+`GET /admin/nodes/overview` (ADMIN/SECURITY_REVIEWER) returns a paginated worker inventory plus global worker KPIs. It supports `search` (hostname), `health`, `node_status`, `sort_by` (`hostname`, `health`, `cpu`, `ram`, `sessions`, `heartbeat`), `sort_dir`, `offset`, and `limit` (maximum 100). Health is computed by the central worker-health service; the endpoint does not derive a second UI-only health model. Worker state mutations remain ADMIN-only.
+
 ## Health (Phase 19)
 
 `GET /health` (public, unauthenticated) — pure liveness, always `200 {"status": "ok"}` if the process is up; carries no dependency information.

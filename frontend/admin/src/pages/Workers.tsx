@@ -1,120 +1,44 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import type { BrowserNodeDto, WorkerOverviewDto } from "@shared/api/types";
+import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States";
+import { Icons } from "@shared/components/Icons";
+import { PageHeader } from "@shared/components/PageHeader";
 import { StatusBadge } from "@shared/components/StatusBadge";
-import { LoadingBlock, EmptyState, ErrorState } from "@shared/components/States";
 import { formatDateTime } from "@shared/format";
-import type { BrowserNodeDto, WorkerHealthLabel } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
-const HEALTH_VALUES: WorkerHealthLabel[] = ["HEALTHY", "DEGRADED", "DRAINING", "MAINTENANCE", "OFFLINE"];
+const PAGE_SIZES = [10, 25, 50, 100];
+const ramPercent = (node: BrowserNodeDto) => node.ram_total_mb && node.ram_used_mb !== null ? node.ram_used_mb / node.ram_total_mb * 100 : null;
+const relativeTime = (value: string | null) => { if (!value) return "Never"; const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); if (seconds < 60) return `${seconds}s ago`; if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`; return `${Math.floor(seconds / 3600)}h ago`; };
 
-type SortKey = "hostname" | "cpu_percent" | "ram_percent" | "active_sessions";
-
-function ramPercent(n: BrowserNodeDto): number | null {
-  return n.ram_total_mb && n.ram_used_mb !== null ? (n.ram_used_mb / n.ram_total_mb) * 100 : null;
-}
-
-/**
- * Roadmap B1.10.3 — Worker Overview. Reads the same `GET /admin/nodes`
- * B1.10.1 already extended with real telemetry/health; this page is the
- * first UI surface to actually list every worker with that data (System.tsx
- * only ever showed a bare drain/undrain table). Filtering/sorting is
- * client-side over the full node list, same documented-gap pattern as
- * Sessions.tsx — there's no pagination need yet at MVP 1's node counts.
- */
 export function Workers() {
-  const [nodes, setNodes] = useState<BrowserNodeDto[] | null>(null);
+  const [data, setData] = useState<WorkerOverviewDto | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [healthFilter, setHealthFilter] = useState<string>("");
-  const [sortKey, setSortKey] = useState<SortKey>("hostname");
-
-  function load() {
-    adminApi.listNodes().then(setNodes).catch(() => setError("Could not load workers. The backend may be unavailable."));
-  }
-  useEffect(load, []);
-
-  const filtered = useMemo(() => {
-    if (!nodes) return [];
-    const rows = healthFilter ? nodes.filter((n) => n.health === healthFilter) : nodes.slice();
-    rows.sort((a, b) => {
-      if (sortKey === "hostname") return a.hostname.localeCompare(b.hostname);
-      if (sortKey === "cpu_percent") return (b.cpu_percent ?? -1) - (a.cpu_percent ?? -1);
-      if (sortKey === "ram_percent") return (ramPercent(b) ?? -1) - (ramPercent(a) ?? -1);
-      return b.active_sessions - a.active_sessions;
-    });
-    return rows;
-  }, [nodes, healthFilter, sortKey]);
-
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
-  if (!nodes) return <LoadingBlock label="Loading workers…" />;
-
-  return (
-    <div className="page">
-      <h1>Workers</h1>
-
-      <div className="filter-bar">
-        <select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)}>
-          <option value="">All health states</option>
-          {HEALTH_VALUES.map((h) => (
-            <option key={h} value={h}>
-              {h}
-            </option>
-          ))}
-        </select>
-        <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
-          <option value="hostname">Sort: hostname</option>
-          <option value="cpu_percent">Sort: CPU (highest first)</option>
-          <option value="ram_percent">Sort: RAM (highest first)</option>
-          <option value="active_sessions">Sort: active sessions (highest first)</option>
-        </select>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={load}>
-          Refresh
-        </button>
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState>No workers match.</EmptyState>
-      ) : (
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Hostname</th>
-                <th>Health</th>
-                <th>CPU</th>
-                <th>RAM</th>
-                <th>Sessions</th>
-                <th>Runtime</th>
-                <th>Last heartbeat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((n) => {
-                const ram = ramPercent(n);
-                return (
-                  <tr key={n.id}>
-                    <td>
-                      <Link to={`/workers/${n.id}`}>{n.hostname}</Link>
-                    </td>
-                    <td>
-                      <StatusBadge value={n.health} />
-                    </td>
-                    <td>{n.cpu_percent !== null ? `${n.cpu_percent.toFixed(0)}%` : "—"}</td>
-                    <td>{ram !== null ? `${ram.toFixed(0)}%` : "—"}</td>
-                    <td>
-                      {n.active_sessions} / {n.capacity}
-                    </td>
-                    <td>
-                      {n.runtime} {n.version}
-                    </td>
-                    <td>{formatDateTime(n.last_heartbeat)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+  const [search, setSearch] = useState(""); const [health, setHealth] = useState(""); const [status, setStatus] = useState("");
+  const [sortBy, setSortBy] = useState("hostname"); const [sortDir, setSortDir] = useState("asc");
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10); const [refreshing, setRefreshing] = useState(false);
+  function load(background = false) { if (background) setRefreshing(true); setError(null); adminApi.getWorkersOverview({ search: search || undefined, health: health || undefined, node_status: status || undefined, sort_by: sortBy, sort_dir: sortDir, offset: (page - 1) * pageSize, limit: pageSize }).then(setData).catch(() => setError("Could not load workers.")).finally(() => setRefreshing(false)); }
+  useEffect(() => { load(); const timer = window.setInterval(() => load(true), 30000); return () => window.clearInterval(timer); }, [search, health, status, sortBy, sortDir, page, pageSize]);
+  const clear = () => { setSearch(""); setHealth(""); setStatus(""); setPage(1); };
+  if (error && !data) return <div className="page"><ErrorState action={<button className="btn btn-secondary" onClick={() => load()}>Try again</button>}>{error}</ErrorState></div>;
+  if (!data) return <LoadingBlock label="Loading workers…" />;
+  const pages = Math.max(1, Math.ceil(data.total / pageSize)); const hasFilters = !!(search || health || status);
+  return <div className="page workers-page">
+    <PageHeader title="Workers" subtitle="Monitor and manage workers running isolated Secure Browser sessions." actions={<button className="btn btn-secondary" onClick={() => load(true)} disabled={refreshing}><Icons.RefreshCw /> {refreshing ? "Refreshing…" : "Refresh"}</button>} />
+    <div className="worker-kpis">
+      <article className="kpi-card"><span className="kpi-icon"><Icons.Worker /></span><div><small>Total workers</small><strong>{data.stats.total}</strong><p>{data.stats.healthy} healthy</p></div></article>
+      <article className="kpi-card"><span className="kpi-icon green"><Icons.Shield /></span><div><small>Healthy</small><strong>{data.stats.healthy}</strong><p>{data.stats.total ? Math.round(data.stats.healthy / data.stats.total * 100) : 0}% available</p></div></article>
+      <article className="kpi-card"><span className="kpi-icon amber"><Icons.Quarantine /></span><div><small>Needs attention</small><strong>{data.stats.needs_attention}</strong><p>Degraded or offline</p></div></article>
+      <article className="kpi-card"><span className="kpi-icon blue"><Icons.Sessions /></span><div><small>Active sessions</small><strong>{data.stats.active_sessions}</strong><p>{data.stats.total_capacity} total capacity</p></div></article>
+      <article className="kpi-card"><span className="kpi-icon"><Icons.System /></span><div><small>Average CPU</small><strong>{data.stats.average_cpu_percent === null ? "—" : `${data.stats.average_cpu_percent.toFixed(0)}%`}</strong><p>Reported workers</p></div></article>
+      <article className="kpi-card"><span className="kpi-icon"><Icons.System /></span><div><small>Average RAM</small><strong>{data.stats.average_ram_percent === null ? "—" : `${data.stats.average_ram_percent.toFixed(0)}%`}</strong><p>Reported workers</p></div></article>
     </div>
-  );
+    {data.stats.needs_attention > 0 && <div className="inline-alert warning"><Icons.Quarantine /><div><strong>{data.stats.needs_attention} worker{data.stats.needs_attention === 1 ? " needs" : "s need"} attention</strong><p>Review degraded or offline workers before scheduling additional sessions.</p></div></div>}
+    <section className="card worker-console"><div className="worker-filters"><label className="search-input"><Icons.Search /><input value={search} placeholder="Search workers by hostname…" onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></label><select value={health} onChange={(e) => { setHealth(e.target.value); setPage(1); }}><option value="">All health states</option>{["HEALTHY","DEGRADED","DRAINING","MAINTENANCE","OFFLINE"].map(v => <option key={v}>{v}</option>)}</select><select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All scheduling states</option>{["ONLINE","DRAINING","DEGRADED","MAINTENANCE","OFFLINE"].map(v => <option key={v}>{v}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)}><option value="hostname">Hostname</option><option value="health">Health</option><option value="cpu">CPU</option><option value="ram">RAM</option><option value="sessions">Sessions</option><option value="heartbeat">Last heartbeat</option></select><select value={sortDir} onChange={(e) => setSortDir(e.target.value)}><option value="asc">Ascending</option><option value="desc">Descending</option></select><button className="btn btn-secondary btn-sm" disabled={!hasFilters} onClick={clear}>Clear filters</button></div>
+      {data.items.length === 0 ? <EmptyState title={hasFilters ? "No matching workers" : "No workers registered"}><p>{hasFilters ? "Try changing your search or filters." : "Workers appear here after automatic registration with the control plane."}</p>{hasFilters && <button className="btn btn-primary btn-sm" onClick={clear}>Clear filters</button>}</EmptyState> : <div className="table-wrap"><table className="data-table worker-table"><thead><tr><th>Hostname</th><th>Health</th><th>CPU</th><th>RAM</th><th>Sessions</th><th className="worker-secondary">Runtime</th><th>Last heartbeat</th><th className="worker-secondary">Status</th><th>Actions</th></tr></thead><tbody>{data.items.map(node => { const ram = ramPercent(node); return <tr key={node.id}><td><div className="identity-cell"><span className={`worker-dot ${node.health.toLowerCase()}`} /><div className="identity-main"><Link className="identity-title" to={`/workers/${node.id}`}>{node.hostname}</Link><span className="identity-meta mono">{node.id.slice(0, 8)}…</span></div></div></td><td><StatusBadge value={node.health} /></td><td><strong>{node.cpu_percent === null ? "—" : `${node.cpu_percent.toFixed(0)}%`}</strong><span className="metric-bar"><i style={{ width: `${node.cpu_percent ?? 0}%` }} /></span></td><td><strong>{ram === null ? "—" : `${ram.toFixed(0)}%`}</strong><span className="metric-bar"><i style={{ width: `${ram ?? 0}%` }} /></span></td><td><strong>{node.active_sessions} / {node.capacity}</strong><span className="metric-bar"><i style={{ width: `${node.capacity ? node.active_sessions / node.capacity * 100 : 0}%` }} /></span></td><td className="worker-secondary"><strong>{node.runtime}</strong>{node.version && <small>{node.version}</small>}</td><td title={node.last_heartbeat ? formatDateTime(node.last_heartbeat) : undefined}><strong>{formatDateTime(node.last_heartbeat)}</strong><small>{relativeTime(node.last_heartbeat)}</small></td><td className="worker-secondary"><StatusBadge value={node.status} /></td><td><Link className="btn btn-secondary btn-sm" to={`/workers/${node.id}`}><Icons.Eye /> Details</Link></td></tr>; })}</tbody></table></div>}
+      <footer className="table-footer"><span>Showing {data.total ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, data.total)} of {data.total} workers</span><div className="pagination"><button disabled={page === 1} onClick={() => setPage(v => v - 1)}>‹</button><span>{page} / {pages}</span><button disabled={page === pages} onClick={() => setPage(v => v + 1)}>›</button><select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>{PAGE_SIZES.map(size => <option key={size}>{size}</option>)}</select></div></footer>
+    </section>
+    <aside className="dashboard-security-note"><Icons.Help /><div><strong>About workers</strong><p>Health combines heartbeat freshness and telemetry. Draining stops new scheduling while existing sessions continue normally.</p></div><a href="/docs/admin-guide.md">Learn more <Icons.ExternalLink /></a></aside>
+  </div>;
 }
