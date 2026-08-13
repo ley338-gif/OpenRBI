@@ -26,14 +26,12 @@ jobs:
             context: session-agent
             dockerfile: session-agent/Dockerfile
           - image: openrbi-frontend
-            # frontend/ itself, not the repo root: matches this branch's
-            # Dockerfile (COPY package.json ./ etc. assume that context).
-            # NOTE: the not-yet-merged feat/ui-polish branch moves this
-            # image's build context to the repo root (to COPY in docs/ for
-            # real Help-menu links) — whichever of these two branches
-            # merges second will need this value re-checked against
-            # frontend/Dockerfile's actual COPY paths at that point.
-            context: frontend
+            # Repo root, not frontend/ itself: frontend/Dockerfile's COPY
+            # paths (package.json under frontend/, plus COPY docs/ for the
+            # real Help-menu links added by the UI-polish pass) all assume
+            # this context, matching docker-compose.yml's own frontend
+            # build config.
+            context: .
             dockerfile: frontend/Dockerfile
           - image: openrbi-browser
             context: docker/browser
