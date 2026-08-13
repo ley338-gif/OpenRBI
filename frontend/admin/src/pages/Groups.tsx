@@ -37,7 +37,7 @@ export function Groups() {
     Promise.all([
       adminApi.getGroupsOverview({ search: search || undefined, policy_id: policyId || undefined, sort_by: sortBy, sort_dir: sortDir, offset: (page - 1) * pageSize, limit: pageSize }),
       adminApi.listPolicies(),
-    ]).then(([overview, availablePolicies]) => { setData(overview); setPolicies(availablePolicies); }).catch(() => setError("Could not load groups."));
+    ]).then(([overview, availablePolicies]) => { setData(overview); setPolicies(availablePolicies.items); }).catch(() => setError("Could not load groups."));
   }
   useEffect(load, [search, policyId, sortBy, sortDir, page, pageSize]);
 

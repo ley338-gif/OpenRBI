@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import FileAction, FileRuleType, PolicyType, PolicyVersionStatus, SecurityEventType
+from app.models.enums import (
+    FileAction,
+    FileRuleType,
+    PolicyType,
+    PolicyVersionStatus,
+    SecurityEventType,
+)
 from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.services.security_events import record_security_event
 
@@ -37,7 +43,7 @@ def _build_file_rules(file_rules: list[dict]) -> list[FilePolicyRule]:
     return built
 
 
-async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_id: uuid.UUID) -> Policy:
+async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_id: uuid.UUID, description: str | None = None) -> Policy:
     result = await db.execute(select(Policy).where(Policy.name == name))
     if result.scalar_one_or_none() is not None:
         raise PolicyServiceError(f"policy name already taken: {name}")
@@ -46,7 +52,7 @@ async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_
     except ValueError as exc:
         raise PolicyServiceError(f"unknown policy type: {policy_type}") from exc
 
-    policy = Policy(name=name, policy_type=ptype)
+    policy = Policy(name=name.strip(), policy_type=ptype, description=description.strip() if description else None)
     db.add(policy)
     await db.flush()
     return policy

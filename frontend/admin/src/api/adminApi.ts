@@ -32,6 +32,7 @@ import type {
   LoginDiagnosticsResponseDto,
   NodeHistoryPointDto,
   PolicyDetailDto,
+  PolicyListResponseDto,
   RevokeSessionsResponseDto,
   PolicySummaryDto,
   QuarantineFileDto,
@@ -88,10 +89,10 @@ export const adminApi = {
   killSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/kill`),
 
   // Policies
-  listPolicies: () => api.get<PolicySummaryDto[]>("/admin/policies"),
+  listPolicies: (params?: { search?: string; policy_type?: string; status_filter?: string; usage?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) => api.get<PolicyListResponseDto>(`/admin/policies${queryString(params ?? {})}`),
   getPolicy: (id: string) => api.get<PolicyDetailDto>(`/admin/policies/${id}`),
-  createPolicy: (name: string, policyType: string) =>
-    api.post<PolicySummaryDto>("/admin/policies", { name, policy_type: policyType }),
+  createPolicy: (name: string, policyType: string, description?: string) =>
+    api.post<PolicySummaryDto>("/admin/policies", { name, policy_type: policyType, description: description || null }),
   createVersion: (
     policyId: string,
     payload: { content: Record<string, unknown>; file_rules: { rule_type: string; match_pattern: string; action: string; priority: number }[] },

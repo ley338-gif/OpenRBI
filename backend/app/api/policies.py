@@ -9,13 +9,16 @@ from app.api.schemas.policies import (
     CreateVersionRequest,
     FileRuleResponse,
     PolicyDetail,
+    PolicyListResponse,
+    PolicyStats,
     PolicySummary,
     PolicyVersionResponse,
     RollbackRequest,
 )
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
-from app.models.policy import FilePolicyRule, Policy, PolicyVersion
+from app.models.group import Group
+from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.models.user import User
 from app.services.policies import (
     PolicyServiceError,
@@ -24,9 +27,9 @@ from app.services.policies import (
     create_policy,
     detach_policy_from_group,
     publish_version,
-    rollback as rollback_service,
     update_draft_version,
 )
+from app.services.policies import rollback as rollback_service
 
 router = APIRouter(prefix="/admin/policies", tags=["admin"], dependencies=[Depends(require_role("ADMIN"))])
 
@@ -74,6 +77,14 @@ async def _policy_summary(policy: Policy, db: AsyncSession) -> PolicySummary:
     if policy.current_version_id is not None:
         current = await db.get(PolicyVersion, policy.current_version_id)
         current_version_number = current.version_number if current else None
+    versions = (await db.execute(select(PolicyVersion).where(PolicyVersion.policy_id == policy.id))).scalars().all()
+    groups = (await db.execute(select(Group.name).join(GroupPolicy, GroupPolicy.group_id == Group.id).where(GroupPolicy.policy_id == policy.id).order_by(Group.name))).scalars().all()
+    latest = max(versions, key=lambda version: version.created_at, default=None)
+    updated_by = None
+    if latest and latest.created_by:
+        actor = await db.get(User, latest.created_by)
+        updated_by = actor.username if actor else None
+    updated_at = max([policy.updated_at, *(version.created_at for version in versions)])
     return PolicySummary(
         id=policy.id,
         name=policy.name,
@@ -81,13 +92,64 @@ async def _policy_summary(policy: Policy, db: AsyncSession) -> PolicySummary:
         description=policy.description,
         current_version_id=policy.current_version_id,
         current_version_number=current_version_number,
+        has_draft=any(version.status.value == "DRAFT" for version in versions),
+        version_count=len(versions),
+        assigned_groups=list(groups),
+        created_at=policy.created_at,
+        updated_at=updated_at,
+        updated_by=updated_by,
     )
 
 
-@router.get("", response_model=list[PolicySummary])
-async def list_policies(db: AsyncSession = Depends(get_db)) -> list[PolicySummary]:
-    result = await db.execute(select(Policy).order_by(Policy.name))
-    return [await _policy_summary(p, db) for p in result.scalars()]
+@router.get("", response_model=PolicyListResponse)
+async def list_policies(
+    search: str | None = None,
+    policy_type: str | None = None,
+    status_filter: str | None = None,
+    usage: str | None = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+    offset: int = 0,
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db),
+) -> PolicyListResponse:
+    if limit < 1 or limit > 100 or offset < 0:
+        raise HTTPException(status_code=422, detail="invalid pagination")
+    policies = (await db.execute(select(Policy))).scalars().all()
+    summaries = [await _policy_summary(policy, db) for policy in policies]
+    stats = PolicyStats(
+        total=len(summaries),
+        published=sum(item.current_version_id is not None for item in summaries),
+        drafts=sum(item.has_draft for item in summaries),
+        in_use=sum(bool(item.assigned_groups) for item in summaries),
+        total_versions=sum(item.version_count for item in summaries),
+        last_updated_at=max((item.updated_at for item in summaries), default=None),
+        last_updated_by=max(summaries, key=lambda item: item.updated_at).updated_by if summaries else None,
+    )
+    filtered = summaries
+    if search:
+        needle = search.casefold()
+        filtered = [item for item in filtered if needle in item.name.casefold() or needle in (item.description or "").casefold()]
+    if policy_type:
+        filtered = [item for item in filtered if item.policy_type == policy_type]
+    if status_filter == "PUBLISHED":
+        filtered = [item for item in filtered if item.current_version_id is not None]
+    elif status_filter == "DRAFT":
+        filtered = [item for item in filtered if item.has_draft]
+    if usage == "IN_USE":
+        filtered = [item for item in filtered if item.assigned_groups]
+    elif usage == "UNASSIGNED":
+        filtered = [item for item in filtered if not item.assigned_groups]
+    if sort_by not in {"name", "policy_type", "status", "updated_at"} or sort_dir not in {"asc", "desc"}:
+        raise HTTPException(status_code=422, detail="invalid sort")
+    key = {
+        "name": lambda item: item.name.casefold(),
+        "policy_type": lambda item: item.policy_type,
+        "status": lambda item: (item.current_version_id is not None, item.has_draft),
+        "updated_at": lambda item: item.updated_at,
+    }[sort_by]
+    filtered.sort(key=key, reverse=sort_dir == "desc")
+    return PolicyListResponse(items=filtered[offset:offset + limit], total=len(filtered), offset=offset, limit=limit, stats=stats)
 
 
 @router.post("", response_model=PolicySummary, status_code=status.HTTP_201_CREATED)
@@ -98,7 +160,7 @@ async def create_policy_endpoint(
 ) -> PolicySummary:
     try:
         policy = await create_policy(
-            db, name=payload.name, policy_type=payload.policy_type, actor_id=current_user.id
+            db, name=payload.name, policy_type=payload.policy_type, actor_id=current_user.id, description=payload.description
         )
     except PolicyServiceError as exc:
         await db.rollback()

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class CreatePolicyRequest(BaseModel):
     name: str
     policy_type: str
+    description: str | None = None
 
 
 class FileRuleInput(BaseModel):
@@ -50,6 +51,30 @@ class PolicySummary(BaseModel):
     description: str | None
     current_version_id: uuid.UUID | None
     current_version_number: int | None
+    has_draft: bool = False
+    version_count: int = 0
+    assigned_groups: list[str] = []
+    created_at: datetime
+    updated_at: datetime
+    updated_by: str | None = None
+
+
+class PolicyStats(BaseModel):
+    total: int
+    published: int
+    drafts: int
+    in_use: int
+    total_versions: int
+    last_updated_at: datetime | None
+    last_updated_by: str | None
+
+
+class PolicyListResponse(BaseModel):
+    items: list[PolicySummary]
+    total: int
+    offset: int
+    limit: int
+    stats: PolicyStats
 
 
 class PolicyDetail(PolicySummary):
