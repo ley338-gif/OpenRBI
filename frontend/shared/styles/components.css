@@ -558,6 +558,22 @@ table.data-table tbody tr:hover {
   font-family: var(--font-ui);
 }
 
+/*
+ * The chart's SVG uses preserveAspectRatio="none" so the plot geometry
+ * fills the available width responsively. That non-uniform scaling is
+ * fine for lines/gridlines, but it stretches SVG <text> glyphs
+ * illegibly on narrow containers — so axis labels are plain HTML,
+ * positioned to overlay the SVG instead of living inside it.
+ */
+.chart-axis-label-html {
+  position: absolute;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .chart-line {
   stroke: var(--color-accent);
   stroke-width: 2;

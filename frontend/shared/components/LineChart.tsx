@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 
 export interface LineChartPoint {
   t: string; // ISO timestamp
@@ -36,6 +36,26 @@ export function LineChart({
 }) {
   const gradientId = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  // Axis-label text now lives outside the SVG's scaled viewBox (see below),
+  // so a fixed "~6 labels" no longer overlaps due to glyph squishing — but
+  // it can still overlap on a genuinely narrow render (e.g. a sidebar-width
+  // card), since 6 labels simply don't fit in a couple hundred pixels.
+  // Track the rendered width so the label count can shrink with it. A
+  // callback ref (not useRef+useEffect with [] deps) because the container
+  // div only exists once `data` is loaded — an effect that only runs once
+  // on mount would fire while still showing the loading state, before the
+  // real node exists, and never re-attach once it does.
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    if (node) {
+      const observer = new ResizeObserver((entries) => setContainerWidth(entries[0].contentRect.width));
+      observer.observe(node);
+      resizeObserverRef.current = observer;
+    }
+  }, []);
 
   if (error) {
     return (
@@ -93,7 +113,7 @@ export function LineChart({
   // At most ~6 x-axis labels, evenly spaced by clock time (not by index —
   // buckets are sparse/irregular whenever metric collection had a gap, so
   // picking every Nth point can still bunch or skip labels in real time).
-  const maxLabels = 6;
+  const maxLabels = containerWidth === 0 || containerWidth >= 420 ? 6 : containerWidth >= 260 ? 4 : 3;
   const labelIndices = new Set<number>();
   if (data.length <= maxLabels) {
     data.forEach((_p, i) => labelIndices.add(i));
@@ -117,7 +137,7 @@ export function LineChart({
   const hovered = hoverIndex !== null ? data[hoverIndex] : null;
 
   return (
-    <div className="line-chart" style={{ height }}>
+    <div className="line-chart" style={{ height }} ref={containerRef}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
@@ -133,30 +153,18 @@ export function LineChart({
         </defs>
 
         {yTicks.map((tick, i) => (
-          <g key={i}>
-            <line
-              x1={paddingLeft}
-              x2={width - paddingRight}
-              y1={yFor(tick)}
-              y2={yFor(tick)}
-              className="chart-gridline"
-            />
-            <text x={paddingLeft - 8} y={yFor(tick)} textAnchor="end" dominantBaseline="middle" className="chart-axis-label">
-              {formatY ? formatY(tick) : Math.round(tick)}
-            </text>
-          </g>
+          <line
+            key={i}
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={yFor(tick)}
+            y2={yFor(tick)}
+            className="chart-gridline"
+          />
         ))}
 
         <polygon points={areaPoints} fill={`url(#${gradientId})`} stroke="none" />
         <polyline points={linePoints} fill="none" className="chart-line" />
-
-        {data.map((p, i) =>
-          labelIndices.has(i) ? (
-            <text key={i} x={xFor(i)} y={height - 6} textAnchor="middle" className="chart-axis-label">
-              {formatX ? formatX(p.t) : p.t}
-            </text>
-          ) : null,
-        )}
 
         {data.map((_p, i) => {
           // Hit region spans the midpoint to each neighbor, not a fixed
@@ -191,6 +199,38 @@ export function LineChart({
           <circle cx={xFor(hoverIndex)} cy={yFor(data[hoverIndex].value)} r={3.5} className="chart-hover-dot" />
         )}
       </svg>
+
+      {yTicks.map((tick, i) => (
+        <div
+          key={`y-${i}`}
+          className="chart-axis-label-html"
+          style={{
+            top: `${yFor(tick)}px`,
+            left: 0,
+            width: `${((paddingLeft - 8) / width) * 100}%`,
+            textAlign: "right",
+            transform: "translateY(-50%)",
+          }}
+        >
+          {formatY ? formatY(tick) : Math.round(tick)}
+        </div>
+      ))}
+
+      {data.map((p, i) =>
+        labelIndices.has(i) ? (
+          <div
+            key={`x-${i}`}
+            className="chart-axis-label-html"
+            style={{
+              left: `${(xFor(i) / width) * 100}%`,
+              bottom: 0,
+              transform: "translateX(-50%)",
+            }}
+          >
+            {formatX ? formatX(p.t) : p.t}
+          </div>
+        ) : null,
+      )}
 
       {hovered && (
         <div
