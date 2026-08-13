@@ -11,6 +11,10 @@ class DashboardKpisResponse(BaseModel):
     system_health: str
     avg_cpu_percent: float | None
     avg_ram_percent: float | None
+    users: int
+    files_processed_24h: int
+    blocked_files_24h: int
+    incidents_24h: int
 
 
 class SessionHistoryPointResponse(BaseModel):
@@ -35,6 +39,19 @@ class DashboardWarningResponse(BaseModel):
     username: str | None
 
 
+class FileStatusSummaryResponse(BaseModel):
+    status: str
+    count: int
+
+
+class RecentIncidentResponse(BaseModel):
+    id: str
+    severity: str
+    status: str
+    title: str
+    created_at: datetime
+
+
 class DashboardResponse(BaseModel):
     generated_at: datetime
     # True when at least one worker's heartbeat is stale (or there are no
@@ -45,6 +62,10 @@ class DashboardResponse(BaseModel):
     session_history: list[SessionHistoryPointResponse]
     workers: list[WorkerSummaryResponse]
     warnings: list[DashboardWarningResponse]
+    file_statuses_24h: list[FileStatusSummaryResponse]
+    quarantine_pending: int
+    quarantine_high_risk: int
+    recent_incidents: list[RecentIncidentResponse]
 
     @classmethod
     def from_dashboard(cls, dashboard) -> "DashboardResponse":
@@ -55,4 +76,8 @@ class DashboardResponse(BaseModel):
             session_history=[SessionHistoryPointResponse(**p) for p in dashboard.session_history],
             workers=[WorkerSummaryResponse(**w.__dict__) for w in dashboard.workers],
             warnings=[DashboardWarningResponse(**w.__dict__) for w in dashboard.warnings],
+            file_statuses_24h=[FileStatusSummaryResponse(**item.__dict__) for item in dashboard.file_statuses_24h],
+            quarantine_pending=dashboard.quarantine_pending,
+            quarantine_high_risk=dashboard.quarantine_high_risk,
+            recent_incidents=[RecentIncidentResponse(**item.__dict__) for item in dashboard.recent_incidents],
         )

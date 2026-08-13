@@ -61,9 +61,13 @@ A plain `ldap://` URI with StartTLS turned off is refused (both here and in the 
 
 ## Dashboard
 
-Shows active/isolated session counts, open incidents, quarantine items awaiting review, and overall system health as KPI cards — all aggregated client-side from the same list/health endpoints described below (there is no dedicated dashboard-stats endpoint yet; see [architecture.md](architecture.md) for this documented gap). Never a fabricated chart — if there's no time-series API, there's no chart for it.
+The Dashboard is the Admin Portal's operations and security overview. It refreshes automatically every 15 seconds and can also be refreshed manually. The visible timestamp comes from the server response; stale or missing worker heartbeats are explicitly marked as delayed telemetry.
 
-**Needs attention** lists real, current problems only: open high/critical incidents, isolated sessions, quarantined files awaiting review, and any degraded health component. When there are none, it says so plainly instead of showing an empty table or inventing something to display. **Recent activity** is a feed of the latest real security events, not a separate log.
+All values are computed server-side by `GET /admin/dashboard` from existing PostgreSQL records and health services. The KPI row shows active sessions, registered users, files processed in the last 24 hours, rejected files in the last 24 hours, incidents created in the last 24 hours, and overall system health. The session-history range can be 1 hour, 6 hours, 24 hours, or 7 days; only recorded worker metric samples are plotted.
+
+The file-status summary uses real quarantine lifecycle states created during the last 24 hours. The worker pool lists registered workers rather than invented worker groups, including current health, CPU, memory, and session capacity. Quarantine, recent incidents, average resources, and recent security activity are derived from the same persisted operational data. **Needs attention** only shows defined real conditions: sustained worker CPU pressure, offline/draining/maintenance workers, and repeated failed logins. An empty state is shown when there is nothing actionable.
+
+The dashboard does not estimate missing measurements, invent trends, or display file-type statistics when no dedicated aggregate is available. Fine-grained investigation and state-changing actions remain on the linked Sessions, Workers, Quarantine, Incidents, Policies, Users, System Health, and Audit pages.
 
 ## Help and Notifications
 
@@ -71,17 +75,23 @@ Every page in both portals has a **Help** menu (top bar) linking to the real Mar
 
 ## Users and groups
 
-**Users**: create, view, enable/disable, reset password, reset MFA, lock/unlock the login, terminate all sessions. Creating a user is a real form against `POST /admin/users` (username, initial password, role, groups) — the backend, not the form, is authoritative on password rules. A user's detail page shows their groups, MFA status, current login-lockout state, and their sessions, with the same Disconnect/Isolate/Restore/Kill actions available inline, plus a **Terminate all sessions** button (Roadmap B1.10.4) shown only when the user has at least one live session. Promoting a user to ADMIN/SECURITY_REVIEWER doesn't retroactively force MFA — it's re-checked from the user's *current* role at their very next login.
+**Users**: the overview provides server-side username search, role/group/account-status, LOCAL/LDAP, and MFA filters, sortable username/role/status columns, and server-side pagination (10/25/50/100 rows). KPI cards report total and active accounts, MFA adoption, administrators, and groups from persisted data. Each row shows identity source, compact group membership, account/MFA status, and the latest successful login recorded in the audit log. OpenRBI has no display-name or email attributes, so the UI does not invent them.
+
+Create, view, enable/disable, reset password, reset MFA, lock/unlock the login, and terminate all sessions remain available. **Create local user** creates an OpenRBI-managed credential; LDAP identities are provisioned after a successful directory login. LOCAL means OpenRBI owns the password and may reset it. LDAP means the external directory owns the password: the local password-reset endpoint rejects these accounts and the UI does not offer a local password workflow for them. OpenRBI roles, groups, account status, and MFA remain local security controls for both identity sources according to the existing authentication design. An administrator cannot disable their own account, and the backend also prevents disabling the final active administrator.
+
+Creating a user is a real form against `POST /admin/users` (username, initial password, role, groups) — the backend, not the form, is authoritative on password rules. A user's detail page shows their groups, MFA status, current login-lockout state, and their sessions, with the same Disconnect/Isolate/Restore/Kill actions available inline, plus a **Terminate all sessions** button (Roadmap B1.10.4) shown only when the user has at least one live session. Promoting a user to ADMIN/SECURITY_REVIEWER doesn't retroactively force MFA — it's re-checked from the user's *current* role at their very next login.
 
 **Login lockout / Account Lock (Roadmap B1.10.5)**: the same brute-force lockout the system already applies automatically after repeated failed logins is now visible and admin-controllable — the User Detail page shows whether the account is currently locked (and, while locked, roughly how long until it clears on its own), with **Lock account**/**Unlock account** buttons. Lock is not the same thing as Disable: Disable is a separate, persistent "account deactivated" state; Lock only blocks new logins for the same window an automatic lockout would, and also immediately revokes any session the account currently has. An MFA reset does the same session-revocation, since MFA is otherwise only re-checked at login time — a reset previously left an already-issued session valid until it expired on its own.
 
-**Groups**: create/delete from the Groups page. Group membership is set when creating a user or from their detail page.
+**Groups**: the overview shows real group, membership, and policy-assignment totals, with server-side name/description search, policy filtering, sortable name/member-count/creation columns, and pagination. Policy names are shown compactly and link into the existing Policies workflow. Creating a group requires a name and accepts an optional description. Deleting always requires explicit confirmation and reports the current membership and policy-link impact; it removes those links but never deletes user accounts.
+
+Group membership continues to be managed when creating a user or from the existing user detail page. Policies continue to be assigned through the versioned Policies workflow. The current data model has no group-to-role relationship, LDAP group synchronization/source field, group `updated_at`, or editable group endpoint, so the UI does not claim those capabilities or display invented values.
 
 Every disable, MFA reset, lock, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
 
 <details><summary>Underlying API</summary>
 
-`POST/GET /admin/users`, disable/enable, admin password reset, role reassignment, group membership, `GET /admin/users/{id}/lockout`, `POST /admin/users/{id}/{lock,unlock}`, `POST /admin/users/{id}/sessions/revoke` (`app/api/admin.py`), plus `POST/GET /admin/groups` and `DELETE /admin/groups/{id}`, and `POST /mfa/admin/users/{id}/reset` (`app/api/admin_mfa.py`).
+`GET /admin/users` accepts `search`, `role`, `group_id`, `status`, `auth_source`, `mfa`, `sort_by`, `sort_dir`, `offset`, and `limit`; it returns the current page plus aggregate user-management statistics and actual role names. `POST /admin/users`, disable/enable, LOCAL-only admin password reset, role reassignment, group membership, `GET /admin/users/{id}/lockout`, `POST /admin/users/{id}/{lock,unlock}`, `POST /admin/users/{id}/sessions/revoke` (`app/api/admin.py`), plus `POST/GET /admin/groups` and `DELETE /admin/groups/{id}`, and `POST /mfa/admin/users/{id}/reset` (`app/api/admin_mfa.py`). All routes are protected by the backend ADMIN role dependency.
 </details>
 
 ## Sessions

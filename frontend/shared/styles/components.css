@@ -1492,3 +1492,57 @@ table.data-table a:hover { text-decoration: underline; }
 @media (max-width: 1250px) { .dashboard-kpis { grid-template-columns: repeat(3, 1fr); } .session-hero { grid-template-columns: 1fr 1fr; } .session-hero > .btn { justify-self: end; } }
 @media (max-width: 960px) { .dashboard-content-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .dashboard-kpis { grid-template-columns: 1fr; } .session-hero { grid-template-columns: 1fr; } .session-hero > .btn { width: 100%; justify-self: stretch; } .dashboard-file-row { grid-template-columns: 36px 1fr auto; }.dashboard-file-row > span { display: none; } .quick-action-grid { grid-template-columns: 1fr; } .dashboard-security-note { align-items: flex-start; flex-wrap: wrap; } }
+
+/* Admin operations dashboard */
+.dashboard-refresh { display: flex; align-items: center; gap: var(--space-2); font-size: .78rem; }
+.dashboard-ops-grid { display: grid; gap: var(--space-5); margin-bottom: var(--space-5); }
+.dashboard-ops-grid .card { margin-top: 0; margin-bottom: 0; }
+.dashboard-ops-grid-top { grid-template-columns: minmax(0, 1.65fr) minmax(300px, .9fr); }
+.dashboard-ops-grid-mid { grid-template-columns: minmax(280px, .7fr) minmax(0, 1.5fr); }
+.dashboard-ops-grid-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.range-buttons { display: flex; gap: var(--space-1); }
+.status-summary, .compact-list { display: flex; flex-direction: column; }
+.status-summary-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.status-summary-row:last-child, .compact-list a:last-child { border-bottom: 0; }
+.compact-list a { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); text-decoration: none; color: var(--color-text); }
+.compact-list time { color: var(--color-text-muted); font-size: .75rem; }
+.operations-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+.operations-metrics > div, .resource-card { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.operations-metrics svg { color: var(--color-accent-strong); }
+.operations-metrics span, .resource-card span { color: var(--color-text-muted); font-size: .8rem; }
+.operations-metrics strong, .resource-card strong { font-size: 1.35rem; }
+.resource-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); margin-top: var(--space-4); }
+@media (max-width: 1000px) { .dashboard-ops-grid-top, .dashboard-ops-grid-mid, .dashboard-ops-grid-bottom { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .dashboard-refresh { flex-wrap: wrap; justify-content: flex-end; } .operations-metrics, .resource-grid { grid-template-columns: 1fr; } .compact-list a { grid-template-columns: auto 1fr; } .compact-list time { grid-column: 2; } }
+
+/* Admin user management */
+.users-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.users-management-card { padding: var(--space-4); }
+.users-filter-grid { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
+.users-filter-grid select { min-width: 135px; }
+.users-search { display: flex; align-items: center; gap: var(--space-2); min-width: 240px; flex: 1; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-muted); }
+.users-search input { border: 0; padding-left: 0; box-shadow: none; }
+.users-table th button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; cursor: pointer; }
+.identity-source, .role-pill, .group-pills span { display: inline-flex; padding: 3px 8px; border-radius: 999px; background: var(--color-surface-muted); font-size: .72rem; font-weight: 600; }
+.role-admin { color: var(--color-accent-strong); background: var(--surface-emphasis-bg); }
+.group-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.mfa-cell { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 550; white-space: nowrap; }
+.mfa-cell svg { width: 15px; color: var(--status-healthy-fg); }
+.row-actions { display: flex; gap: var(--space-1); }
+.users-pagination { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding-top: var(--space-4); color: var(--color-text-muted); font-size: .8rem; }
+.users-pagination > div { display: flex; align-items: center; gap: var(--space-2); }
+.users-pagination select { width: auto; }
+.create-user-card { margin-bottom: var(--space-5); }
+@media (max-width: 1150px) { .users-kpis { grid-template-columns: repeat(3, 1fr); } .users-secondary { display: none; } }
+@media (max-width: 700px) { .users-kpis { grid-template-columns: 1fr; } .users-filter-grid > * { width: 100%; } .users-pagination { align-items: flex-start; flex-direction: column; } .users-pagination > div { flex-wrap: wrap; } }
+
+/* Admin group management */
+.groups-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.groups-management-card { padding: var(--space-4); }
+.groups-filter-bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
+.groups-filter-bar select { min-width: 190px; }
+.groups-table th button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; cursor: pointer; }
+.groups-table .identity-avatar svg { width: 17px; height: 17px; }
+.group-create-form { display: grid; grid-template-columns: 1fr 1.5fr auto; align-items: end; gap: var(--space-3); }
+@media (max-width: 900px) { .groups-secondary { display: none; } .group-create-form { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .groups-kpis { grid-template-columns: 1fr; } .groups-filter-bar { align-items: stretch; flex-direction: column; } .groups-filter-bar > * { width: 100%; } }

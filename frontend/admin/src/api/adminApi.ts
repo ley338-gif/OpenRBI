@@ -21,6 +21,7 @@ import type {
   FirstRunMfaConfirmResponse,
   FirstRunStatusResponse,
   GroupSummaryDto,
+  GroupOverviewResponseDto,
   IncidentDto,
   LdapConfigDto,
   LdapConfigUpdateRequest,
@@ -39,6 +40,7 @@ import type {
   SetupConfirmResponse,
   SystemHealthDto,
   UserSummaryDto,
+  UserListResponseDto,
 } from "@shared/api/types";
 
 // Only endpoints that actually exist on the Admin listener (section 48) —
@@ -49,7 +51,8 @@ import type {
 // shared router, registered in every mode).
 export const adminApi = {
   // Users
-  listUsers: () => api.get<UserSummaryDto[]>("/admin/users"),
+  listUsers: (params?: { search?: string; role?: string; group_id?: string; status?: string; auth_source?: string; mfa?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>
+    api.get<UserListResponseDto>(`/admin/users${queryString(params ?? {})}`),
   getUser: (id: string) => api.get<UserSummaryDto>(`/admin/users/${id}`),
   createUser: (payload: { username: string; password: string; role: Role; group_ids: string[] }) =>
     api.post<UserSummaryDto>("/admin/users", payload),
@@ -68,6 +71,8 @@ export const adminApi = {
 
   // Groups
   listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),
+  getGroupsOverview: (params?: { search?: string; policy_id?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>
+    api.get<GroupOverviewResponseDto>(`/admin/groups-overview${queryString(params ?? {})}`),
   createGroup: (name: string, description: string | null) =>
     api.post<GroupSummaryDto>("/admin/groups", { name, description }),
   deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),

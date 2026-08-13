@@ -13,6 +13,14 @@
 
 Every `metadata_json` payload across the codebase was reviewed end-to-end: every single one is limited to IDs, hashes, filenames, MIME types, and short reason strings — never a password, MFA secret, complete token, or file content, matching the project brief's explicit prohibition.
 
+## Admin user management
+
+`GET /admin/users` (ADMIN) returns a paginated object with `items`, `total`, `offset`, `limit`, real role names, and global account statistics. Supported query parameters are `search` (username), `role`, `group_id`, `status` (`ACTIVE`/`DISABLED`), `auth_source` (`LOCAL`/`LDAP`), `mfa` (`ENABLED`/`NOT_ENABLED`), `sort_by` (`username`, `role`, `status`, `created_at`), `sort_dir`, `offset`, and `limit` (maximum 100). Each item includes its authentication source and latest successful login time derived from audit events. The endpoint joins roles and loads group names and login times in bounded aggregate queries rather than one query per user.
+
+All user mutation endpoints remain ADMIN-only. `POST /admin/users/{id}/reset-password` is only valid for LOCAL accounts; LDAP credentials remain directory-managed. Self-disable, disabling the final active administrator, and removing the final active administrator's ADMIN role are rejected by the backend.
+
+`GET /admin/groups-overview` (ADMIN) supplies the paginated Groups operations view. It accepts `search` (name/description), `policy_id`, `sort_by` (`name`, `members`, `created_at`), `sort_dir`, `offset`, and `limit` (maximum 100), and returns aggregate totals plus policy names without per-group queries. Existing `GET /admin/groups` remains the compact unpaginated selector contract used by user and policy forms. Group create/delete and policy attachment endpoints remain unchanged and ADMIN-authorized.
+
 ## Health (Phase 19)
 
 `GET /health` (public, unauthenticated) — pure liveness, always `200 {"status": "ok"}` if the process is up; carries no dependency information.

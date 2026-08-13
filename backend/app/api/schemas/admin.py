@@ -31,6 +31,25 @@ class UserSummary(BaseModel):
     mfa_enabled: bool
     groups: list[str]
     created_at: datetime
+    auth_source: str
+    last_login_at: datetime | None
+
+
+class UserManagementStats(BaseModel):
+    total: int
+    active: int
+    mfa_enabled: int
+    administrators: int
+    groups: int
+
+
+class UserListResponse(BaseModel):
+    items: list[UserSummary]
+    total: int
+    offset: int
+    limit: int
+    stats: UserManagementStats
+    roles: list[str]
 
 
 class LockoutStatus(BaseModel):
@@ -76,3 +95,22 @@ class GroupSummary(BaseModel):
     name: str
     description: str | None
     member_count: int
+
+
+class GroupOverviewItem(GroupSummary):
+    policies: list[str]
+    created_at: datetime
+
+
+class GroupOverviewStats(BaseModel):
+    total: int
+    memberships: int
+    with_policies: int
+
+
+class GroupOverviewResponse(BaseModel):
+    items: list[GroupOverviewItem]
+    total: int
+    offset: int
+    limit: int
+    stats: GroupOverviewStats
