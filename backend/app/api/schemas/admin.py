@@ -95,3 +95,22 @@ class GroupSummary(BaseModel):
     name: str
     description: str | None
     member_count: int
+
+
+class GroupOverviewItem(GroupSummary):
+    policies: list[str]
+    created_at: datetime
+
+
+class GroupOverviewStats(BaseModel):
+    total: int
+    memberships: int
+    with_policies: int
+
+
+class GroupOverviewResponse(BaseModel):
+    items: list[GroupOverviewItem]
+    total: int
+    offset: int
+    limit: int
+    stats: GroupOverviewStats

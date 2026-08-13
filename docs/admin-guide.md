@@ -83,7 +83,9 @@ Creating a user is a real form against `POST /admin/users` (username, initial pa
 
 **Login lockout / Account Lock (Roadmap B1.10.5)**: the same brute-force lockout the system already applies automatically after repeated failed logins is now visible and admin-controllable — the User Detail page shows whether the account is currently locked (and, while locked, roughly how long until it clears on its own), with **Lock account**/**Unlock account** buttons. Lock is not the same thing as Disable: Disable is a separate, persistent "account deactivated" state; Lock only blocks new logins for the same window an automatic lockout would, and also immediately revokes any session the account currently has. An MFA reset does the same session-revocation, since MFA is otherwise only re-checked at login time — a reset previously left an already-issued session valid until it expired on its own.
 
-**Groups**: create/delete from the Groups page. Group membership is set when creating a user or from their detail page.
+**Groups**: the overview shows real group, membership, and policy-assignment totals, with server-side name/description search, policy filtering, sortable name/member-count/creation columns, and pagination. Policy names are shown compactly and link into the existing Policies workflow. Creating a group requires a name and accepts an optional description. Deleting always requires explicit confirmation and reports the current membership and policy-link impact; it removes those links but never deletes user accounts.
+
+Group membership continues to be managed when creating a user or from the existing user detail page. Policies continue to be assigned through the versioned Policies workflow. The current data model has no group-to-role relationship, LDAP group synchronization/source field, group `updated_at`, or editable group endpoint, so the UI does not claim those capabilities or display invented values.
 
 Every disable, MFA reset, lock, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
 

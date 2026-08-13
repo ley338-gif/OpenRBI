@@ -1,12 +1,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.admin import (
     CreateGroupRequest,
     CreateUserRequest,
+    GroupOverviewItem,
+    GroupOverviewResponse,
+    GroupOverviewStats,
     GroupSummary,
     LockoutStatus,
     ResetPasswordRequest,
@@ -23,6 +26,7 @@ from app.db.session import get_db
 from app.models.browser_session import BrowserSession
 from app.models.enums import SecurityEventType
 from app.models.group import Group, UserGroup
+from app.models.policy import GroupPolicy, Policy
 from app.models.role import Role
 from app.models.security_event import SecurityEvent
 from app.models.user import User
@@ -347,6 +351,77 @@ async def list_groups(db: AsyncSession = Depends(get_db)) -> list[GroupSummary]:
         GroupSummary(id=group.id, name=group.name, description=group.description, member_count=count)
         for group, count in rows
     ]
+
+
+@router.get("/groups-overview", response_model=GroupOverviewResponse)
+async def groups_overview(
+    search: str | None = None,
+    policy_id: uuid.UUID | None = None,
+    sort_by: str = "name",
+    sort_dir: str = "asc",
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> GroupOverviewResponse:
+    """Paginated group operations view without per-row queries."""
+    member_count = func.count(func.distinct(UserGroup.id)).label("member_count")
+    base = (
+        select(Group, member_count)
+        .outerjoin(UserGroup, UserGroup.group_id == Group.id)
+        .group_by(Group.id)
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        base = base.where(or_(Group.name.ilike(term), Group.description.ilike(term)))
+    if policy_id:
+        base = base.where(
+            Group.id.in_(select(GroupPolicy.group_id).where(GroupPolicy.policy_id == policy_id))
+        )
+    sort_columns = {"name": Group.name, "members": member_count, "created_at": Group.created_at}
+    sort_column = sort_columns.get(sort_by)
+    if sort_column is None or sort_dir not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="invalid sort option")
+    total = await db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    ordering = sort_column.desc() if sort_dir == "desc" else sort_column.asc()
+    rows = (await db.execute(base.order_by(ordering).offset(offset).limit(limit))).all()
+    group_ids = [group.id for group, _ in rows]
+    policy_names: dict[uuid.UUID, list[str]] = {group_id: [] for group_id in group_ids}
+    if group_ids:
+        attached = await db.execute(
+            select(GroupPolicy.group_id, Policy.name)
+            .join(Policy, Policy.id == GroupPolicy.policy_id)
+            .where(GroupPolicy.group_id.in_(group_ids))
+            .order_by(Policy.name)
+        )
+        for group_id, policy_name in attached.all():
+            policy_names[group_id].append(policy_name)
+
+    total_groups = await db.scalar(select(func.count(Group.id))) or 0
+    memberships = await db.scalar(select(func.count(UserGroup.id))) or 0
+    groups_with_policies = await db.scalar(
+        select(func.count(func.distinct(GroupPolicy.group_id)))
+    ) or 0
+    return GroupOverviewResponse(
+        items=[
+            GroupOverviewItem(
+                id=group.id,
+                name=group.name,
+                description=group.description,
+                member_count=count,
+                policies=policy_names[group.id],
+                created_at=group.created_at,
+            )
+            for group, count in rows
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+        stats=GroupOverviewStats(
+            total=total_groups,
+            memberships=memberships,
+            with_policies=groups_with_policies,
+        ),
+    )
 
 
 @router.post("/groups", response_model=GroupSummary, status_code=status.HTTP_201_CREATED)

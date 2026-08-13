@@ -191,6 +191,19 @@ export interface GroupSummaryDto {
   member_count: number;
 }
 
+export interface GroupOverviewDto extends GroupSummaryDto {
+  policies: string[];
+  created_at: string;
+}
+
+export interface GroupOverviewResponseDto {
+  items: GroupOverviewDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  stats: { total: number; memberships: number; with_policies: number };
+}
+
 export type PolicyType = "NETWORK" | "DOWNLOADS" | "UPLOADS" | "CLIPBOARD" | "BROWSER" | "SESSION" | "MIME" | "SOURCE";
 export type PolicyVersionStatus = "DRAFT" | "PUBLISHED" | "SUPERSEDED";
 export type FileRuleType = "MIME" | "SOURCE";

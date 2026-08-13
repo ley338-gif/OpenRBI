@@ -21,6 +21,7 @@ import type {
   FirstRunMfaConfirmResponse,
   FirstRunStatusResponse,
   GroupSummaryDto,
+  GroupOverviewResponseDto,
   IncidentDto,
   LdapConfigDto,
   LdapConfigUpdateRequest,
@@ -70,6 +71,8 @@ export const adminApi = {
 
   // Groups
   listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),
+  getGroupsOverview: (params?: { search?: string; policy_id?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>
+    api.get<GroupOverviewResponseDto>(`/admin/groups-overview${queryString(params ?? {})}`),
   createGroup: (name: string, description: string | null) =>
     api.post<GroupSummaryDto>("/admin/groups", { name, description }),
   deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),
