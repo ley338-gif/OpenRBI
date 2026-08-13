@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
@@ -16,14 +19,66 @@ from app.api.health import router as health_router
 from app.api.mfa import router as mfa_router
 from app.api.policies import router as policies_router
 from app.api.sessions import router as sessions_router
+from app.api.setup import router as setup_router
 from app.config import get_settings
+from app.db.session import async_session_factory
+from app.services.setup_service import regenerate_setup_token
 
 settings = get_settings()
+logger = logging.getLogger("openrbi.setup")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Roadmap B1.9 — console-only setup token (Section 9): generated fresh
+    # on every boot while the system is still uninitialized, printed once
+    # to this process's own stdout/log, never exposed through any API. A
+    # `user`-only listener never runs this — it has no /setup/* routes and
+    # nothing in that process needs the token at all.
+    #
+    # Deliberately best-effort, never fatal: this project's own documented
+    # install order (docs/deployment.md) — and CI's, .github/workflows/
+    # ci.yml — is `docker compose up -d --build` *then* a separate
+    # `alembic upgrade head`, i.e. the app is expected to start
+    # successfully before its own schema exists yet. Before B1.9 nothing
+    # at startup ever touched the database, so that ordering was safe
+    # unconditionally; this is the one exception, and it must not turn a
+    # missing/not-yet-migrated system_state table into the whole process
+    # refusing to start (a real regression caught by CI, not assumed away
+    # here) — a genuine DB outage at startup should still leave the
+    # process up to serve /health honestly, not crash-loop.
+    if settings.listener_mode in ("admin", "both"):
+        try:
+            async with async_session_factory() as db:
+                token = await regenerate_setup_token(db)
+        except Exception:
+            logger.warning(
+                "Could not check/generate the first-run setup token at startup "
+                "(database not migrated yet?) — will retry on next restart.",
+                exc_info=True,
+            )
+            token = None
+        if token:
+            logger.warning(
+                "\n"
+                "==============================================================\n"
+                "OpenRBI initial setup token:\n\n"
+                "  %s\n\n"
+                "Open the Admin Portal and enter this token, together with a\n"
+                "username and password, to create the initial administrator.\n"
+                "This token is invalidated once setup completes, and a new one\n"
+                "is issued on every restart until then.\n"
+                "==============================================================",
+                token,
+            )
+    yield
+
 
 app = FastAPI(
     title="OpenRBI Backend",
     version="0.1.0",
     description="OpenRBI control-plane API (MVP 1 under active development).",
+    lifespan=_lifespan,
 )
 
 
@@ -55,7 +110,11 @@ def _register_user_routes(app: FastAPI) -> None:
 def _register_admin_routes(app: FastAPI) -> None:
     """Every router gated by require_role("ADMIN"/"SECURITY_REVIEWER"),
     plus admin_mfa (the one endpoint split out of the shared mfa router —
-    see app/api/admin_mfa.py).
+    see app/api/admin_mfa.py) and setup_router — deliberately NOT
+    require_role-gated (there is no admin yet when it's used), but still
+    only meaningful to an admin-capable listener, closed by its own
+    persisted initialized flag/setup-token/rate-limit instead (Roadmap
+    B1.9, docs/adr/0017-first-run-bootstrap.md).
     """
     app.include_router(admin_router)
     app.include_router(admin_sessions_router)
@@ -67,6 +126,7 @@ def _register_admin_routes(app: FastAPI) -> None:
     app.include_router(admin_health_router)
     app.include_router(policies_router)
     app.include_router(admin_mfa_router)
+    app.include_router(setup_router)
 
 
 # Single, central decision point for which API surface this process
