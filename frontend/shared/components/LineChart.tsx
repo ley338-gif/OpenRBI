@@ -90,8 +90,28 @@ export function LineChart({
   const linePoints = data.map((p, i) => `${xFor(i)},${yFor(p.value)}`).join(" ");
   const areaPoints = `${paddingLeft},${paddingTop + plotHeight} ${linePoints} ${paddingLeft + plotWidth},${paddingTop + plotHeight}`;
 
-  // At most ~6 x-axis labels regardless of point count, evenly spaced.
-  const labelStep = Math.max(1, Math.ceil(data.length / 6));
+  // At most ~6 x-axis labels, evenly spaced by clock time (not by index —
+  // buckets are sparse/irregular whenever metric collection had a gap, so
+  // picking every Nth point can still bunch or skip labels in real time).
+  const maxLabels = 6;
+  const labelIndices = new Set<number>();
+  if (data.length <= maxLabels) {
+    data.forEach((_p, i) => labelIndices.add(i));
+  } else {
+    for (let s = 0; s < maxLabels; s++) {
+      const targetTime = minTime + (s / (maxLabels - 1)) * timeRange;
+      let closest = 0;
+      let closestDelta = Infinity;
+      for (let i = 0; i < times.length; i++) {
+        const delta = Math.abs(times[i] - targetTime);
+        if (delta < closestDelta) {
+          closestDelta = delta;
+          closest = i;
+        }
+      }
+      labelIndices.add(closest);
+    }
+  }
   const yTicks = [minValue, minValue + range / 2, maxValue];
 
   const hovered = hoverIndex !== null ? data[hoverIndex] : null;
@@ -131,7 +151,7 @@ export function LineChart({
         <polyline points={linePoints} fill="none" className="chart-line" />
 
         {data.map((p, i) =>
-          i % labelStep === 0 || i === data.length - 1 ? (
+          labelIndices.has(i) ? (
             <text key={i} x={xFor(i)} y={height - 6} textAnchor="middle" className="chart-axis-label">
               {formatX ? formatX(p.t) : p.t}
             </text>
