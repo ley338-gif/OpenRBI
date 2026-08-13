@@ -4,7 +4,34 @@
 
 ## Logging in
 
-Open the Admin Portal (Compact: `/admin/` on the same origin as the reverse proxy; Segmented: your organization's dedicated Admin Portal origin). MFA is mandatory for ADMIN and SECURITY_REVIEWER — the portal walks a not-yet-enrolled account through QR-code enrollment before issuing a session, exactly like the User Portal's flow (they share the same component).
+Open the Admin Portal (Compact: `/admin/` on the same origin as the reverse proxy; Segmented: your organization's dedicated Admin Portal origin). MFA is mandatory for ADMIN and SECURITY_REVIEWER — the portal walks a not-yet-enrolled account through QR-code enrollment before issuing a session, exactly like the User Portal's flow (they share the same component). This applies identically to a local or an LDAP-authenticated login (see below) — there is no way to reach an ADMIN/SECURITY_REVIEWER session without MFA regardless of which one authenticated the request.
+
+## LDAP/LDAPS authentication (Roadmap Phase B / B1)
+
+An equal, parallel login option alongside local accounts — never a replacement. Local login always stays available, including for the entire duration of an LDAP outage; there is no way to disable it. See [ADR 0015](adr/0015-auth-provider-abstraction.md) for the full design and its security rationale.
+
+**Enabling it** — set in `.env` and restart `backend` (see `.env.example` for the full list with descriptions):
+
+```
+OPENRBI_LDAP_ENABLED=true
+OPENRBI_LDAP_SERVER_URI=ldaps://your-ad-server:636      # or ldap://... with StartTLS left on
+OPENRBI_LDAP_BIND_DN=...          # a dedicated search/service account, not an admin's own credentials
+OPENRBI_LDAP_BIND_PASSWORD=...
+OPENRBI_LDAP_BASE_DN=DC=example,DC=org
+OPENRBI_LDAP_GROUP_ROLE_MAPPING={"CN=OpenRBI-Admins,OU=Groups,DC=example,DC=org": "ADMIN"}
+```
+
+A plain `ldap://` URI with StartTLS turned off is refused at startup — there is no supported way to configure an unencrypted bind. `OPENRBI_LDAP_GROUP_ROLE_MAPPING` is a JSON object mapping a full group DN to one of `USER`/`SECURITY_REVIEWER`/`ADMIN`; a login whose groups match none of these mapped DNs gets `USER`, never an implicit elevated default. If multiple mapped groups apply, `ADMIN` wins over `SECURITY_REVIEWER` wins over `USER`.
+
+**How a login is resolved** — on `/auth/login`, local is always tried first. LDAP is only attempted if the local check fails *and* LDAP is enabled — so an account with a real local password is checked against that password first, with no network round-trip, before LDAP is ever consulted.
+
+**First login for a new AD user** — if no local account exists for that exact username, one is created automatically ("just-in-time provisioning") with the role resolved from the bind's group membership, and no local password stored (LDAP credentials are never cached). Matching is by **exact username string only** — no name/birthdate/other-attribute matching is attempted, deliberately: a fuzzy match risks linking the wrong local account to a different real person, which is a direct account-takeover path. If your local and LDAP usernames genuinely differ for the same person, they are treated as two separate accounts.
+
+**Role authority when a username exists both locally (with a real password) and in LDAP** — the local account's role is authoritative and is **never** overwritten by an LDAP group login, even if that LDAP login succeeds. This specifically protects a deliberately-provisioned local account (e.g. an emergency ADMIN access path that should keep working even if someone's AD group memberships change or lapse) from being silently downgraded by an incidental LDAP login. Role is only ever re-derived from current LDAP groups for an account that was itself LDAP-provisioned (no local password) — for that account, the mapped role is re-checked on every login, the same "recompute from current source of truth" principle already applied to MFA-mandatory-role enforcement.
+
+**If the LDAP server is unreachable or a TLS handshake fails**, login for LDAP-only accounts is denied — the same generic "invalid credentials" response as a wrong password, never a silent fallback to any outcome that grants access. Local accounts are completely unaffected and keep working throughout. There is currently no dedicated "LDAP is down" indicator in the Admin Portal beyond this — an admin noticing a wave of LDAP-account login failures during a real outage should check LDAP server reachability directly.
+
+**Known limitation**: group DN matching in `OPENRBI_LDAP_GROUP_ROLE_MAPPING` is exact-string, case-sensitive — it does not normalize DN casing or attribute ordering. Configure the mapping using the DN exactly as your directory returns it (verify with a real `ldapsearch` against a test account if login resolves to `USER` unexpectedly).
 
 ## Dashboard
 
