@@ -145,6 +145,22 @@ MSYS_NO_PATHCONV=1 docker exec \
     "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider tests/integration/test_ldap_login_flow.py \
     -k "not test_ldap_server_unreachable_denies_login_no_fallback"
 
+# Roadmap B1.8.5: test_admin_ldap.py drives app/api/admin_ldap.py over real
+# HTTP against this same now-running backend — unlike scripts/
+# run-ldap-tests.sh (which talks to LdapAuthProvider in-process, inside the
+# pytest process itself), the admin API's TLS handshake happens inside the
+# uvicorn process, so it needs the backend container's own
+# LDAPTLS_REQCERT=never (set via .env above) to trust this throwaway
+# self-signed cert — that's exactly why this file only runs here, not from
+# run-ldap-tests.sh. OPENRBI_LDAP_SERVER_URI/BIND_DN/BASE_DN/etc. are
+# already present in this exec's environment via .env's env_file wiring
+# (docker-compose.yml), which is what the test file's own request payloads
+# are built from.
+echo "[ldap-integration-tests] running admin LDAP configuration API tests..."
+MSYS_NO_PATHCONV=1 docker exec \
+    -e OPENRBI_LDAP_TEST_ADMIN_USERNAME="$TEST_USER_USERNAME" \
+    "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider tests/integration/test_admin_ldap.py
+
 echo "[ldap-integration-tests] stopping LDAP server to test the unreachable case..."
 docker stop "$LDAP_CONTAINER" >/dev/null
 sleep 2
