@@ -199,6 +199,27 @@ async def test_wrong_setup_token_is_rejected(db, client):
 
 
 @pytest.mark.asyncio
+async def test_username_collision_with_an_unrelated_existing_user_is_rejected_cleanly(db, client):
+    """Real bug, found manually against a live dev stack, not hypothetical:
+    when no bootstrap is in progress yet (system_state.setup_admin_user_id
+    is None) and the requested username already belongs to a completely
+    unrelated local account, create_user() raises UserServiceError — which
+    originally propagated out of create_bootstrap_admin as an unhandled
+    exception (a raw 500), not the same clean 400 every other bootstrap
+    failure returns.
+    """
+    existing_user, _ = await make_user(db, role_name="USER")
+    token = await _fresh_token(db)
+    r = await client.post(
+        "/setup/admin",
+        json={"setup_token": token, "username": existing_user.username, "password": "Bootstrap-Pw2026!"},
+    )
+    assert r.status_code == 400, r.text
+    assert "Traceback" not in r.text
+    assert "Internal Server Error" not in r.text
+
+
+@pytest.mark.asyncio
 async def test_repeated_wrong_setup_tokens_are_rate_limited(db, client):
     await _fresh_token(db)
     username = _bootstrap_username()

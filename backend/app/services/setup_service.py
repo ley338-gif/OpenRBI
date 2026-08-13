@@ -34,7 +34,7 @@ from app.models.system_state import SYSTEM_STATE_ID, SystemState
 from app.models.user import User
 from app.services.mfa import confirm_enrollment
 from app.services.security_events import record_security_event
-from app.services.users import create_user
+from app.services.users import UserServiceError, create_user
 
 # Bootstrap has no real username yet, so the existing per-username
 # lockout/rate-limit machinery (app/core/sessions.py) is reused keyed by
@@ -159,9 +159,15 @@ async def create_bootstrap_admin(db: AsyncSession, *, setup_token: str, username
                 group_ids=[],
                 created_by=BOOTSTRAP_SYSTEM_ACTOR_ID,
             )
-        except Exception:
+        except UserServiceError as exc:
+            # A real bug, not a hypothetical: an entirely unrelated local
+            # account already using this username (e.g. one created by a
+            # prior, never-completed bootstrap attempt with a different
+            # username reservation) previously propagated as an unhandled
+            # 500 instead of the same clean "could not create the initial
+            # administrator" 400 every other bootstrap failure returns.
             await db.rollback()
-            raise
+            raise SetupError(str(exc)) from exc
         state.setup_admin_user_id = user.id
         db.add(state)
 
