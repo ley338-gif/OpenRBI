@@ -70,7 +70,9 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 ## Scope
 
-MVP 1 deliberately excludes LDAP/AD/Entra ID/OIDC/SAML/WebAuthn, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+MVP 1 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+
+LDAP/LDAPS authentication against an existing Active Directory (Roadmap Phase B / B1) is implemented as an equal, parallel option alongside local login — see [docs/admin-guide.md](docs/admin-guide.md#ldapldaps-authentication-roadmap-phase-b--b1) for configuration and [ADR 0015](docs/adr/0015-auth-provider-abstraction.md) for the design.
 
 ## License
 
