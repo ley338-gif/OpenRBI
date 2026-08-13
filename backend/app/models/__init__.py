@@ -16,6 +16,7 @@ from app.models.role import Role
 from app.models.security_event import SecurityEvent
 from app.models.system_state import SystemState
 from app.models.user import User
+from app.models.worker_metric_sample import WorkerMetricSample
 
 __all__ = [
     "BrowserNode",
@@ -34,4 +35,5 @@ __all__ = [
     "SystemState",
     "User",
     "UserGroup",
+    "WorkerMetricSample",
 ]

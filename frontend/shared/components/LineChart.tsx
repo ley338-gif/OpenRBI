@@ -1,0 +1,166 @@
+import { useId, useState } from "react";
+
+export interface LineChartPoint {
+  t: string; // ISO timestamp
+  value: number;
+}
+
+/**
+ * Roadmap B1.10.2 — a small, hand-rolled SVG line chart. No charting
+ * library existed anywhere in the frontend before this (checked); adding
+ * one for a handful of admin-portal line charts would be a heavier
+ * dependency than this actually needs. Deliberately not decorative —
+ * every chart this renders backs a real administrative number (session
+ * count, CPU/RAM over time), never a visual flourish (see the task's own
+ * "no decorative graphs without administrative value" instruction).
+ *
+ * Handles its own loading/empty/error states so callers never have to
+ * remember to; `data === null` means still loading, `error` overrides
+ * everything, an empty array renders the axis with an explicit "no data"
+ * message rather than a blank box that could be mistaken for zero.
+ */
+export function LineChart({
+  data,
+  error,
+  yLabel,
+  formatX,
+  formatY,
+  height = 220,
+}: {
+  data: LineChartPoint[] | null;
+  error?: string | null;
+  yLabel?: string;
+  formatX?: (iso: string) => string;
+  formatY?: (value: number) => string;
+  height?: number;
+}) {
+  const gradientId = useId();
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  if (error) {
+    return (
+      <div className="chart-state chart-state-error" style={{ height }}>
+        {error}
+      </div>
+    );
+  }
+  if (data === null) {
+    return (
+      <div className="chart-state" style={{ height }}>
+        <span className="spinner" />
+      </div>
+    );
+  }
+  if (data.length === 0) {
+    return (
+      <div className="chart-state chart-state-empty" style={{ height }}>
+        No data for this range yet.
+      </div>
+    );
+  }
+
+  const width = 800; // viewBox width — scales responsively via CSS, not a pixel count
+  const paddingLeft = 44;
+  const paddingRight = 12;
+  const paddingTop = 12;
+  const paddingBottom = 28;
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+
+  const values = data.map((p) => p.value);
+  const maxValue = Math.max(...values, 1);
+  const minValue = Math.min(...values, 0);
+  const range = maxValue - minValue || 1;
+
+  const xFor = (i: number) => paddingLeft + (data.length === 1 ? plotWidth / 2 : (i / (data.length - 1)) * plotWidth);
+  const yFor = (v: number) => paddingTop + plotHeight - ((v - minValue) / range) * plotHeight;
+
+  const linePoints = data.map((p, i) => `${xFor(i)},${yFor(p.value)}`).join(" ");
+  const areaPoints = `${paddingLeft},${paddingTop + plotHeight} ${linePoints} ${paddingLeft + plotWidth},${paddingTop + plotHeight}`;
+
+  // At most ~6 x-axis labels regardless of point count, evenly spaced.
+  const labelStep = Math.max(1, Math.ceil(data.length / 6));
+  const yTicks = [minValue, minValue + range / 2, maxValue];
+
+  const hovered = hoverIndex !== null ? data[hoverIndex] : null;
+
+  return (
+    <div className="line-chart" style={{ height }}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={yLabel ? `${yLabel} over time` : "Line chart"}
+        onMouseLeave={() => setHoverIndex(null)}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {yTicks.map((tick, i) => (
+          <g key={i}>
+            <line
+              x1={paddingLeft}
+              x2={width - paddingRight}
+              y1={yFor(tick)}
+              y2={yFor(tick)}
+              className="chart-gridline"
+            />
+            <text x={paddingLeft - 8} y={yFor(tick)} textAnchor="end" dominantBaseline="middle" className="chart-axis-label">
+              {formatY ? formatY(tick) : Math.round(tick)}
+            </text>
+          </g>
+        ))}
+
+        <polygon points={areaPoints} fill={`url(#${gradientId})`} stroke="none" />
+        <polyline points={linePoints} fill="none" className="chart-line" />
+
+        {data.map((p, i) =>
+          i % labelStep === 0 || i === data.length - 1 ? (
+            <text key={i} x={xFor(i)} y={height - 6} textAnchor="middle" className="chart-axis-label">
+              {formatX ? formatX(p.t) : p.t}
+            </text>
+          ) : null,
+        )}
+
+        {data.map((_p, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={xFor(i) - plotWidth / Math.max(data.length, 1) / 2}
+            y={paddingTop}
+            width={plotWidth / Math.max(data.length, 1)}
+            height={plotHeight}
+            fill="transparent"
+            onMouseEnter={() => setHoverIndex(i)}
+          />
+        ))}
+
+        {hoverIndex !== null && (
+          <line
+            x1={xFor(hoverIndex)}
+            x2={xFor(hoverIndex)}
+            y1={paddingTop}
+            y2={paddingTop + plotHeight}
+            className="chart-hover-line"
+          />
+        )}
+        {hoverIndex !== null && (
+          <circle cx={xFor(hoverIndex)} cy={yFor(data[hoverIndex].value)} r={3.5} className="chart-hover-dot" />
+        )}
+      </svg>
+
+      {hovered && (
+        <div
+          className="chart-tooltip"
+          style={{ left: `${(xFor(hoverIndex!) / width) * 100}%` }}
+        >
+          <div className="chart-tooltip-value">{formatY ? formatY(hovered.value) : hovered.value}</div>
+          <div className="chart-tooltip-label">{formatX ? formatX(hovered.t) : hovered.t}</div>
+        </div>
+      )}
+    </div>
+  );
+}

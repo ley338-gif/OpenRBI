@@ -15,6 +15,7 @@ import logging
 from app.config import get_settings
 from app.core.session_agent_client import SessionAgentError
 from app.db.session import async_session_factory
+from app.services.metrics_history import record_sample
 from app.services.sessions import refresh_node_from_agent
 
 logger = logging.getLogger("openrbi.node_poller")
@@ -28,7 +29,8 @@ async def _poll_loop() -> None:
         await asyncio.sleep(settings.node_poll_interval_seconds)
         try:
             async with async_session_factory() as db:
-                await refresh_node_from_agent(db)
+                node = await refresh_node_from_agent(db)
+                await record_sample(db, node)
                 await db.commit()
         except SessionAgentError:
             # Expected during a real Session Agent outage — the node's

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
 from app.api.admin_audit import router as admin_audit_router
+from app.api.admin_dashboard import router as admin_dashboard_router
 from app.api.admin_health import router as admin_health_router
 from app.api.admin_incidents import router as admin_incidents_router
 from app.api.admin_ldap import router as admin_ldap_router
@@ -127,6 +128,7 @@ def _register_admin_routes(app: FastAPI) -> None:
     B1.9, docs/adr/0017-first-run-bootstrap.md).
     """
     app.include_router(admin_router)
+    app.include_router(admin_dashboard_router)
     app.include_router(admin_sessions_router)
     app.include_router(admin_quarantine_router)
     app.include_router(admin_incidents_router)

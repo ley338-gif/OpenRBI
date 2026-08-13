@@ -71,6 +71,29 @@ test.describe("Admin Portal", () => {
     await expect(page.getByText(/system health/i)).toBeVisible();
   });
 
+  test("Dashboard's operations view (B1.10.2) shows real worker load and a working range selector", async ({ page }) => {
+    await loginAsAdmin(page);
+
+    // KPI cards backed by GET /admin/dashboard, not the old client-side
+    // aggregation — "Workers healthy" only exists on the new endpoint.
+    await expect(page.getByText(/workers healthy/i)).toBeVisible();
+    await expect(page.getByText(/avg cpu/i)).toBeVisible();
+    await expect(page.getByText(/avg ram/i)).toBeVisible();
+    await expect(page.getByText(/last updated \d{1,2}:\d{2}:\d{2}/i)).toBeVisible();
+
+    // Session history chart renders as a real SVG, not a placeholder box.
+    await expect(page.getByRole("img", { name: /active sessions over time/i })).toBeVisible();
+
+    // Worker load section lists the real seeded session-agent node.
+    await expect(page.getByText(/worker load/i)).toBeVisible();
+    await expect(page.locator(".load-bar-row")).toHaveCount(1);
+
+    // Range selector actually triggers a new fetch against the backend.
+    const historyResponse = page.waitForResponse((r) => r.url().includes("/admin/dashboard?range=7d") && r.ok());
+    await page.getByRole("button", { name: "7d", exact: true }).click();
+    await historyResponse;
+  });
+
   test("Users page lists the real seeded users", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Users", exact: true }).click();
