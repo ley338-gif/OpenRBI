@@ -111,7 +111,11 @@ Two separate Vite/React/TypeScript single-page apps, `frontend/user/` and `front
 MVP 1 runs on a single Linux host, but:
 
 - The Session Agent is addressed over the network, not assumed co-located with the backend.
-- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version) even though only one node exists in MVP 1.
+- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version, and — Roadmap B1.10.1 — host-wide `cpu_percent`/`ram_total_mb`/`ram_used_mb`/`node_started_at`) even though only one node exists in MVP 1.
 - The scheduler has an abstract `select_node()` seam, trivially returning the single node today, but built so real multi-node scheduling can replace it later without changing callers.
 
 Real multi-node scheduling, HA, and Kubernetes orchestration are explicitly out of MVP 1 scope (see README "Scope").
+
+### Worker telemetry and health (Roadmap B1.10.1)
+
+`app/core/node_poller.py` refreshes `BrowserNode` from the Session Agent's `GET /v1/nodes/self` on a fixed interval (`OPENRBI_NODE_POLL_INTERVAL_SECONDS`, default 15s) independent of session-creation traffic, using the same in-process-`asyncio.Task` pattern as `app/core/download_poller.py` — no new background-worker infrastructure. `app/services/worker_health.py`'s `compute_worker_health()` is the single, centrally-defined mapping from a node's raw state to an admin-facing `HEALTHY/DEGRADED/DRAINING/MAINTENANCE/OFFLINE` label (heartbeat-staleness checked first, before any status field is trusted) — see [ADR 0018](adr/0018-worker-telemetry-and-health.md) for the full design and why `MAINTENANCE` is a new, distinct state from `DRAINING`.

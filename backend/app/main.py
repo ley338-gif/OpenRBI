@@ -21,6 +21,7 @@ from app.api.policies import router as policies_router
 from app.api.sessions import router as sessions_router
 from app.api.setup import router as setup_router
 from app.config import get_settings
+from app.core import node_poller
 from app.db.session import async_session_factory
 from app.services.setup_service import regenerate_setup_token
 
@@ -71,7 +72,16 @@ async def _lifespan(app: FastAPI):
                 "==============================================================",
                 token,
             )
+
+    # Roadmap B1.10.1 — keeps worker telemetry current for the admin
+    # monitoring UI regardless of session-creation traffic. Started only
+    # where that UI is actually served; a user-only listener still gets
+    # organic refreshes from select_node() on every session it creates.
+    if settings.listener_mode in ("admin", "both"):
+        node_poller.start()
+
     yield
+    node_poller.stop()
 
 
 app = FastAPI(

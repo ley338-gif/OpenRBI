@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     clamav_host: str = "clamav"
     clamav_port: int = 3310
 
+    # Roadmap Phase B / B1.10.1 — worker telemetry polling (app/core/
+    # node_poller.py) and the thresholds app/services/worker_health.py uses
+    # to derive HEALTHY/DEGRADED/OFFLINE. 15s keeps the dashboard reasonably
+    # current without hammering the Session Agent (project brief's own "a
+    # few seconds to a few tens of seconds" guidance); OFFLINE at 3x that
+    # interval tolerates one or two missed polls (a slow response, a GC
+    # pause) without flapping a healthy node to OFFLINE and back.
+    node_poll_interval_seconds: float = 15.0
+    node_heartbeat_stale_seconds: float = 45.0
+    node_cpu_degraded_percent: float = 90.0
+    node_ram_degraded_percent: float = 90.0
+
     # Productization v0.1.1 (docs/analysis/productization-v0.1.1-zone-separation.md,
     # docs/adr/0011-user-admin-listener-separation.md): which API surface this
     # process instance registers. "both" (the default) preserves MVP 1's
