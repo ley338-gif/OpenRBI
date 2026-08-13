@@ -32,6 +32,30 @@ export interface SetupConfirmResponse {
   recovery_codes: string[];
 }
 
+// Roadmap B1.9 — first-run bootstrap (backend/app/api/schemas/setup.py).
+// Deliberately a different name/shape from SetupConfirmResponse above,
+// which is the *mandatory-MFA-enrollment* response every ADMIN's first
+// login can hit — these two are unrelated flows that happen to share the
+// word "setup".
+export interface FirstRunStatusResponse {
+  setup_required: boolean;
+}
+
+export interface FirstRunAdminRequest {
+  setup_token: string;
+  username: string;
+  password: string;
+}
+
+export interface FirstRunAdminResponse {
+  mfa_token: string;
+}
+
+export interface FirstRunMfaConfirmResponse {
+  status: string;
+  recovery_codes: string[];
+}
+
 export type SessionStatus =
   | "QUEUED"
   | "STARTING"

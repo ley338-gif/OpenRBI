@@ -14,6 +14,10 @@ import type {
   AdminSessionDto,
   BrowserNodeDto,
   EnrollResponse,
+  FirstRunAdminRequest,
+  FirstRunAdminResponse,
+  FirstRunMfaConfirmResponse,
+  FirstRunStatusResponse,
   GroupSummaryDto,
   IncidentDto,
   LdapConfigDto,
@@ -117,6 +121,14 @@ export const adminApi = {
   getLdapConfig: () => api.get<LdapConfigDto>("/admin/ldap/config"),
   updateLdapConfig: (payload: LdapConfigUpdateRequest) => api.put<LdapConfigDto>("/admin/ldap/config", payload),
   testLdapConfig: (payload: LdapTestRequest) => api.post<LdapTestResponseDto>("/admin/ldap/test", payload),
+
+  // First-run bootstrap (app/api/setup.py — B1.9). Deliberately
+  // unauthenticated on the backend side; this client sends no cookie logic
+  // of its own beyond the ApiClient's default credentials:"include".
+  firstRunStatus: () => api.get<FirstRunStatusResponse>("/setup/status"),
+  firstRunCreateAdmin: (payload: FirstRunAdminRequest) => api.post<FirstRunAdminResponse>("/setup/admin", payload),
+  firstRunMfaConfirm: (mfaToken: string, code: string) =>
+    api.post<FirstRunMfaConfirmResponse>("/setup/mfa/confirm", { mfa_token: mfaToken, code }),
 
   // Shared MFA (app/api/mfa.py — registered in every listener mode)
   mfaSetupEnroll: (mfaToken: string) => api.post<EnrollResponse>("/mfa/setup/enroll", { mfa_token: mfaToken }),
