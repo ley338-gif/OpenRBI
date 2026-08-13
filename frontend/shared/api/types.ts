@@ -213,17 +213,24 @@ export interface SystemHealthDto {
   components: ComponentHealthDto[];
 }
 
-export type BrowserNodeStatus = "ONLINE" | "DRAINING" | "OFFLINE" | "DEGRADED";
+export type BrowserNodeStatus = "ONLINE" | "DRAINING" | "OFFLINE" | "DEGRADED" | "MAINTENANCE";
 
 export interface BrowserNodeDto {
   id: string;
   hostname: string;
   status: BrowserNodeStatus;
+  // Roadmap B1.10.1 — the centrally-computed label; read this for display,
+  // not `status` (the raw scheduling flag).
+  health: WorkerHealthLabel;
   capacity: number;
   active_sessions: number;
   runtime: string;
   version: string | null;
   last_heartbeat: string | null;
+  cpu_percent: number | null;
+  ram_total_mb: number | null;
+  ram_used_mb: number | null;
+  uptime_seconds: number | null;
 }
 
 // Roadmap B1.8 — admin-portal-managed LDAP configuration
@@ -277,4 +284,50 @@ export interface LdapTestResponseDto {
   success: boolean;
   steps: LdapTestStepDto[];
   groups_discovered: number | null;
+}
+
+// Roadmap B1.10.2 — Operations Dashboard (backend/app/api/schemas/dashboard.py)
+export type DashboardRange = "1h" | "6h" | "24h" | "7d";
+
+export interface DashboardKpisDto {
+  active_sessions: number;
+  active_sessions_delta_last_hour: number | null;
+  workers_healthy: number;
+  workers_total: number;
+  system_health: string;
+  avg_cpu_percent: number | null;
+  avg_ram_percent: number | null;
+}
+
+export interface SessionHistoryPointDto {
+  t: string;
+  count: number;
+}
+
+export type WorkerHealthLabel = "HEALTHY" | "DEGRADED" | "DRAINING" | "MAINTENANCE" | "OFFLINE";
+
+export interface WorkerSummaryDto {
+  id: string;
+  hostname: string;
+  health: WorkerHealthLabel;
+  cpu_percent: number | null;
+  ram_percent: number | null;
+  active_sessions: number;
+  capacity: number;
+}
+
+export interface DashboardWarningDto {
+  kind: string;
+  message: string;
+  worker_hostname: string | null;
+  username: string | null;
+}
+
+export interface DashboardResponseDto {
+  generated_at: string;
+  telemetry_stale: boolean;
+  kpis: DashboardKpisDto;
+  session_history: SessionHistoryPointDto[];
+  workers: WorkerSummaryDto[];
+  warnings: DashboardWarningDto[];
 }

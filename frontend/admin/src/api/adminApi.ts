@@ -13,6 +13,8 @@ function queryString(params: Record<string, string | number | undefined>): strin
 import type {
   AdminSessionDto,
   BrowserNodeDto,
+  DashboardRange,
+  DashboardResponseDto,
   EnrollResponse,
   FirstRunAdminRequest,
   FirstRunAdminResponse,
@@ -116,6 +118,9 @@ export const adminApi = {
   listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
   drainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/drain`),
   undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
+
+  // Operations dashboard (app/api/admin_dashboard.py — B1.10.2)
+  getDashboard: (range: DashboardRange) => api.get<DashboardResponseDto>(`/admin/dashboard?range=${range}`),
 
   // LDAP configuration (app/api/admin_ldap.py — B1.8)
   getLdapConfig: () => api.get<LdapConfigDto>("/admin/ldap/config"),

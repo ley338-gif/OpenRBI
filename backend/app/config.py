@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     node_heartbeat_stale_seconds: float = 45.0
     node_cpu_degraded_percent: float = 90.0
     node_ram_degraded_percent: float = 90.0
+    # Roadmap B1.10.2 — the longest range the dashboard's own UI offers is
+    # 7d; nothing older than that is ever queried, so nothing older than
+    # that needs to stay in worker_metric_samples. Pruned opportunistically
+    # by the same poll tick that inserts new samples (app/core/
+    # node_poller.py) rather than a separate scheduled job.
+    metrics_retention_days: int = 7
 
     # Productization v0.1.1 (docs/analysis/productization-v0.1.1-zone-separation.md,
     # docs/adr/0011-user-admin-listener-separation.md): which API surface this
