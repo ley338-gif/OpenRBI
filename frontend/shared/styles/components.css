@@ -1441,6 +1441,61 @@ table.data-table a:hover { text-decoration: underline; }
 .download-security-note { display: flex; align-items: flex-start; gap: var(--space-3); margin-top: var(--space-5); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-white); color: var(--color-accent-strong); }
 .download-security-note p { margin: 0; color: var(--color-text-muted); font-size: .84rem; line-height: 1.5; }
 .file-details-modal { max-width: 620px; }
+
+/* LDAP / Active Directory administration */
+.ldap-page form { display: grid; gap: var(--space-5); }
+.ldap-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(380px, .95fr); gap: var(--space-5); align-items: start; }
+.ldap-side { display: grid; gap: var(--space-5); }
+.ldap-page .section-title { display: flex; align-items: flex-start; gap: 12px; }
+.ldap-page .section-title h2 { margin: 0 0 4px; font-size: 1rem; }
+.ldap-page .section-title p { margin: 0; color: var(--color-text-muted); font-size: .82rem; }
+.ldap-page .section-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; color: var(--color-primary); background: var(--color-primary-soft); }
+.toggle-control { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .82rem; }
+.toggle-control input { position: absolute; opacity: 0; }
+.toggle-control > span { position: relative; width: 38px; height: 22px; border-radius: 20px; background: var(--color-border-strong); transition: .2s; }
+.toggle-control > span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: .2s; }
+.toggle-control input:checked + span { background: var(--color-primary); }
+.toggle-control input:checked + span::after { transform: translateX(16px); }
+.ldap-check { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0 18px; font-size: .84rem; }
+.ldap-check input { margin-top: 3px; accent-color: var(--color-primary); }
+.ldap-check span { display: grid; gap: 3px; }
+.ldap-check small { color: var(--color-text-muted); }
+.field-error { display: block; margin-top: 5px; color: var(--color-danger); }
+.inline-alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px; margin: -6px 0 16px; border: 1px solid; border-radius: var(--radius-md); font-size: .82rem; }
+.inline-alert p { margin: 2px 0 0; }
+.inline-alert.warning { color: #9a5b00; background: #fff8e8; border-color: #f4d28c; }
+.inline-alert.danger { color: var(--color-danger); background: var(--color-danger-soft); border-color: #f4b8bd; }
+.password-field { position: relative; }
+.password-field input { padding-right: 42px; }
+.ldap-advanced { border-top: 1px solid var(--color-border); padding-top: 14px; }
+.ldap-advanced summary { cursor: pointer; color: var(--color-primary); font-weight: 650; font-size: .85rem; }
+.ldap-advanced .form-field { margin-top: 16px; }
+.ldap-test-row { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px; margin-top: 22px; }
+.ldap-test-row .btn { margin-bottom: 16px; }
+.ldap-test-result { margin-top: 4px; padding: 14px; border: 1px solid; border-radius: var(--radius-md); }
+.ldap-test-result.success { background: #f2fcf7; border-color: #bfe9d0; }
+.ldap-test-result.failure { background: var(--color-danger-soft); border-color: #f1b7bd; }
+.ldap-result-heading { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
+.result-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: white; background: var(--color-success); font-weight: 800; }
+.failure .result-icon { background: var(--color-danger); }
+.ldap-result-heading p { margin: 3px 0 0; color: var(--color-text-muted); font-size: .78rem; }
+.ldap-test-steps { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.ldap-test-steps > div { display: grid; grid-template-columns: 20px 130px 1fr; gap: 8px; font-size: .78rem; }
+.ldap-test-steps small { color: var(--color-text-muted); }
+.ldap-test-steps .ok { color: var(--color-success); }.ldap-test-steps .failed { color: var(--color-danger); }
+.ldap-status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 20px; }
+.ldap-status-grid div { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.ldap-status-grid small, .status-note { color: var(--color-text-muted); font-size: .76rem; }
+.positive { color: var(--color-success); }.negative { color: var(--color-danger); }.muted { color: var(--color-text-muted); }
+.status-note { margin: 14px 0 0; }
+.ldap-dn { display: block; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ldap-mapping-card .empty-state { min-height: 160px; }
+.mapping-note { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; color: var(--color-text-muted); font-size: .78rem; }
+.ldap-save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: rgba(255,255,255,.94); box-shadow: var(--shadow-md); backdrop-filter: blur(12px); }
+.ldap-save-bar span { color: var(--color-text-muted); font-size: .8rem; }
+.icon-btn.danger { color: var(--color-danger); }
+@media (max-width: 1100px) { .ldap-layout { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .ldap-test-row, .ldap-result-heading { grid-template-columns: 1fr; }.ldap-test-row .btn { margin-bottom: 0; }.ldap-status-grid { grid-template-columns: 1fr; }.ldap-save-bar { align-items: stretch; flex-direction: column; }.ldap-save-bar .btn { width: 100%; } }
 .file-details-name { padding: var(--space-3); margin-bottom: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-muted); }
 .file-details-name strong, .file-details-name span { display: block; }
 .file-details-name span { margin-top: 2px; color: var(--color-text-muted); font-size: .78rem; }

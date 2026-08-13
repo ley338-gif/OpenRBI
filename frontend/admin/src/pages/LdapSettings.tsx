@@ -1,311 +1,148 @@
-import { useEffect, useState } from "react";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
-import { FormField } from "@shared/components/FormField";
-import { useToast } from "@shared/components/Toast";
+import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@shared/api/client";
 import type { LdapConfigDto, LdapTestResponseDto, Role } from "@shared/api/types";
+import { ConfirmDialog } from "@shared/components/ConfirmDialog";
+import { FormField } from "@shared/components/FormField";
+import { Icons } from "@shared/components/Icons";
+import { ErrorState, LoadingBlock } from "@shared/components/States";
+import { useToast } from "@shared/components/Toast";
 import { adminApi } from "../api/adminApi";
 
 const ROLES: Role[] = ["USER", "SECURITY_REVIEWER", "ADMIN"];
+type Mapping = { dn: string; role: Role };
+type FormState = Pick<LdapConfigDto, "enabled" | "server_uri" | "use_starttls" | "bind_dn" | "base_dn" | "user_search_filter" | "group_attribute"> & { bind_password: string };
 
-interface FormState {
-  enabled: boolean;
-  server_uri: string;
-  use_starttls: boolean;
-  bind_dn: string;
-  bind_password: string;
-  base_dn: string;
-  user_search_filter: string;
-  group_attribute: string;
+function formFromConfig(config: LdapConfigDto): FormState {
+  return { ...config, bind_password: "" };
 }
 
-function formFromConfig(c: LdapConfigDto): FormState {
-  return {
-    enabled: c.enabled,
-    server_uri: c.server_uri,
-    use_starttls: c.use_starttls,
-    bind_dn: c.bind_dn,
-    bind_password: "",
-    base_dn: c.base_dn,
-    user_search_filter: c.user_search_filter,
-    group_attribute: c.group_attribute,
-  };
+function validate(form: FormState): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const uri = form.server_uri.trim().toLowerCase();
+  if (!uri) errors.server_uri = "Server URI is required.";
+  else if (!uri.startsWith("ldap://") && !uri.startsWith("ldaps://")) errors.server_uri = "Use an ldap:// or ldaps:// server URI.";
+  else if (uri.startsWith("ldaps://") && form.use_starttls) errors.use_starttls = "StartTLS cannot be combined with LDAPS.";
+  else if (uri.startsWith("ldap://") && !form.use_starttls) errors.use_starttls = "Plain LDAP requires StartTLS. Unencrypted binds are not supported.";
+  if (!form.base_dn.trim()) errors.base_dn = "Base DN is required.";
+  if (!form.user_search_filter.includes("{username}")) errors.user_search_filter = "User search filter must contain {username}.";
+  if (!form.group_attribute.trim()) errors.group_attribute = "Group membership attribute is required.";
+  return errors;
 }
 
-/** Roadmap B1.8.3/B1.8.4 — Settings → Authentication → LDAP. Edit → Test →
- * Save → Activate (ADR 0016): "Test connection" always calls the stateless
- * /admin/ldap/test with the form's current values and never touches the
- * saved config; "Save" persists via PUT, which itself re-runs the same
- * test server-side before accepting enabled=true — a broken save can never
- * replace a working saved configuration.
- */
 export function LdapSettings() {
   const { notify } = useToast();
   const [config, setConfig] = useState<LdapConfigDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
-  const [mapping, setMapping] = useState<{ dn: string; role: Role }[]>([]);
+  const [mapping, setMapping] = useState<Mapping[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [testUsername, setTestUsername] = useState("");
   const [testResult, setTestResult] = useState<LdapTestResponseDto | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [mappingDialog, setMappingDialog] = useState<number | "new" | null>(null);
+  const [mappingDraft, setMappingDraft] = useState<Mapping>({ dn: "", role: "USER" });
+  const [confirmDisable, setConfirmDisable] = useState(false);
 
-  function load() {
-    adminApi
-      .getLdapConfig()
-      .then((c) => {
-        setConfig(c);
-        setForm(formFromConfig(c));
-        setMapping(Object.entries(c.group_role_mapping).map(([dn, role]) => ({ dn, role: role as Role })));
-      })
-      .catch(() => setError("Could not load LDAP configuration."));
+  function applyConfig(next: LdapConfigDto) {
+    setConfig(next);
+    setForm(formFromConfig(next));
+    setMapping(Object.entries(next.group_role_mapping).map(([dn, role]) => ({ dn, role: role as Role })));
   }
-  useEffect(load, []);
 
-  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  useEffect(() => {
+    adminApi.getLdapConfig().then(applyConfig).catch(() => setLoadError("Could not load LDAP configuration."));
+  }, []);
+
+  const errors = useMemo(() => form ? validate(form) : {}, [form]);
+  const dirty = useMemo(() => {
+    if (!config || !form) return false;
+    const savedMapping = JSON.stringify(Object.entries(config.group_role_mapping).sort());
+    const currentMapping = JSON.stringify(mapping.filter((row) => row.dn.trim()).map((row) => [row.dn.trim(), row.role]).sort());
+    return JSON.stringify(formFromConfig(config)) !== JSON.stringify(form) || savedMapping !== currentMapping;
+  }, [config, form, mapping]);
+  const insecure = !!form?.server_uri.toLowerCase().startsWith("ldap://") && !form.use_starttls;
+  const tlsLabel = form?.server_uri.toLowerCase().startsWith("ldaps://") ? "LDAPS" : form?.use_starttls ? "StartTLS" : "Unencrypted";
+
+  function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => current ? { ...current, [key]: value } : current);
     setTestResult(null);
-  }
-
-  function mappingAsObject(): Record<string, string> {
-    const obj: Record<string, string> = {};
-    for (const row of mapping) {
-      if (row.dn.trim()) obj[row.dn.trim()] = row.role;
-    }
-    return obj;
   }
 
   async function runTest() {
-    if (!form) return;
-    if (!form.bind_password) {
-      notify("Enter the bind password to test the connection — it is never sent to your browser, so it can't be reused from a prior save.", "error");
-      return;
-    }
-    setTesting(true);
-    setTestResult(null);
+    if (!form || Object.keys(errors).length) return notify("Correct the highlighted fields before testing.", "error");
+    if (!form.bind_password) return notify("Enter the bind password to run a stateless connection test.", "error");
+    setTesting(true); setTestResult(null); setShowDetails(false);
     try {
-      const result = await adminApi.testLdapConfig({
-        server_uri: form.server_uri,
-        use_starttls: form.use_starttls,
-        bind_dn: form.bind_dn,
-        bind_password: form.bind_password,
-        base_dn: form.base_dn,
-        user_search_filter: form.user_search_filter,
-        group_attribute: form.group_attribute,
-        test_username: testUsername || null,
-      });
-      setTestResult(result);
-    } catch {
-      notify("Connection test failed to run", "error");
-    } finally {
-      setTesting(false);
-    }
+      setTestResult(await adminApi.testLdapConfig({ ...form, test_username: testUsername.trim() || null }));
+    } catch { notify("Connection test could not be completed.", "error"); }
+    finally { setTesting(false); }
   }
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form) return;
+  async function persist() {
+    if (!form || Object.keys(errors).length) return notify("Correct the highlighted fields before saving.", "error");
     setSaving(true);
     try {
-      const payload = {
-        enabled: form.enabled,
-        server_uri: form.server_uri,
-        use_starttls: form.use_starttls,
-        bind_dn: form.bind_dn,
-        ...(form.bind_password ? { bind_password: form.bind_password } : {}),
-        base_dn: form.base_dn,
-        user_search_filter: form.user_search_filter,
-        group_attribute: form.group_attribute,
-        group_role_mapping: mappingAsObject(),
-      };
-      const updated = await adminApi.updateLdapConfig(payload);
-      setConfig(updated);
-      setForm(formFromConfig(updated));
-      notify(updated.enabled ? "LDAP configuration saved and enabled" : "LDAP configuration saved");
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 422) {
-        notify("Could not enable LDAP: the connection test failed. The previously saved configuration was not changed. Use \"Test connection\" to see details.", "error");
-      } else {
-        notify("Could not save LDAP configuration", "error");
-      }
-    } finally {
-      setSaving(false);
-    }
+      const group_role_mapping = Object.fromEntries(mapping.filter((row) => row.dn.trim()).map((row) => [row.dn.trim(), row.role]));
+      const updated = await adminApi.updateLdapConfig({ ...form, ...(form.bind_password ? {} : { bind_password: undefined }), group_role_mapping });
+      applyConfig(updated); setTestResult(null); notify("LDAP configuration saved.");
+    } catch (error) {
+      notify(error instanceof ApiError && error.status === 422 ? "LDAP validation failed. The active configuration was not changed." : "Could not save LDAP configuration.", "error");
+    } finally { setSaving(false); setConfirmDisable(false); }
   }
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (config?.enabled && form && !form.enabled) setConfirmDisable(true); else void persist();
+  }
+
+  function openMapping(index: number | "new") {
+    setMappingDraft(index === "new" ? { dn: "", role: "USER" } : { ...mapping[index] });
+    setMappingDialog(index);
+  }
+
+  function saveMapping() {
+    if (!mappingDraft.dn.trim()) return;
+    setMapping((rows) => mappingDialog === "new" ? [...rows, { ...mappingDraft, dn: mappingDraft.dn.trim() }] : rows.map((row, index) => index === mappingDialog ? { ...mappingDraft, dn: mappingDraft.dn.trim() } : row));
+    setMappingDialog(null);
+  }
+
+  if (loadError) return <div className="page"><ErrorState>{loadError}</ErrorState></div>;
   if (!config || !form) return <LoadingBlock label="Loading LDAP configuration…" />;
 
-  return (
-    <div className="page">
-      <h1>Settings — Authentication — LDAP</h1>
-      <p className="text-muted">
-        Configure external LDAP/Active Directory authentication. Local login always stays available, including during
-        an LDAP outage or misconfiguration.
-      </p>
+  return <div className="page ldap-page">
+    <header className="page-heading"><div><h1>LDAP / Active Directory</h1><p>Configure external directory authentication. Local OpenRBI accounts remain available during an LDAP outage or misconfiguration.</p></div><a className="btn btn-secondary btn-sm" href="/docs/admin-guide.md">Documentation <Icons.ExternalLink /></a></header>
 
-      <form onSubmit={save}>
-        <div className="card">
-          <div className="flex-between" style={{ marginBottom: "8px" }}>
-            <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Connection</h2>
-            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600 }}>
-              <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />
-              Enabled
-            </label>
-          </div>
+    <form onSubmit={submit}>
+      <div className="ldap-layout">
+        <section className="card ldap-connection-card">
+          <div className="section-header"><div className="section-title"><span className="section-icon"><Icons.Settings /></span><div><h2>LDAP connection</h2><p>Configure how OpenRBI connects to your LDAP or Active Directory server.</p></div></div><label className="toggle-control"><input type="checkbox" checked={form.enabled} onChange={(event) => setField("enabled", event.target.checked)} /><span /><strong>{form.enabled ? "Enabled" : "Disabled"}</strong></label></div>
+          <FormField label="Server URI" hint="LDAP server URI including protocol and optional port."><input value={form.server_uri} placeholder="ldaps://ad.example.org:636" onChange={(e) => setField("server_uri", e.target.value)} aria-invalid={!!errors.server_uri} />{errors.server_uri && <small className="field-error">{errors.server_uri}</small>}</FormField>
+          <label className="ldap-check"><input type="checkbox" checked={form.use_starttls} disabled={form.server_uri.toLowerCase().startsWith("ldaps://")} onChange={(e) => setField("use_starttls", e.target.checked)} /><span><strong>Use StartTLS</strong><small>Upgrade a plain LDAP connection to TLS before authentication.</small></span></label>
+          {errors.use_starttls && <div className="inline-alert danger">{errors.use_starttls}</div>}
+          {insecure && <div className="inline-alert danger"><Icons.Quarantine /><div><strong>Unencrypted LDAP is blocked</strong><p>Enable StartTLS or use an LDAPS server URI before testing or saving.</p></div></div>}
+          <FormField label="Bind (service account) DN" hint="Distinguished Name of the service account used for directory searches."><input value={form.bind_dn} placeholder="CN=openrbi-bind,OU=ServiceAccounts,DC=example,DC=org" onChange={(e) => setField("bind_dn", e.target.value)} /></FormField>
+          <FormField label="Bind password" hint={config.bind_password_configured ? "Password configured. Leave empty to keep the stored secret." : "No bind password is configured."}><div className="password-field"><input type={showPassword ? "text" : "password"} autoComplete="new-password" value={form.bind_password} placeholder={config.bind_password_configured ? "Password configured" : "Enter bind password"} onChange={(e) => setField("bind_password", e.target.value)} /><button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <Icons.EyeOff /> : <Icons.Eye />}</button></div></FormField>
+          <FormField label="Base DN" hint="Base distinguished name used for user and group searches."><input value={form.base_dn} placeholder="DC=example,DC=org" onChange={(e) => setField("base_dn", e.target.value)} aria-invalid={!!errors.base_dn} />{errors.base_dn && <small className="field-error">{errors.base_dn}</small>}</FormField>
+          <FormField label="User search filter" hint="{username} is replaced with the escaped login name."><input value={form.user_search_filter} placeholder="(sAMAccountName={username})" onChange={(e) => setField("user_search_filter", e.target.value)} aria-invalid={!!errors.user_search_filter} />{errors.user_search_filter && <small className="field-error">{errors.user_search_filter}</small>}</FormField>
+          <details className="ldap-advanced"><summary>Advanced settings</summary><FormField label="Group membership attribute" hint="LDAP attribute used to resolve a user's group memberships."><input value={form.group_attribute} onChange={(e) => setField("group_attribute", e.target.value)} aria-invalid={!!errors.group_attribute} />{errors.group_attribute && <small className="field-error">{errors.group_attribute}</small>}</FormField></details>
+        </section>
 
-          <FormField label="Server URI" hint="e.g. ldaps://ad.example.org:636">
-            <input value={form.server_uri} onChange={(e) => set("server_uri", e.target.value)} required />
-          </FormField>
-
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", margin: "8px 0" }}>
-            <input type="checkbox" checked={form.use_starttls} onChange={(e) => set("use_starttls", e.target.checked)} />
-            Use StartTLS (required for a plain ldap:// URI)
-          </label>
-
-          <FormField label="Bind (service account) DN">
-            <input value={form.bind_dn} onChange={(e) => set("bind_dn", e.target.value)} required />
-          </FormField>
-
-          <FormField
-            label="Bind password"
-            hint={config.bind_password_configured ? "Bind password: configured. Leave empty to keep the existing password." : "No bind password saved yet."}
-          >
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={form.bind_password}
-              onChange={(e) => set("bind_password", e.target.value)}
-              placeholder={config.bind_password_configured ? "Leave empty to keep the existing password" : ""}
-            />
-          </FormField>
-
-          <FormField label="Base DN">
-            <input value={form.base_dn} onChange={(e) => set("base_dn", e.target.value)} required />
-          </FormField>
-
-          <FormField label="User search filter" hint="{username} is substituted with the escaped login name">
-            <input value={form.user_search_filter} onChange={(e) => set("user_search_filter", e.target.value)} required />
-          </FormField>
-
-          <FormField label="Group attribute">
-            <input value={form.group_attribute} onChange={(e) => set("group_attribute", e.target.value)} required />
-          </FormField>
+        <div className="ldap-side">
+          <section className="card"><div className="section-title"><span className="section-icon"><Icons.RefreshCw /></span><div><h2>Test connection</h2><p>Verify connectivity, bind, and optionally user and group resolution.</p></div></div><div className="ldap-test-row"><FormField label="Test username (optional)"><input value={testUsername} placeholder="Enter a directory username" onChange={(e) => setTestUsername(e.target.value)} /></FormField><button type="button" className="btn btn-primary" disabled={testing} onClick={() => void runTest()}>{testing && <span className="spinner" />}{testing ? "Testing…" : "Test connection"}</button></div>
+            {testResult && <div className={`ldap-test-result ${testResult.success ? "success" : "failure"}`}><div className="ldap-result-heading"><span className="result-icon">{testResult.success ? "✓" : "!"}</span><div><strong>{testResult.success ? "Connection successful" : "Connection failed"}</strong><p>{testResult.success ? "Directory reachable and performed checks succeeded." : "Review the failed step and correct the configuration."}</p></div><button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowDetails((value) => !value)}>{showDetails ? "Hide details" : "View details"}</button></div>{showDetails && <div className="ldap-test-steps">{testResult.steps.map((step) => <div key={step.name}><span className={step.ok ? "ok" : "failed"}>{step.ok ? "✓" : "×"}</span><strong>{step.name}</strong><small>{step.detail || "Completed"}</small></div>)}{testResult.groups_discovered !== null && <p>{testResult.groups_discovered} group(s) resolved for the test user.</p>}</div>}</div>}
+          </section>
+          <section className="card ldap-status-card"><div className="section-title"><span className="section-icon"><Icons.Shield /></span><div><h2>Status & information</h2><p>Current persisted configuration and authentication behavior.</p></div></div><div className="ldap-status-grid"><div><small>Status</small><strong className={config.enabled ? "positive" : "muted"}>{config.enabled ? "Enabled" : "Disabled"}</strong></div><div><small>Connection security</small><strong className={insecure ? "negative" : "positive"}>{tlsLabel}</strong></div><div><small>Bind secret</small><strong>{config.bind_password_configured ? "Configured" : "Not configured"}</strong></div><div><small>Local login</small><strong className="positive">Available</strong></div></div><p className="status-note">LDAP identities are provisioned just in time at login. OpenRBI does not perform a directory synchronization.</p></section>
         </div>
+      </div>
 
-        <div className="card">
-          <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Test connection</h2>
-          <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginBottom: "12px" }}>
-            <FormField label="Test username (optional)" hint="Probes user search + group resolution for this login name">
-              <input value={testUsername} onChange={(e) => setTestUsername(e.target.value)} />
-            </FormField>
-            <button type="button" className="btn btn-secondary" disabled={testing} onClick={() => void runTest()} style={{ marginBottom: "16px" }}>
-              {testing ? "Testing…" : "Test connection"}
-            </button>
-          </div>
+      <section className="card ldap-mapping-card"><div className="section-header"><div className="section-title"><span className="section-icon"><Icons.Groups /></span><div><h2>Group → role mapping</h2><p>Exact-match LDAP group DNs assign an OpenRBI role. Unmatched LDAP users receive USER.</p></div></div><button type="button" className="btn btn-secondary btn-sm" onClick={() => openMapping("new")}>+ Add mapping</button></div>{mapping.length === 0 ? <div className="empty-state"><strong>No group mappings yet</strong><p>Add an LDAP group mapping to assign OpenRBI roles automatically.</p><button type="button" className="btn btn-primary btn-sm" onClick={() => openMapping("new")}>Add mapping</button></div> : <div className="table-wrap"><table className="data-table ldap-mapping-table"><thead><tr><th>LDAP group DN</th><th>OpenRBI role</th><th>Actions</th></tr></thead><tbody>{mapping.map((row, index) => <tr key={`${row.dn}-${index}`}><td><span className="ldap-dn" title={row.dn}>{row.dn}</span></td><td><span className={`role-pill role-${row.role.toLowerCase()}`}>{row.role}</span></td><td><div className="row-actions"><button type="button" className="icon-btn" title="Edit mapping" onClick={() => openMapping(index)}><Icons.Settings /></button><button type="button" className="icon-btn danger" title="Remove mapping" onClick={() => setMapping((rows) => rows.filter((_, itemIndex) => itemIndex !== index))}>×</button></div></td></tr>)}</tbody></table></div>}<p className="mapping-note"><Icons.Help /> Group DN matching is exact and case-sensitive. Local accounts with local passwords keep their configured role.</p></section>
 
-          {testResult && (
-            <div>
-              <p style={{ fontWeight: 600 }}>
-                <span className={`badge ${testResult.success ? "badge-healthy" : "badge-critical"}`}>
-                  {testResult.success ? "OK" : "FAILED"}
-                </span>
-              </p>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Step</th>
-                    <th>Result</th>
-                    <th>Detail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {testResult.steps.map((s) => (
-                    <tr key={s.name}>
-                      <td>{s.name}</td>
-                      <td>
-                        <span className={`badge ${s.ok ? "badge-healthy" : "badge-critical"}`}>{s.ok ? "OK" : "FAILED"}</span>
-                      </td>
-                      <td className="text-muted">{s.detail ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {testResult.groups_discovered !== null && (
-                <p className="text-muted">{testResult.groups_discovered} group(s) discovered for the test username.</p>
-              )}
-            </div>
-          )}
-        </div>
+      <div className="ldap-save-bar"><button type="submit" className="btn btn-primary" disabled={saving || !dirty || Object.keys(errors).length > 0}>{saving && <span className="spinner" />}{saving ? "Saving…" : "Save configuration"}</button><span>{dirty ? "You have unsaved changes." : "Configuration is up to date."}</span></div>
+    </form>
 
-        <div className="card">
-          <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Group → role mapping</h2>
-          <p className="text-muted" style={{ marginTop: 0 }}>
-            Exact-match LDAP group DN → OpenRBI role. A login not matching any row here is assigned the USER role. An
-            existing local account with a real local password always keeps its admin-configured role, regardless of
-            this mapping.
-          </p>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>LDAP group DN</th>
-                <th>OpenRBI role</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {mapping.map((row, i) => (
-                <tr key={i}>
-                  <td>
-                    <input
-                      style={{ width: "100%" }}
-                      value={row.dn}
-                      onChange={(e) =>
-                        setMapping((prev) => prev.map((r, j) => (j === i ? { ...r, dn: e.target.value } : r)))
-                      }
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={row.role}
-                      onChange={(e) =>
-                        setMapping((prev) => prev.map((r, j) => (j === i ? { ...r, role: e.target.value as Role } : r)))
-                      }
-                    >
-                      {ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={() => setMapping((prev) => prev.filter((_, j) => j !== i))}
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            style={{ marginTop: "8px" }}
-            onClick={() => setMapping((prev) => [...prev, { dn: "", role: "USER" }])}
-          >
-            Add mapping
-          </button>
-        </div>
-
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? "Saving…" : "Save configuration"}
-        </button>
-      </form>
-    </div>
-  );
+    {mappingDialog !== null && <div className="modal-overlay" onClick={() => setMappingDialog(null)}><div className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><h2>{mappingDialog === "new" ? "Add group mapping" : "Edit group mapping"}</h2><FormField label="LDAP group DN" hint="Use the exact DN returned by your directory."><input autoFocus value={mappingDraft.dn} onChange={(e) => setMappingDraft((draft) => ({ ...draft, dn: e.target.value }))} /></FormField><FormField label="OpenRBI role"><select value={mappingDraft.role} onChange={(e) => setMappingDraft((draft) => ({ ...draft, role: e.target.value as Role }))}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></FormField><div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={() => setMappingDialog(null)}>Cancel</button><button type="button" className="btn btn-primary" disabled={!mappingDraft.dn.trim()} onClick={saveMapping}>Save mapping</button></div></div></div>}
+    {confirmDisable && <ConfirmDialog title="Disable LDAP authentication?" description="LDAP users will no longer be able to sign in. Local OpenRBI accounts remain available." confirmLabel="Disable LDAP" danger busy={saving} onConfirm={() => void persist()} onCancel={() => setConfirmDisable(false)} />}
+  </div>;
 }

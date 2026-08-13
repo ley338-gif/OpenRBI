@@ -19,6 +19,10 @@ Every `metadata_json` payload across the codebase was reviewed end-to-end: every
 
 All user mutation endpoints remain ADMIN-only. `POST /admin/users/{id}/reset-password` is only valid for LOCAL accounts; LDAP credentials remain directory-managed. Self-disable, disabling the final active administrator, and removing the final active administrator's ADMIN role are rejected by the backend.
 
+### LDAP administration
+
+`GET /admin/ldap/config`, `PUT /admin/ldap/config`, and `POST /admin/ldap/test` are `ADMIN`-only. Configuration responses never contain the bind password; `bind_password_configured` only reports whether an encrypted secret exists. Omitting or submitting an empty `bind_password` during an update preserves the existing secret. The server accepts only `ldap://` with StartTLS or `ldaps://` without StartTLS, requires a non-empty base DN, and requires `{username}` in the user search filter. The test endpoint is stateless and returns sanitized per-step results for connection/TLS, service bind, base search, and optional user/group lookup. It never persists the candidate configuration.
+
 `GET /admin/groups-overview` (ADMIN) supplies the paginated Groups operations view. It accepts `search` (name/description), `policy_id`, `sort_by` (`name`, `members`, `created_at`), `sort_dir`, `offset`, and `limit` (maximum 100), and returns aggregate totals plus policy names without per-group queries. Existing `GET /admin/groups` remains the compact unpaginated selector contract used by user and policy forms. Group create/delete and policy attachment endpoints remain unchanged and ADMIN-authorized.
 
 `GET /admin/sessions` (ADMIN/SECURITY_REVIEWER) returns a paginated session operations response with global KPIs and actual lifecycle-state values. It supports `search` (session UUID/username), `session_status`, `worker_id`, `since`, `sort_by` (`started_at`, `duration`, `username`, `status`), `sort_dir`, `offset`, and `limit` (maximum 100). User and worker information are joined in one query. Session detail and lifecycle-action authorization remain unchanged; `kill` is ADMIN-only.

@@ -18,6 +18,8 @@ An equal, parallel login option alongside local accounts — never a replacement
 
 Go to **Settings → Authentication → LDAP** (`ADMIN` role required — `SECURITY_REVIEWER` cannot read or change this). The page is available whether or not LDAP has ever been configured before; a fresh install shows an empty form.
 
+The modernized administration view separates the persisted connection form, stateless connection diagnostics, actual configuration status, and exact group-to-role mappings. It validates the supported `ldap://`/`ldaps://` schemes, requires a base DN and a `{username}` placeholder in the user filter, prevents combining LDAPS with StartTLS, and rejects plain LDAP without StartTLS. Technical results are disclosed step by step without returning credentials or raw stack traces. The bind-password field only reveals newly typed text; an empty field preserves an existing encrypted secret.
+
 Fill in the connection fields (server URI, StartTLS, bind DN, bind password, base DN, user search filter, group attribute) and use **Test connection** before saving — this runs the exact same connection/bind/search code a real login uses, reports each step (TLS/connection, service bind, search base, and, if a test username is given, user search and group resolution) as OK or FAILED with an admin-readable reason, and never touches the saved configuration either way.
 
 Click **Save configuration**. If the `Enabled` checkbox is on, the save itself re-runs that same connection test server-side first — a broken configuration is rejected (the form stays as you left it, with a toast explaining the test failed) and the **previously saved, working configuration is left completely untouched**. Saving with `Enabled` off never requires a passing test, so you can save a work-in-progress configuration without risking the currently-active one.
@@ -25,6 +27,8 @@ Click **Save configuration**. If the `Enabled` checkbox is on, the save itself r
 **Secret handling**: the bind password is never returned by any API response and never appears in the audit log — the field is always shown empty, with a "Bind password: configured — leave empty to keep the existing password" hint once one has been saved. Leaving it empty on a later save keeps the existing password; typing a new value replaces it. It is encrypted at rest using the same key that protects TOTP secrets (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`).
 
 **Group → role mapping** is an editable table on the same page — LDAP group DN → OpenRBI role. It replaces `OPENRBI_LDAP_GROUP_ROLE_MAPPING` for any installation that has saved a configuration through the portal (see priority below); the matching semantics are unchanged (exact-string DN match, `ADMIN` > `SECURITY_REVIEWER` > `USER` precedence, no match → `USER`).
+
+Mappings are edited in a focused dialog and remain part of the single atomic configuration save. Removing a mapping can change an LDAP-only user's role at their next successful directory login. OpenRBI does not synchronize directory users or groups in the background: LDAP identities are provisioned just in time, and the optional test username is only a diagnostic lookup.
 
 Once any configuration has been saved through the Admin Portal, it is fully authoritative — the `OPENRBI_LDAP_*` environment variables are no longer consulted at all, not even for fields left at their default. LDAP can be enabled, reconfigured, or disabled entirely from the portal, with no backend restart required.
 
