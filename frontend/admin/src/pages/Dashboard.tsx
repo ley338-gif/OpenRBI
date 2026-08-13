@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { StatCard } from "@shared/components/StatCard";
 import { PageHeader } from "@shared/components/PageHeader";
-import { ErrorState, EmptyState } from "@shared/components/States";
+import { EmptyState, ErrorState } from "@shared/components/States";
 import { Icons } from "@shared/components/Icons";
 import { LineChart, type LineChartPoint } from "@shared/components/LineChart";
 import { formatDateTime } from "@shared/format";
@@ -11,254 +11,118 @@ import type { DashboardRange, DashboardResponseDto, SecurityEventDto } from "@sh
 import { adminApi } from "../api/adminApi";
 
 const RANGES: { key: DashboardRange; label: string }[] = [
-  { key: "1h", label: "1h" },
-  { key: "6h", label: "6h" },
-  { key: "24h", label: "24h" },
-  { key: "7d", label: "7d" },
+  { key: "1h", label: "1h" }, { key: "6h", label: "6h" }, { key: "24h", label: "24h" }, { key: "7d", label: "7d" },
 ];
-
 const POLL_INTERVAL_MS = 15_000;
+const STATUS_LABELS: Record<string, string> = {
+  PENDING_SCAN: "Pending scan", SCANNING: "Scanning", QUARANTINED: "Pending review",
+  RELEASED: "Released", REJECTED: "Blocked", DELETED: "Deleted",
+};
+const EVENT_LABELS: Record<string, string> = {
+  USER_CREATED: "User created", USER_DISABLED: "User disabled", USER_ENABLED: "User enabled",
+  USER_LOGIN: "User signed in", USER_LOGIN_FAILED: "Login failed", LOGIN_LOCKED: "Account locked",
+  SESSION_STARTED: "Session started", SESSION_DISCONNECTED: "Session disconnected",
+  SESSION_ISOLATED: "Session isolated", FILE_REJECTED: "File rejected", DOWNLOAD_BLOCKED: "Download blocked",
+  UPLOAD_BLOCKED: "Upload blocked", MALWARE_DETECTED: "Malware detected",
+};
 
-function loadBarClass(percent: number | null): string {
-  if (percent === null) return "load-bar-fill";
-  if (percent >= 90) return "load-bar-fill critical";
-  if (percent >= 75) return "load-bar-fill warn";
+function formatXForRange(range: DashboardRange) {
+  return (iso: string) => range === "7d"
+    ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    : new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function loadClass(value: number | null) {
+  if (value !== null && value >= 90) return "load-bar-fill critical";
+  if (value !== null && value >= 75) return "load-bar-fill warn";
   return "load-bar-fill";
 }
 
-function formatXForRange(range: DashboardRange) {
-  return (iso: string) => {
-    const d = new Date(iso);
-    if (range === "7d") return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  };
-}
-
-const CRITICAL_EVENTS = new Set(["MALWARE_DETECTED", "SESSION_ISOLATED", "LOGIN_LOCKED"]);
-const WARNING_EVENTS = new Set(["FILE_REJECTED", "UPLOAD_BLOCKED", "DOWNLOAD_BLOCKED", "USER_LOGIN_FAILED"]);
-
-function eventSeverityClass(eventType: string): string {
-  if (CRITICAL_EVENTS.has(eventType)) return "critical";
-  if (WARNING_EVENTS.has(eventType)) return "warning";
-  return "";
-}
-
-/**
- * Roadmap B1.10.2 — real operations dashboard backed by GET /admin/dashboard
- * (backend/app/api/admin_dashboard.py). Every number here is computed
- * server-side from real session/worker/audit data — this component only
- * renders what the endpoint returns, it never fabricates a KPI or a chart
- * point. Uses moderate polling (task's own "robustes Polling ist für MVP
- * vollkommen akzeptabel" guidance) rather than WebSocket/SSE, with a visible
- * "Last updated" clock and a "Telemetry delayed" indicator driven by the
- * response's own `telemetry_stale` field, so stale data is never shown as
- * fresh.
- *
- * The UI-polish pass's original "Needs attention" panel was built from a
- * separate client-side aggregation of incidents/isolated-sessions/
- * quarantine (see git history) that predates this real endpoint — kept
- * here as visual language (icon + list rows, EmptyState when calm) but now
- * fed from the dashboard's own real `warnings` array instead of a second,
- * parallel aggregation, so there's exactly one definition of "needs
- * attention" for this page, not two that could disagree.
- */
 export function Dashboard() {
   const [range, setRange] = useState<DashboardRange>("24h");
   const [data, setData] = useState<DashboardResponseDto | null>(null);
+  const [events, setEvents] = useState<SecurityEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [recentEvents, setRecentEvents] = useState<SecurityEventDto[] | null>(null);
   const rangeRef = useRef(range);
   rangeRef.current = range;
 
-  const load = useCallback((r: DashboardRange) => {
-    adminApi
-      .getDashboard(r)
-      .then((d) => {
-        // Guard against a stale response landing after the user has since
-        // switched ranges (poll tick fired mid-flight).
-        if (rangeRef.current !== r) return;
-        setData(d);
-        setError(null);
-        setLastUpdated(new Date());
+  const load = useCallback((selectedRange: DashboardRange) => {
+    adminApi.getDashboard(selectedRange)
+      .then((dashboard) => {
+        if (rangeRef.current !== selectedRange) return;
+        setData(dashboard); setError(null); setLastUpdated(new Date(dashboard.generated_at));
       })
-      .catch(() => setError("Could not load the dashboard. The backend may be unavailable."));
+      .catch(() => setError("Could not load the operations dashboard."));
+    adminApi.listSecurityEvents({ limit: 5 }).then(setEvents).catch(() => setEvents([]));
   }, []);
 
   useEffect(() => {
     load(range);
-    const id = setInterval(() => load(rangeRef.current), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const timer = setInterval(() => load(rangeRef.current), POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [range, load]);
 
-  useEffect(() => {
-    adminApi
-      .listSecurityEvents({ limit: 10 })
-      .then(setRecentEvents)
-      .catch(() => setRecentEvents([]));
-  }, []);
-
-  if (error && !data) {
-    return (
-      <div className="page">
-        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={() => load(range)}>Try again</button>}>
-          {error}
-        </ErrorState>
-      </div>
-    );
-  }
-
-  const chartPoints: LineChartPoint[] | null = data
-    ? data.session_history.map((p) => ({ t: p.t, value: p.count }))
-    : null;
+  if (error && !data) return <div className="page"><ErrorState action={<button className="btn btn-secondary btn-sm" onClick={() => load(range)}>Try again</button>}>{error}</ErrorState></div>;
+  const chartPoints: LineChartPoint[] | null = data?.session_history.map((point) => ({ t: point.t, value: point.count })) ?? null;
 
   return (
     <div className="page">
-      <PageHeader
-        title="Dashboard"
-        subtitle="Operational overview of sessions, workers, and system health."
-        actions={
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            {data?.telemetry_stale && <span className="badge badge-warning">Telemetry delayed</span>}
-            <span className="text-muted" style={{ fontSize: "0.85rem" }}>
-              {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : "Loading…"}
-            </span>
-          </div>
-        }
-      />
-
-      <div className="stat-grid">
-        <StatCard
-          icon={<Icons.Sessions />}
-          label="Active sessions"
-          value={data ? data.kpis.active_sessions : "—"}
-          hint={
-            data
-              ? data.kpis.active_sessions_delta_last_hour === null
-                ? "no hour-old history yet"
-                : `${data.kpis.active_sessions_delta_last_hour >= 0 ? "+" : ""}${data.kpis.active_sessions_delta_last_hour} last hour`
-              : undefined
-          }
-        />
-        <StatCard icon={<Icons.Worker />} label="Workers healthy" value={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total}` : "—"} />
-        <StatCard icon={<Icons.Shield />} label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} />
-        <StatCard icon={<Icons.Worker />} label="Avg CPU" value={data && data.kpis.avg_cpu_percent !== null ? `${data.kpis.avg_cpu_percent.toFixed(0)}%` : "—"} />
-        <StatCard icon={<Icons.System />} label="Avg RAM" value={data && data.kpis.avg_ram_percent !== null ? `${data.kpis.avg_ram_percent.toFixed(0)}%` : "—"} />
-      </div>
-
-      <div className="card">
-        <div className="section-header">
-          <h2>Needs attention</h2>
+      <PageHeader title="Dashboard" subtitle="Overview of your RBI environment, usage, and system health." actions={
+        <div className="dashboard-refresh">
+          {data?.telemetry_stale && <span className="badge badge-warning">Telemetry delayed</span>}
+          <span className="text-muted">{lastUpdated ? `Last updated: ${formatDateTime(lastUpdated.toISOString())}` : "Loading…"}</span>
+          <button type="button" className="icon-btn" aria-label="Refresh dashboard" onClick={() => load(range)}><Icons.RefreshCw /></button>
         </div>
-        {!data || data.warnings.length === 0 ? (
-          <EmptyState icon={<Icons.Shield width={20} height={20} />} title="Nothing needs attention">
-            No sustained high load, draining/maintenance/offline workers, or repeated failed logins right now.
-          </EmptyState>
-        ) : (
-          <div className="attention-list">
-            {data.warnings.map((w, i) => (
-              <div key={i} className="attention-item">
-                <div>
-                  <div className="attention-label">{w.kind}</div>
-                  <div className="attention-meta">{w.message}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      } />
+
+      <div className="stat-grid dashboard-kpis">
+        <StatCard icon={<Icons.Sessions />} label="Active sessions" value={data?.kpis.active_sessions ?? "—"} hint={data?.kpis.active_sessions_delta_last_hour == null ? "No hour-old comparison" : `${data.kpis.active_sessions_delta_last_hour >= 0 ? "+" : ""}${data.kpis.active_sessions_delta_last_hour} in the last hour`} />
+        <StatCard icon={<Icons.Users />} label="Users" value={data?.kpis.users ?? "—"} hint="Registered accounts" />
+        <StatCard icon={<Icons.File />} label="Files processed (24h)" value={data?.kpis.files_processed_24h ?? "—"} hint="Real file lifecycle records" />
+        <StatCard icon={<Icons.Quarantine />} label="Blocked files (24h)" value={data?.kpis.blocked_files_24h ?? "—"} hint="Rejected by review or policy" />
+        <StatCard icon={<Icons.Incident />} label="Incidents (24h)" value={data?.kpis.incidents_24h ?? "—"} hint="Created in the last 24 hours" />
+        <StatCard icon={<Icons.Shield />} label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} hint={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total} workers healthy` : undefined} />
       </div>
 
-      <div className="card">
-        <div className="flex-between" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Session history</h2>
-          <div style={{ display: "flex", gap: "4px" }}>
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                className={`btn btn-sm ${range === r.key ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => setRange(r.key)}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <LineChart
-          data={chartPoints}
-          error={error}
-          yLabel="Active sessions"
-          formatX={formatXForRange(range)}
-          formatY={(v) => String(Math.round(v))}
-        />
+      <div className="dashboard-ops-grid dashboard-ops-grid-top">
+        <section className="card">
+          <div className="section-header"><h2>Session activity</h2><div className="range-buttons">{RANGES.map((item) => <button key={item.key} className={`btn btn-sm ${range === item.key ? "btn-primary" : "btn-secondary"}`} onClick={() => setRange(item.key)}>{item.label}</button>)}</div></div>
+          <LineChart data={chartPoints} error={error} yLabel="Active sessions" formatX={formatXForRange(range)} formatY={(value) => String(Math.round(value))} />
+        </section>
+        <section className="card">
+          <div className="section-header"><h2>Files by status (24h)</h2><Link to="/quarantine">Open quarantine</Link></div>
+          {!data || data.file_statuses_24h.length === 0 ? <EmptyState title="No files processed">No file lifecycle records were created in the last 24 hours.</EmptyState> : <div className="status-summary">{data.file_statuses_24h.map((item) => <div className="status-summary-row" key={item.status}><StatusBadge value={item.status} /><span>{STATUS_LABELS[item.status] ?? item.status}</span><strong>{item.count}</strong></div>)}</div>}
+        </section>
       </div>
 
-      <div className="card">
-        <h2 style={{ margin: "0 0 8px 0", fontSize: "1.1rem" }}>Worker load</h2>
-        {!data ? (
-          <p className="text-muted">Loading…</p>
-        ) : data.workers.length === 0 ? (
-          <p className="text-muted">No workers registered.</p>
-        ) : (
-          data.workers.map((w) => (
-            <div key={w.id} className="load-bar-row">
-              <div>
-                <div><Link to={`/workers/${w.id}`}>{w.hostname}</Link></div>
-                <StatusBadge value={w.health} />
-              </div>
-              <div>
-                <div className="text-muted" style={{ fontSize: "0.75rem", marginBottom: "2px" }}>
-                  CPU {w.cpu_percent !== null ? `${w.cpu_percent.toFixed(0)}%` : "n/a"}
-                </div>
-                <div className="load-bar-track">
-                  <div className={loadBarClass(w.cpu_percent)} style={{ width: `${w.cpu_percent ?? 0}%` }} />
-                </div>
-                <div className="text-muted" style={{ fontSize: "0.75rem", margin: "6px 0 2px" }}>
-                  RAM {w.ram_percent !== null ? `${w.ram_percent.toFixed(0)}%` : "n/a"}
-                </div>
-                <div className="load-bar-track">
-                  <div className={loadBarClass(w.ram_percent)} style={{ width: `${w.ram_percent ?? 0}%` }} />
-                </div>
-              </div>
-              <div className="text-muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
-                {w.active_sessions} / {w.capacity} sessions
-              </div>
-            </div>
-          ))
-        )}
+      <section className="card">
+        <div className="section-header"><div><h2>Worker pool</h2><p className="text-muted">Current telemetry from registered workers.</p></div><Link to="/workers">View all workers</Link></div>
+        {!data || data.workers.length === 0 ? <EmptyState title="No workers registered">Worker telemetry will appear when a node connects.</EmptyState> : <div className="table-shell"><table><thead><tr><th>Worker</th><th>Status</th><th>CPU</th><th>Memory</th><th>Sessions</th></tr></thead><tbody>{data.workers.map((worker) => <tr key={worker.id}><td><Link to={`/workers/${worker.id}`}>{worker.hostname}</Link></td><td><StatusBadge value={worker.health} /></td><td>{worker.cpu_percent == null ? "n/a" : `${worker.cpu_percent.toFixed(0)}%`}</td><td>{worker.ram_percent == null ? "n/a" : `${worker.ram_percent.toFixed(0)}%`}</td><td>{worker.active_sessions} / {worker.capacity}</td></tr>)}</tbody></table></div>}
+      </section>
+
+      <div className="dashboard-ops-grid dashboard-ops-grid-mid">
+        <section className="card"><div className="section-header"><h2>Quarantine</h2><Link to="/quarantine">Review files</Link></div><div className="operations-metrics"><div><Icons.Quarantine /><span>Pending review</span><strong>{data?.quarantine_pending ?? "—"}</strong></div><div><Icons.Incident /><span>Open high-risk detections</span><strong>{data?.quarantine_high_risk ?? "—"}</strong></div></div></section>
+        <section className="card"><div className="section-header"><h2>Recent incidents</h2><Link to="/incidents">View all</Link></div>{!data || data.recent_incidents.length === 0 ? <EmptyState title="No incidents">No incident records are available.</EmptyState> : <div className="compact-list">{data.recent_incidents.map((incident) => <Link to={`/incidents/${incident.id}`} key={incident.id}><StatusBadge value={incident.severity} /><span>{incident.title}</span><time>{formatDateTime(incident.created_at)}</time></Link>)}</div>}</section>
       </div>
 
-      <div className="card">
-        <div className="section-header">
-          <h2>Recent activity</h2>
-          <Link to="/audit" className="btn btn-secondary btn-sm">
-            View all
-          </Link>
-        </div>
-        {recentEvents === null ? (
-          <p className="text-muted">Loading…</p>
-        ) : recentEvents.length === 0 ? (
-          <EmptyState title="No events yet">Security events will appear here as they happen.</EmptyState>
-        ) : (
-          <div className="activity-feed">
-            {recentEvents.map((e) => (
-              <div className="activity-item" key={e.id}>
-                <div className={`activity-dot ${eventSeverityClass(e.event_type)}`} />
-                <div style={{ flex: 1 }}>
-                  <div className="activity-title">{e.event_type}</div>
-                  {(e.user_id || e.session_id) && (
-                    <div className="activity-meta">
-                      {e.session_id && `Session ${e.session_id.slice(0, 8)}`}
-                      {e.user_id && e.session_id && " · "}
-                      {e.user_id && `User ${e.user_id.slice(0, 8)}`}
-                    </div>
-                  )}
-                </div>
-                <div className="activity-time">{formatDateTime(e.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="dashboard-ops-grid dashboard-ops-grid-bottom">
+        <section className="card"><h2>System resources</h2><div className="resource-grid"><Resource label="CPU usage (avg)" value={data?.kpis.avg_cpu_percent ?? null} /><Resource label="Memory usage (avg)" value={data?.kpis.avg_ram_percent ?? null} /></div></section>
+        <section className="card"><div className="section-header"><h2>Needs attention</h2></div>{!data || data.warnings.length === 0 ? <EmptyState icon={<Icons.Shield />} title="Nothing needs attention">No sustained load, worker, or repeated-login warning is active.</EmptyState> : <div className="attention-list">{data.warnings.map((warning, index) => <div className="attention-item" key={`${warning.kind}-${index}`}><div><div className="attention-label">{warning.kind.replaceAll("_", " ")}</div><div className="attention-meta">{warning.message}</div></div></div>)}</div>}</section>
+      </div>
+
+      <div className="dashboard-ops-grid dashboard-ops-grid-bottom">
+        <section className="card"><div className="section-header"><h2>Recent activity</h2><Link to="/audit">View audit log</Link></div>{events.length === 0 ? <EmptyState title="No recent activity">Security events will appear here.</EmptyState> : <div className="activity-feed">{events.map((event) => <div className="activity-item" key={event.id}><div className="activity-dot" /><div style={{ flex: 1 }}><div className="activity-title">{EVENT_LABELS[event.event_type] ?? event.event_type.replaceAll("_", " ").toLowerCase()}</div><div className="activity-meta">{event.session_id ? `Session ${event.session_id.slice(0, 8)}` : event.user_id ? `User ${event.user_id.slice(0, 8)}` : "System event"}</div></div><time className="activity-time">{formatDateTime(event.created_at)}</time></div>)}</div>}</section>
+        <section className="card"><h2>Quick actions</h2><div className="quick-action-grid"><Quick to="/users" icon={<Icons.Users />} label="Manage users" /><Quick to="/policies" icon={<Icons.Shield />} label="Create policy" /><Quick to="/sessions" icon={<Icons.Sessions />} label="Open sessions" /><Quick to="/audit" icon={<Icons.Audit />} label="Audit log" /><Quick to="/system" icon={<Icons.System />} label="System health" /><Quick to="/settings/ldap" icon={<Icons.Settings />} label="Settings" /></div></section>
       </div>
     </div>
   );
+}
+
+function Resource({ label, value }: { label: string; value: number | null }) {
+  return <div className="resource-card"><span>{label}</span><strong>{value == null ? "n/a" : `${value.toFixed(0)}%`}</strong><div className="load-bar-track"><div className={loadClass(value)} style={{ width: `${value ?? 0}%` }} /></div></div>;
+}
+
+function Quick({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+  return <Link to={to}>{icon}<span>{label}</span></Link>;
 }

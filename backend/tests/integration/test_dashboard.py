@@ -59,6 +59,14 @@ async def test_dashboard_reflects_real_worker_and_no_vanity_data(db, client):
     assert body["kpis"]["workers_total"] >= 1
     assert body["kpis"]["system_health"] in ("HEALTHY", "DEGRADED", "UNAVAILABLE")
     assert len(body["workers"]) == body["kpis"]["workers_total"]
+    assert body["kpis"]["users"] >= 1
+    assert body["kpis"]["files_processed_24h"] >= 0
+    assert body["kpis"]["blocked_files_24h"] >= 0
+    assert body["kpis"]["incidents_24h"] >= 0
+    assert body["quarantine_pending"] >= 0
+    assert body["quarantine_high_risk"] >= 0
+    assert len(body["recent_incidents"]) <= 5
+    assert sum(item["count"] for item in body["file_statuses_24h"]) == body["kpis"]["files_processed_24h"]
     for worker in body["workers"]:
         assert worker["health"] in ("HEALTHY", "DEGRADED", "DRAINING", "MAINTENANCE", "OFFLINE")
     # A brand new install has no session history an hour old yet — must be

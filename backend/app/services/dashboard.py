@@ -12,14 +12,17 @@ average, not treated as 0.
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
-from app.models.enums import SecurityEventType, SessionStatus
+from app.models.enums import IncidentSeverity, IncidentStatus, QuarantineStatus, SecurityEventType, SessionStatus
+from app.models.incident import Incident
+from app.models.quarantine import QuarantineFile
 from app.models.security_event import SecurityEvent
+from app.models.user import User
 from app.models.worker_metric_sample import WorkerMetricSample
 from app.services import metrics_history
 from app.services.health import ComponentStatus, get_system_health
@@ -64,6 +67,25 @@ class DashboardKpis:
     system_health: str
     avg_cpu_percent: float | None
     avg_ram_percent: float | None
+    users: int
+    files_processed_24h: int
+    blocked_files_24h: int
+    incidents_24h: int
+
+
+@dataclass
+class FileStatusSummary:
+    status: str
+    count: int
+
+
+@dataclass
+class RecentIncident:
+    id: str
+    severity: str
+    status: str
+    title: str
+    created_at: datetime
 
 
 @dataclass
@@ -74,6 +96,10 @@ class Dashboard:
     session_history: list[dict]
     workers: list[WorkerSummary]
     warnings: list[Warning]
+    file_statuses_24h: list[FileStatusSummary]
+    quarantine_pending: int
+    quarantine_high_risk: int
+    recent_incidents: list[RecentIncident]
 
 
 async def _active_sessions_delta_last_hour(db: AsyncSession, *, now: datetime) -> int | None:
@@ -123,6 +149,39 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
     result = await db.execute(select(BrowserSession.status))
     all_statuses = result.scalars().all()
     active_sessions = sum(1 for s in all_statuses if s in _ACTIVE_SESSION_STATUSES)
+
+    since_24h = now - timedelta(hours=24)
+    users = await db.scalar(select(func.count(User.id))) or 0
+    file_status_result = await db.execute(
+        select(QuarantineFile.status, func.count(QuarantineFile.id))
+        .where(QuarantineFile.created_at >= since_24h)
+        .group_by(QuarantineFile.status)
+    )
+    file_status_counts = {status: count for status, count in file_status_result.all()}
+    files_processed_24h = sum(file_status_counts.values())
+    blocked_files_24h = file_status_counts.get(QuarantineStatus.REJECTED, 0)
+    incidents_24h = await db.scalar(select(func.count(Incident.id)).where(Incident.created_at >= since_24h)) or 0
+    quarantine_pending = await db.scalar(
+        select(func.count(QuarantineFile.id)).where(QuarantineFile.status == QuarantineStatus.QUARANTINED)
+    ) or 0
+    quarantine_high_risk = await db.scalar(
+        select(func.count(Incident.id)).where(
+            Incident.quarantine_file_id.is_not(None),
+            Incident.severity.in_((IncidentSeverity.HIGH, IncidentSeverity.CRITICAL)),
+            Incident.status.in_((IncidentStatus.NEW, IncidentStatus.INVESTIGATING)),
+        )
+    ) or 0
+    recent_incident_result = await db.execute(select(Incident).order_by(Incident.created_at.desc()).limit(5))
+    recent_incidents = [
+        RecentIncident(
+            id=str(incident.id),
+            severity=incident.severity.value,
+            status=incident.status.value,
+            title=incident.title,
+            created_at=incident.created_at,
+        )
+        for incident in recent_incident_result.scalars()
+    ]
 
     nodes_result = await db.execute(select(BrowserNode))
     nodes = list(nodes_result.scalars().all())
@@ -213,8 +272,20 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
             system_health=system_health.status.value,
             avg_cpu_percent=round(sum(cpu_values) / len(cpu_values), 1) if cpu_values else None,
             avg_ram_percent=round(sum(ram_percent_values) / len(ram_percent_values), 1) if ram_percent_values else None,
+            users=users,
+            files_processed_24h=files_processed_24h,
+            blocked_files_24h=blocked_files_24h,
+            incidents_24h=incidents_24h,
         ),
         session_history=history,
         workers=workers,
         warnings=warnings,
+        file_statuses_24h=[
+            FileStatusSummary(status=status.value, count=file_status_counts.get(status, 0))
+            for status in QuarantineStatus
+            if file_status_counts.get(status, 0) > 0
+        ],
+        quarantine_pending=quarantine_pending,
+        quarantine_high_risk=quarantine_high_risk,
+        recent_incidents=recent_incidents,
     )

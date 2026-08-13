@@ -171,6 +171,17 @@ export interface UserSummaryDto {
   mfa_enabled: boolean;
   groups: string[];
   created_at: string;
+  auth_source: "LOCAL" | "LDAP";
+  last_login_at: string | null;
+}
+
+export interface UserListResponseDto {
+  items: UserSummaryDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  roles: Role[];
+  stats: { total: number; active: number; mfa_enabled: number; administrators: number; groups: number };
 }
 
 export interface GroupSummaryDto {
@@ -403,6 +414,10 @@ export interface DashboardKpisDto {
   system_health: string;
   avg_cpu_percent: number | null;
   avg_ram_percent: number | null;
+  users: number;
+  files_processed_24h: number;
+  blocked_files_24h: number;
+  incidents_24h: number;
 }
 
 export interface SessionHistoryPointDto {
@@ -436,4 +451,8 @@ export interface DashboardResponseDto {
   session_history: SessionHistoryPointDto[];
   workers: WorkerSummaryDto[];
   warnings: DashboardWarningDto[];
+  file_statuses_24h: { status: string; count: number }[];
+  quarantine_pending: number;
+  quarantine_high_risk: number;
+  recent_incidents: { id: string; severity: string; status: string; title: string; created_at: string }[];
 }

@@ -31,6 +31,25 @@ class UserSummary(BaseModel):
     mfa_enabled: bool
     groups: list[str]
     created_at: datetime
+    auth_source: str
+    last_login_at: datetime | None
+
+
+class UserManagementStats(BaseModel):
+    total: int
+    active: int
+    mfa_enabled: int
+    administrators: int
+    groups: int
+
+
+class UserListResponse(BaseModel):
+    items: list[UserSummary]
+    total: int
+    offset: int
+    limit: int
+    stats: UserManagementStats
+    roles: list[str]
 
 
 class LockoutStatus(BaseModel):

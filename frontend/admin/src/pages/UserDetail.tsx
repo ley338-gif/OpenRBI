@@ -134,9 +134,13 @@ export function UserDetail() {
                 Enable
               </button>
             )}
-            <button type="button" className="btn btn-secondary" onClick={() => setShowResetPassword(true)}>
-              Reset password
-            </button>
+            {user.auth_source === "LOCAL" ? (
+              <button type="button" className="btn btn-secondary" onClick={() => setShowResetPassword(true)}>
+                Reset password
+              </button>
+            ) : (
+              <span className="text-muted" style={{ alignSelf: "center", fontSize: "0.8rem" }}>Password managed by LDAP</span>
+            )}
             {user.mfa_enabled && (
               <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "reset-mfa" })}>
                 Reset MFA
@@ -162,6 +166,7 @@ export function UserDetail() {
         <DefinitionList
           items={[
             { label: "Role", value: user.role },
+            { label: "Authentication source", value: <StatusBadge value={user.auth_source} /> },
             { label: "Groups", value: user.groups.join(", ") || "—" },
             { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
             {
