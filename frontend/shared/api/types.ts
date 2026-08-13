@@ -201,3 +201,56 @@ export interface BrowserNodeDto {
   version: string | null;
   last_heartbeat: string | null;
 }
+
+// Roadmap B1.8 — admin-portal-managed LDAP configuration
+// (backend/app/api/schemas/admin_ldap.py). LdapConfigDto never carries the
+// bind password, structurally — only bind_password_configured — matching
+// the backend response shape exactly.
+export interface LdapConfigDto {
+  enabled: boolean;
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  bind_password_configured: boolean;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  group_role_mapping: Record<string, string>;
+  updated_by: string | null;
+}
+
+export interface LdapConfigUpdateRequest {
+  enabled: boolean;
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  // Omit entirely to keep the existing stored secret.
+  bind_password?: string;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  group_role_mapping: Record<string, string>;
+}
+
+export interface LdapTestRequest {
+  server_uri: string;
+  use_starttls: boolean;
+  bind_dn: string;
+  bind_password: string;
+  base_dn: string;
+  user_search_filter: string;
+  group_attribute: string;
+  test_username?: string | null;
+}
+
+export interface LdapTestStepDto {
+  name: string;
+  ok: boolean;
+  detail: string | null;
+}
+
+export interface LdapTestResponseDto {
+  success: boolean;
+  steps: LdapTestStepDto[];
+  groups_discovered: number | null;
+}

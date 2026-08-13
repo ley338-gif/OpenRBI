@@ -16,6 +16,10 @@ import type {
   EnrollResponse,
   GroupSummaryDto,
   IncidentDto,
+  LdapConfigDto,
+  LdapConfigUpdateRequest,
+  LdapTestRequest,
+  LdapTestResponseDto,
   PolicyDetailDto,
   PolicySummaryDto,
   QuarantineFileDto,
@@ -108,6 +112,11 @@ export const adminApi = {
   listNodes: () => api.get<BrowserNodeDto[]>("/admin/nodes"),
   drainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/drain`),
   undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
+
+  // LDAP configuration (app/api/admin_ldap.py — B1.8)
+  getLdapConfig: () => api.get<LdapConfigDto>("/admin/ldap/config"),
+  updateLdapConfig: (payload: LdapConfigUpdateRequest) => api.put<LdapConfigDto>("/admin/ldap/config", payload),
+  testLdapConfig: (payload: LdapTestRequest) => api.post<LdapTestResponseDto>("/admin/ldap/test", payload),
 
   // Shared MFA (app/api/mfa.py — registered in every listener mode)
   mfaSetupEnroll: (mfaToken: string) => api.post<EnrollResponse>("/mfa/setup/enroll", { mfa_token: mfaToken }),

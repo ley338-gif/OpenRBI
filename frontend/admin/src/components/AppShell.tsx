@@ -14,6 +14,7 @@ const NAV = [
   { to: "/incidents", label: "Incidents", icon: Icons.Incident },
   { to: "/audit", label: "Audit", icon: Icons.Audit },
   { to: "/system", label: "System", icon: Icons.System },
+  { to: "/settings/ldap", label: "LDAP", icon: Icons.Settings },
 ];
 
 const COLLAPSE_KEY = "openrbi_admin_sidebar_collapsed";
