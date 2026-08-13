@@ -129,6 +129,7 @@ export function Dashboard() {
 
       <div className="stat-grid">
         <StatCard
+          icon={<Icons.Sessions />}
           label="Active sessions"
           value={data ? data.kpis.active_sessions : "—"}
           hint={
@@ -139,10 +140,10 @@ export function Dashboard() {
               : undefined
           }
         />
-        <StatCard label="Workers healthy" value={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total}` : "—"} />
-        <StatCard label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} />
-        <StatCard label="Avg CPU" value={data && data.kpis.avg_cpu_percent !== null ? `${data.kpis.avg_cpu_percent.toFixed(0)}%` : "—"} />
-        <StatCard label="Avg RAM" value={data && data.kpis.avg_ram_percent !== null ? `${data.kpis.avg_ram_percent.toFixed(0)}%` : "—"} />
+        <StatCard icon={<Icons.Worker />} label="Workers healthy" value={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total}` : "—"} />
+        <StatCard icon={<Icons.Shield />} label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} />
+        <StatCard icon={<Icons.Worker />} label="Avg CPU" value={data && data.kpis.avg_cpu_percent !== null ? `${data.kpis.avg_cpu_percent.toFixed(0)}%` : "—"} />
+        <StatCard icon={<Icons.System />} label="Avg RAM" value={data && data.kpis.avg_ram_percent !== null ? `${data.kpis.avg_ram_percent.toFixed(0)}%` : "—"} />
       </div>
 
       <div className="card">

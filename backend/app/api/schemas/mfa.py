@@ -14,6 +14,10 @@ class EnrollConfirmResponse(BaseModel):
     recovery_codes: list[str]
 
 
+class SelfResetRequest(BaseModel):
+    code: str
+
+
 class MfaVerifyRequest(BaseModel):
     mfa_token: str
     code: str

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.mfa import (
     EnrollConfirmRequest,
     EnrollConfirmResponse,
+    SelfResetRequest,
     EnrollResponse,
     SetupConfirmRequest,
     SetupConfirmResponse,
@@ -21,7 +22,7 @@ from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
-from app.services.mfa import confirm_enrollment
+from app.services.mfa import confirm_enrollment, reset_mfa, verify_login_factor
 from app.services.security_events import record_security_event
 
 # Shared/user-facing MFA: enrollment and mandatory-setup for any role,
@@ -137,3 +138,16 @@ async def setup_confirm(
     await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
     await db.commit()
     return SetupConfirmResponse(status="ok", recovery_codes=codes)
+@router.post("/reset-self")
+async def reset_self(
+    payload: SelfResetRequest,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    if not current_user.mfa_enabled or not await verify_login_factor(db, current_user, payload.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid authentication code")
+    await reset_mfa(db, current_user, current_user.id)
+    await db.commit()
+    response.delete_cookie(settings.session_cookie_name)
+    return {"status": "ok"}

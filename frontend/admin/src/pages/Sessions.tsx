@@ -99,11 +99,12 @@ export function Sessions() {
               {filtered.map((s) => (
                 <tr key={s.id}>
                   <td>
-                    <Link to={`/sessions/${s.id}`} className="mono">
-                      {s.id.slice(0, 8)}
-                    </Link>
+                    <div className="identity-main">
+                      <Link to={`/sessions/${s.id}`} className="identity-title mono">{s.id.slice(0, 8)}</Link>
+                      <span className="identity-meta">Browser session</span>
+                    </div>
                   </td>
-                  <td>{s.username}</td>
+                  <td><span className="table-primary">{s.username}</span></td>
                   <td><StatusBadge value={s.status} /></td>
                   <td>{s.browser}</td>
                   <td>{formatDateTime(s.started_at)}</td>

@@ -124,7 +124,13 @@ export function Users() {
                   {filtered.map((u) => (
                     <tr key={u.id}>
                       <td>
-                        <Link to={`/users/${u.id}`}>{u.username}</Link>
+                        <div className="identity-cell">
+                          <span className="identity-avatar" aria-hidden="true">{u.username.slice(0, 2)}</span>
+                          <div className="identity-main">
+                            <Link className="identity-title" to={`/users/${u.id}`}>{u.username}</Link>
+                            <span className="identity-meta">User account</span>
+                          </div>
+                        </div>
                       </td>
                       <td>{u.role}</td>
                       <td><StatusBadge value={u.is_active ? "ACTIVE" : "DISABLED"} /></td>

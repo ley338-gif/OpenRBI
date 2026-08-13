@@ -6,6 +6,7 @@ import type {
   QuarantineFileDto,
   SessionResponseDto,
   SetupConfirmResponse,
+  UserFilePageDto,
 } from "@shared/api/types";
 
 // Only endpoints that actually exist on the User listener (section 48) —
@@ -23,11 +24,18 @@ export const userApi = {
   },
 
   myFiles: () => api.get<QuarantineFileDto[]>("/files/me"),
+  myFilesPage: (params: URLSearchParams) => api.get<UserFilePageDto>(`/files/me/page?${params.toString()}`),
   requestDownloadToken: (fileId: string) => api.post<DownloadTokenResponse>(`/files/${fileId}/download-token`),
   downloadUrl: (token: string) => `${import.meta.env.VITE_API_BASE_URL ?? "/api"}/files/download/${token}`,
 
   mfaEnroll: () => api.post<EnrollResponse>("/mfa/enroll"),
   mfaEnrollConfirm: (code: string) => api.post<EnrollConfirmResponse>("/mfa/enroll/confirm", { code }),
+  mfaResetSelf: (code: string) => api.post<{ status: string }>("/mfa/reset-self", { code }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post<{ status: string; other_sessions_revoked: number }>("/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   mfaSetupEnroll: (mfaToken: string) => api.post<EnrollResponse>("/mfa/setup/enroll", { mfa_token: mfaToken }),
   mfaSetupConfirm: (mfaToken: string, code: string) =>
     api.post<SetupConfirmResponse>("/mfa/setup/confirm", { mfa_token: mfaToken, code }),
