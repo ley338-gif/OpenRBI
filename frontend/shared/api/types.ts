@@ -87,6 +87,12 @@ export interface AdminSessionDto extends SessionResponseDto {
   username: string;
 }
 
+// Roadmap B1.10.4 — bulk session revocation from the User Detail page
+export interface RevokeSessionsResponseDto {
+  terminated_count: number;
+  session_ids: string[];
+}
+
 export type QuarantineStatus = "PENDING_SCAN" | "SCANNING" | "QUARANTINED" | "RELEASED" | "REJECTED" | "DELETED";
 export type ScannerStatus = "PENDING" | "SCANNING" | "CLEAN" | "INFECTED" | "ERROR";
 export type FileAction = "AUTO_RELEASE" | "QUARANTINE" | "DENY";

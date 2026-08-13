@@ -102,6 +102,21 @@ test.describe("Admin Portal", () => {
     await expect(page.getByRole("link", { name: ADMIN_USERNAME, exact: true })).toBeVisible();
   });
 
+  test("User Detail (B1.10.4) hides 'Terminate all sessions' when the user has no live sessions", async ({ page }) => {
+    // e2e_user is freshly seeded with no session — the button must not
+    // exist at all (not just be disabled), since its own confirm dialog
+    // assumes there's something real to terminate. The full terminate
+    // round-trip (session flips to TERMINATED, USER_SESSIONS_REVOKED is
+    // audited) is covered by backend/tests/integration/test_user_sessions_revoke.py
+    // against the real Session Agent — creating a real sandbox session
+    // from this suite would duplicate that coverage at much higher cost.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Users", exact: true }).click();
+    await page.getByRole("link", { name: USER_USERNAME }).click();
+    await expect(page.getByRole("heading", { name: USER_USERNAME })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Terminate all sessions" })).toHaveCount(0);
+  });
+
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "System" }).click();
