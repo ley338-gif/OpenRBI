@@ -120,7 +120,7 @@ The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionab
 
 ## System (Health)
 
-Real `GET /admin/health` output, component by component — never a hardcoded green check. Verified live by actually stopping ClamAV and the Session Agent during development and confirming the page correctly showed `UNAVAILABLE`/`DEGRADED` for exactly the affected components, not a generic failure.
+Real `GET /admin/health` output, component by component — never a hardcoded green check. Verified live by actually stopping ClamAV and the Session Agent during development and confirming the page correctly showed `UNAVAILABLE`/`DEGRADED` for exactly the affected components, not a generic failure. Polls every 15 seconds (Roadmap B1.10.7) with a visible "Last updated" clock — no need to manually refresh while watching for a component to recover.
 
 <details><summary>Underlying API</summary>
 
@@ -129,7 +129,7 @@ Real `GET /admin/health` output, component by component — never a hardcoded gr
 
 ## Audit
 
-Shows event type, actor/user, session, and timestamp by default; a **Show raw event** toggle per row reveals the full structured metadata for technical review — never a wall of raw JSON as the default view. Filterable by event type, paginated.
+Shows event type, actor/user, session, and timestamp by default; a **Show raw event** toggle per row reveals the full structured metadata for technical review — never a wall of raw JSON as the default view. Filterable by event type (with autocomplete suggestions for every known type) and by user ID (Roadmap B1.10.7), paginated. The user/session columns are real links to that user's or session's detail page.
 
 <details><summary>Underlying API</summary>
 
