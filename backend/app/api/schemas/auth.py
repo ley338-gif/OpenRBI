@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -18,3 +19,10 @@ class CurrentUserResponse(BaseModel):
     username: str
     role: str
     mfa_enabled: bool
+    auth_source: str
+    created_at: datetime
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

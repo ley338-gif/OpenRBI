@@ -68,6 +68,21 @@ async def revoke_all_sessions_for_user(user_id: uuid.UUID) -> int:
     return revoked
 
 
+async def revoke_other_sessions_for_user(user_id: uuid.UUID, current_token: str) -> int:
+    """Revoke a user's login sessions except the request's current session."""
+    redis_client = get_redis()
+    current_key = f"{_SESSION_PREFIX}{current_token}"
+    revoked = 0
+    async for key in redis_client.scan_iter(match=f"{_SESSION_PREFIX}*"):
+        if key == current_key or (isinstance(key, bytes) and key.decode() == current_key):
+            continue
+        raw = await redis_client.get(key)
+        if raw is not None and json.loads(raw).get("user_id") == str(user_id):
+            await redis_client.delete(key)
+            revoked += 1
+    return revoked
+
+
 async def create_mfa_pending(user_id: uuid.UUID) -> str:
     """Short-lived pre-auth state for a user whose password check passed but
     who still needs to satisfy TOTP (Phase 4 verifies and upgrades this to a

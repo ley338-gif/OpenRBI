@@ -1,12 +1,13 @@
 import os
 import uuid
+from datetime import date, datetime, time, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.quarantine import DownloadTokenResponse, QuarantineFileResponse
+from app.api.schemas.quarantine import DownloadTokenResponse, QuarantineFileResponse, UserFilePage, UserFileSummary
 from app.core.deps import get_current_user
 from app.core.release_tokens import consume_token, create_token
 from app.db.session import get_db
@@ -40,6 +41,64 @@ async def list_my_files(
         .order_by(QuarantineFile.created_at.desc())
     )
     return [QuarantineFileResponse.from_model(qf) for qf in result.scalars()]
+
+
+@router.get("/me/page", response_model=UserFilePage)
+async def list_my_files_page(
+    status_filter: str | None = None,
+    search: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserFilePage:
+    """Paginated user-owned file history. Filters are applied in SQL; the
+    ownership predicate is mandatory and never supplied by the caller.
+    """
+    owned = [QuarantineFile.user_id == current_user.id]
+    filtered = list(owned)
+    status_groups = {
+        "pending": (QuarantineStatus.PENDING_SCAN, QuarantineStatus.SCANNING, QuarantineStatus.QUARANTINED),
+        "approved": (QuarantineStatus.RELEASED,),
+        "blocked": (QuarantineStatus.REJECTED,),
+        "deleted": (QuarantineStatus.DELETED,),
+    }
+    if status_filter and status_filter != "all":
+        states = status_groups.get(status_filter.lower())
+        if states is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="unknown file status filter")
+        filtered.append(QuarantineFile.status.in_(states))
+    if search:
+        term = f"%{search.strip()}%"
+        filtered.append(or_(QuarantineFile.original_name.ilike(term), QuarantineFile.detected_mime.ilike(term)))
+    if date_from:
+        filtered.append(QuarantineFile.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
+    if date_to:
+        filtered.append(QuarantineFile.created_at <= datetime.combine(date_to, time.max, tzinfo=timezone.utc))
+
+    total_filtered = (await db.execute(select(func.count()).select_from(QuarantineFile).where(*filtered))).scalar_one()
+    rows = await db.execute(
+        select(QuarantineFile).where(*filtered).order_by(QuarantineFile.created_at.desc()).offset(offset).limit(limit)
+    )
+
+    async def count_states(states: tuple[QuarantineStatus, ...] | None = None) -> int:
+        query = select(func.count()).select_from(QuarantineFile).where(*owned)
+        if states is not None:
+            query = query.where(QuarantineFile.status.in_(states))
+        return (await db.execute(query)).scalar_one()
+
+    summary = UserFileSummary(
+        total=await count_states(),
+        pending=await count_states(status_groups["pending"]),
+        approved=await count_states(status_groups["approved"]),
+        blocked=await count_states(status_groups["blocked"]),
+    )
+    return UserFilePage(
+        items=[QuarantineFileResponse.from_model(qf) for qf in rows.scalars()],
+        summary=summary, total_filtered=total_filtered, offset=offset, limit=limit,
+    )
 
 
 @router.post("/{file_id}/download-token", response_model=DownloadTokenResponse)

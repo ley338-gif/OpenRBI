@@ -61,3 +61,18 @@ class ReviewRequest(BaseModel):
 class DownloadTokenResponse(BaseModel):
     token: str
     expires_in_seconds: int
+
+
+class UserFileSummary(BaseModel):
+    total: int
+    pending: int
+    approved: int
+    blocked: int
+
+
+class UserFilePage(BaseModel):
+    items: list[QuarantineFileResponse]
+    summary: UserFileSummary
+    total_filtered: int
+    offset: int
+    limit: int

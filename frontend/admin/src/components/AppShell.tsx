@@ -5,6 +5,7 @@ import { Icons } from "@shared/components/Icons";
 import { UserMenu } from "@shared/components/UserMenu";
 import { HelpMenu } from "@shared/components/HelpMenu";
 import { NotificationButton } from "@shared/components/NotificationButton";
+import darkLogo from "@shared/logo-dm.png";
 
 const HELP_LINKS = [
   { label: "Admin Guide", href: "/docs/admin-guide.md" },
@@ -14,18 +15,20 @@ const HELP_LINKS = [
 ];
 
 const NAV = [
-  { to: "/", label: "Dashboard", end: true, icon: Icons.Dashboard },
-  { to: "/users", label: "Users", icon: Icons.Users },
-  { to: "/groups", label: "Groups", icon: Icons.Groups },
-  { to: "/sessions", label: "Sessions", icon: Icons.Sessions },
-  { to: "/policies", label: "Policies", icon: Icons.Shield },
-  { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
-  { to: "/incidents", label: "Incidents", icon: Icons.Incident },
-  { to: "/audit", label: "Audit", icon: Icons.Audit },
-  { to: "/workers", label: "Workers", icon: Icons.Worker },
-  { to: "/login-diagnostics", label: "Login Diagnostics", icon: Icons.Search },
-  { to: "/system", label: "System", icon: Icons.System },
-  { to: "/settings/ldap", label: "LDAP", icon: Icons.Settings },
+  { label: "Overview", items: [{ to: "/", label: "Dashboard", end: true, icon: Icons.Dashboard }] },
+  { label: "Users & access", items: [
+    { to: "/users", label: "Users", icon: Icons.Users }, { to: "/groups", label: "Groups", icon: Icons.Groups },
+    { to: "/sessions", label: "Sessions", icon: Icons.Sessions }, { to: "/login-diagnostics", label: "Login diagnostics", icon: Icons.Search },
+    { to: "/settings/ldap", label: "LDAP / identity", icon: Icons.Settings },
+  ] },
+  { label: "Browser security", items: [
+    { to: "/policies", label: "Policies", icon: Icons.Shield }, { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
+    { to: "/incidents", label: "Incidents", icon: Icons.Incident },
+  ] },
+  { label: "Infrastructure", items: [
+    { to: "/workers", label: "Workers", icon: Icons.Worker }, { to: "/system", label: "System health", icon: Icons.System },
+  ] },
+  { label: "Administration", items: [{ to: "/audit", label: "Audit log", icon: Icons.Audit }] },
 ];
 
 const COLLAPSE_KEY = "openrbi_admin_sidebar_collapsed";
@@ -33,6 +36,7 @@ const COLLAPSE_KEY = "openrbi_admin_sidebar_collapsed";
 export function AppShell() {
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   function toggleCollapsed() {
     setCollapsed((v) => {
@@ -43,32 +47,44 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
+      {mobileOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
+      <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`}>
         <div className="sidebar-brand">
-          {collapsed ? (
+          {collapsed && !mobileOpen ? (
             <img src="/favicon.png" alt="OpenRBI" />
           ) : (
             <div>
-              <img className="sidebar-logo-full" src="/logo-compact.png" alt="OpenRBI — Remote Browser Isolation" />
+              <img className="sidebar-logo-full" src={darkLogo} alt="OpenRBI — Remote Browser Isolation" />
               <span className="subtitle">ADMIN PORTAL</span>
             </div>
           )}
         </div>
         <nav>
-          {NAV.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => (isActive ? "active" : "")}>
-              <item.icon />
-              {!collapsed && item.label}
-            </NavLink>
+          {NAV.map((group) => (
+            <div className="nav-group" key={group.label}>
+              {(!collapsed || mobileOpen) && <div className="nav-group-label">{group.label}</div>}
+              {group.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={"end" in item ? item.end : undefined} onClick={() => setMobileOpen(false)} className={({ isActive }) => (isActive ? "active" : "")}>
+                  <item.icon />{(!collapsed || mobileOpen) && item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
-        <button type="button" className="sidebar-collapse-btn" onClick={toggleCollapsed}>
-          {collapsed ? <Icons.ChevronsRight /> : <Icons.ChevronsLeft />}
-          {!collapsed && "Collapse"}
-        </button>
       </aside>
       <div className="main-area">
         <div className="topbar">
+          <button
+            type="button"
+            className="icon-btn sidebar-toggle-btn"
+            aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+            title={collapsed ? "Expand navigation" : "Collapse navigation"}
+            onClick={() => window.matchMedia("(max-width: 900px)").matches ? setMobileOpen(true) : toggleCollapsed()}
+          >
+            {collapsed ? <Icons.ChevronsRight /> : <Icons.ChevronsLeft />}
+          </button>
+          <span className="topbar-context">Administration</span>
+          <div className="topbar-spacer" />
           <NotificationButton />
           <HelpMenu links={HELP_LINKS} />
           {user && <UserMenu username={user.username} role={user.role} profileTo="/profile" onLogout={() => void logout()} />}

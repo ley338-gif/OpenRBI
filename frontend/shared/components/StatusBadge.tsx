@@ -1,7 +1,7 @@
 // Status is always conveyed by the label text, not color alone (section
 // 6/43) — the badge classes add color as a supporting signal only.
 
-const HEALTHY = new Set(["ACTIVE", "HEALTHY", "ONLINE", "RELEASED", "CLEAN", "RESOLVED", "PUBLISHED"]);
+const HEALTHY = new Set(["ACTIVE", "READY", "CONNECTED", "HEALTHY", "ONLINE", "RELEASED", "APPROVED", "CLEAN", "RESOLVED", "PUBLISHED"]);
 const CRITICAL = new Set([
   "FAILED",
   "UNAVAILABLE",
@@ -13,10 +13,10 @@ const CRITICAL = new Set([
   "REJECTED",
   "OFFLINE",
   "LOCKED",
+  "BLOCKED",
 ]);
 const WARNING = new Set([
   "DEGRADED",
-  "DISCONNECTED",
   "TERMINATING",
   "SCANNING",
   "PENDING_SCAN",
@@ -25,6 +25,8 @@ const WARNING = new Set([
   "DRAINING",
   "MAINTENANCE",
   "INVESTIGATING",
+  "PENDING REVIEW",
+  "WAITING",
 ]);
 const INFO = new Set(["QUEUED", "STARTING", "NEW", "PENDING", "DRAFT"]);
 

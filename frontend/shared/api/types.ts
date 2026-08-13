@@ -11,6 +11,8 @@ export interface CurrentUser {
   username: string;
   role: Role;
   mfa_enabled: boolean;
+  auth_source: "LOCAL" | "LDAP";
+  created_at: string;
 }
 
 export interface LoginResponse {
@@ -148,6 +150,14 @@ export interface QuarantineFileDto {
   review_comment: string | null;
 }
 
+export interface UserFilePageDto {
+  items: QuarantineFileDto[];
+  summary: { total: number; pending: number; approved: number; blocked: number };
+  total_filtered: number;
+  offset: number;
+  limit: number;
+}
+
 export interface DownloadTokenResponse {
   token: string;
   expires_in_seconds: number;
@@ -267,6 +277,7 @@ export const SECURITY_EVENT_TYPES = [
   "USER_ROLE_CHANGED",
   "USER_GROUPS_CHANGED",
   "PASSWORD_RESET_BY_ADMIN",
+  "PASSWORD_CHANGED",
   "GROUP_CREATED",
   "GROUP_DELETED",
   "UPLOAD_REQUESTED",

@@ -121,9 +121,9 @@ export function Groups() {
             <tbody>
               {groups.map((g) => (
                 <tr key={g.id}>
-                  <td>{g.name}</td>
+                  <td><span className="table-primary">{g.name}</span></td>
                   <td>{g.description || "—"}</td>
-                  <td>{g.member_count}</td>
+                  <td><span className="table-count">{g.member_count}</span></td>
                   <td>
                     <button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingDelete(g)}>
                       Delete

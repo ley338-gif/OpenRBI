@@ -4,144 +4,85 @@ import { useAuth } from "@shared/auth/AuthContext";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { StatCard } from "@shared/components/StatCard";
 import { PageHeader } from "@shared/components/PageHeader";
-import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
+import { EmptyState } from "@shared/components/States";
 import { Icons } from "@shared/components/Icons";
-import { formatDateTime } from "@shared/format";
-import type { QuarantineFileDto, SessionResponseDto } from "@shared/api/types";
+import { formatBytes, formatDateTime } from "@shared/format";
+import type { SessionResponseDto, UserFilePageDto } from "@shared/api/types";
 import { userApi } from "../api/userApi";
 
 const LIVE_STATUSES = new Set(["QUEUED", "STARTING", "ACTIVE", "DISCONNECTED", "ISOLATING", "ISOLATED"]);
 
-function secureBrowserCta(liveSession: SessionResponseDto | undefined): { title: string; body: string; button: string } {
-  if (!liveSession) {
-    return {
-      title: "Secure Browser",
-      body: "Start an isolated browser session to browse the web safely — nothing you see there ever reaches this device.",
-      button: "Start Secure Browser",
-    };
-  }
-  if (liveSession.status === "ISOLATED") {
-    return {
-      title: "Session isolated",
-      body: "An administrator isolated this session. End it and start a new one to keep browsing.",
-      button: "Open Secure Browser",
-    };
-  }
-  return {
-    title: "Secure Browser session running",
-    body: "Your isolated browser session is ready — pick up where you left off.",
-    button: "Open Secure Browser",
-  };
+function sessionPresentation(session?: SessionResponseDto) {
+  if (!session) return { state: "NO SESSION", connection: "DISCONNECTED", body: "Start an isolated browser session when you are ready.", action: "Start Secure Browser" };
+  if (session.status === "QUEUED" || session.status === "STARTING") return { state: "STARTING", connection: "WAITING", body: "Your isolated browser environment is being prepared.", action: "View session" };
+  if (session.status === "FAILED") return { state: "FAILED", connection: "DISCONNECTED", body: "The last browser session could not be started.", action: "Try again" };
+  if (session.status === "ISOLATED" || session.status === "ISOLATING") return { state: "ISOLATED", connection: "DISCONNECTED", body: "This session was isolated by an administrator.", action: "Open Secure Browser" };
+  return { state: "READY", connection: session.status === "DISCONNECTED" ? "DISCONNECTED" : "CONNECTED", body: session.status === "DISCONNECTED" ? "Your session is running. Open it to reconnect the viewer." : "Your isolated browser session is ready to continue.", action: session.status === "DISCONNECTED" ? "Resume session" : "Open Secure Browser" };
 }
+
+function displayFileStatus(status: string): string { return ({ PENDING_SCAN: "PENDING", QUARANTINED: "PENDING REVIEW", RELEASED: "APPROVED", REJECTED: "BLOCKED" } as Record<string, string>)[status] ?? status; }
 
 export function Dashboard() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<SessionResponseDto[] | null>(null);
-  const [files, setFiles] = useState<QuarantineFileDto[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [downloads, setDownloads] = useState<UserFilePageDto | null>(null);
+  const [sessionError, setSessionError] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
 
-  function load() {
-    setError(null);
-    Promise.all([userApi.mySessions(), userApi.myFiles()])
-      .then(([s, f]) => {
-        setSessions(s);
-        setFiles(f);
-      })
-      .catch(() => setError("Could not load your dashboard. The backend may be unavailable."));
+  function loadSessions() { setSessionError(false); userApi.mySessions().then(setSessions).catch(() => setSessionError(true)); }
+  function loadDownloads() {
+    setDownloadError(false);
+    userApi.myFilesPage(new URLSearchParams({ status_filter: "all", offset: "0", limit: "5" })).then(setDownloads).catch(() => setDownloadError(true));
   }
+  useEffect(() => { loadSessions(); loadDownloads(); }, []);
 
-  useEffect(load, []);
+  const liveSession = sessions?.find((s) => LIVE_STATUSES.has(s.status));
+  const lastSession = sessions?.[0];
+  const session = sessionPresentation(liveSession);
+  const summary = downloads?.summary;
 
-  if (error) {
-    return (
-      <div className="page">
-        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
-          {error}
-        </ErrorState>
-      </div>
-    );
-  }
-  if (!sessions || !files) return <LoadingBlock label="Loading dashboard…" />;
+  return <div className="page user-dashboard">
+    <PageHeader title="Dashboard" subtitle="Current overview of your secure browsing environment." />
 
-  const liveSession = sessions.find((s) => LIVE_STATUSES.has(s.status));
-  const recentFiles = files.slice(0, 5);
-  const cta = secureBrowserCta(liveSession);
+    <div className="stat-grid dashboard-kpis">
+      <StatCard icon={<Icons.Shield />} label="MFA status" value={<StatusBadge value={user?.mfa_enabled ? "ENABLED" : "DISABLED"} />} hint={user?.mfa_enabled ? "Multi-factor authentication is active." : "Add a second factor to protect your account."} action={!user?.mfa_enabled ? <Link to="/profile">Set up MFA →</Link> : undefined} />
+      <StatCard icon={<Icons.Download />} label="Downloads" value={summary?.total ?? "—"} hint="Files recorded" action={<Link to="/downloads">View all downloads →</Link>} />
+      <StatCard icon={<Icons.Shield />} label="Files in review" value={summary?.pending ?? "—"} hint="Processing or awaiting review" action={<Link to="/downloads?status=pending">Go to Downloads →</Link>} />
+      <StatCard icon={<Icons.Shield />} label="Approved files" value={summary?.approved ?? "—"} hint="Released for download" action={<Link to="/downloads?status=approved">Go to Downloads →</Link>} />
+      <StatCard icon={<Icons.Quarantine />} label="Blocked files" value={summary?.blocked ?? "—"} hint="Rejected by security" action={<Link to="/downloads?status=blocked">Go to Downloads →</Link>} />
+    </div>
+    {downloadError && <div className="inline-error">Download status is currently unavailable. <button onClick={loadDownloads}>Retry</button></div>}
 
-  return (
-    <div className="page">
-      <PageHeader title="Dashboard" subtitle="Current overview of your secure browsing environment." />
+    <section className="card session-hero surface-emphasis">
+      <div className="session-hero-main"><div className="session-hero-icon"><Icons.Browser /></div><div><h2>Secure Browser session</h2><StatusBadge value={session.state} /><p>{session.body}</p></div></div>
+      {sessionError ? <div className="session-hero-status"><span>Session status</span><strong>Unavailable</strong><button className="btn btn-secondary btn-sm" onClick={loadSessions}>Retry</button></div> : <>
+        <div className="session-hero-status"><span>Last session</span><strong>{lastSession ? formatDateTime(lastSession.created_at) : "None yet"}</strong></div>
+        <div className="session-hero-status"><span>Connection</span><StatusBadge value={session.connection} /></div>
+      </>}
+      <Link to="/browser" className="btn btn-primary">{session.action}</Link>
+    </section>
 
-      <div className="stat-grid">
-        <StatCard label="MFA" value={<StatusBadge value={user?.mfa_enabled ? "ENABLED" : "NOT ENABLED"} />} />
-        <StatCard label="Downloads" value={files.length} hint="On file" />
-        <StatCard
-          label="Last session"
-          value={sessions[0] ? formatDateTime(sessions[0].created_at) : "—"}
-        />
-      </div>
+    <div className="dashboard-content-grid">
+      <section className="card dashboard-recent">
+        <div className="section-header"><h2>Recent downloads</h2><Link to="/downloads" className="btn btn-secondary btn-sm">View all</Link></div>
+        {downloadError ? <div className="error-state">Recent downloads are currently unavailable.</div> : !downloads ? <DashboardRowsSkeleton /> : downloads.items.length === 0 ? <EmptyState icon={<Icons.Download />} title="No downloads yet">Files downloaded during a Secure Browser session will appear here after security processing.</EmptyState> : <div className="dashboard-file-list">{downloads.items.map((file) => <div className="dashboard-file-row" key={file.id}>
+          <div className="file-type-icon"><Icons.File /></div><div className="dashboard-file-name"><strong>{file.original_name}</strong><span>{file.detected_mime ?? file.declared_mime ?? "Unknown file type"}</span></div><span>{formatDateTime(file.created_at)}</span><span>{formatBytes(file.size_bytes)}</span><StatusBadge value={displayFileStatus(file.status)} />
+        </div>)}</div>}
+      </section>
 
-      <div className="card cta-card surface-emphasis">
-        <div className="flex-between" style={{ marginBottom: 0 }}>
-          <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
-            <div className="compact-row-icon" style={{ width: 44, height: 44, background: "var(--color-white)" }}>
-              <Icons.Browser width={22} height={22} color="var(--color-accent-strong)" />
-            </div>
-            <div>
-              <h2 style={{ margin: 0, fontSize: "1.1rem" }}>{cta.title}</h2>
-              <p className="text-muted" style={{ margin: "4px 0 0", maxWidth: "440px" }}>
-                {cta.body}
-              </p>
-              {liveSession && (
-                <p style={{ margin: "6px 0 0" }}>
-                  <StatusBadge value={liveSession.status} />
-                </p>
-              )}
-            </div>
-          </div>
-          <Link to="/browser" className="btn btn-primary">
-            {cta.button}
-          </Link>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="section-header">
-          <h2>Recent downloads</h2>
-          <Link to="/downloads" className="btn btn-secondary btn-sm">
-            View all
-          </Link>
-        </div>
-        {recentFiles.length === 0 ? (
-          <EmptyState
-            icon={<Icons.Download width={20} height={20} />}
-            title="No downloads yet"
-            action={
-              <Link to="/downloads" className="btn btn-secondary btn-sm">
-                Go to Downloads
-              </Link>
-            }
-          >
-            Files you download in a Secure Browser session and that get released appear here.
-          </EmptyState>
-        ) : (
-          <div className="compact-list">
-            {recentFiles.map((f) => (
-              <div className="compact-row" key={f.id}>
-                <div className="compact-row-icon">
-                  <Icons.File width={16} height={16} />
-                </div>
-                <div className="compact-row-main">
-                  <div className="compact-row-title">{f.original_name}</div>
-                  <div className="compact-row-meta">
-                    <StatusBadge value={f.status} />
-                  </div>
-                </div>
-                <div className="compact-row-time">{formatDateTime(f.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="dashboard-side-column">
+        <section className="card security-summary"><div className="section-header"><h2>Security summary</h2></div>
+          {summary ? <div className="summary-list"><SummaryRow label="Released" value={summary.approved} tone="healthy" /><SummaryRow label="Pending review" value={summary.pending} tone="warning" /><SummaryRow label="Blocked" value={summary.blocked} tone="critical" /><SummaryRow label="Other states" value={Math.max(0, summary.total - summary.approved - summary.pending - summary.blocked)} tone="neutral" /></div> : <DashboardRowsSkeleton />}
+        </section>
+        <section className="card quick-actions"><div className="section-header"><h2>Quick actions</h2></div><div className="quick-action-grid">
+          <Link to="/browser"><Icons.Browser /><span>Open Secure Browser</span></Link><Link to="/downloads"><Icons.Download /><span>Downloads</span></Link><Link to="/profile"><Icons.Shield /><span>Profile & Security</span></Link>
+        </div></section>
       </div>
     </div>
-  );
+
+    <div className="dashboard-security-note"><Icons.Shield /><div><strong>Your security is our priority</strong><p>Files downloaded through Secure Browser are processed according to your organization’s security policies before they are released.</p></div><a href="/docs/user-guide.md">Learn more</a></div>
+  </div>;
 }
+
+function SummaryRow({ label, value, tone }: { label: string; value: number; tone: string }) { return <div className="summary-row"><span className={`summary-dot ${tone}`} /><span>{label}</span><strong>{value}</strong></div>; }
+function DashboardRowsSkeleton() { return <div className="dashboard-skeleton" aria-label="Loading"><span /><span /><span /></div>; }

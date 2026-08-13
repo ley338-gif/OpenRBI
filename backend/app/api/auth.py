@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.auth import CurrentUserResponse, LoginRequest, LoginResponse
+from app.api.schemas.auth import ChangePasswordRequest, CurrentUserResponse, LoginRequest, LoginResponse
 from app.api.schemas.mfa import MfaVerifyRequest
 from app.config import get_settings
 from app.core.auth_providers.base import AuthResult
@@ -20,7 +20,9 @@ from app.core.sessions import (
     is_login_locked,
     record_login_failure,
     record_mfa_pending_failure,
+    revoke_other_sessions_for_user,
 )
+from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 from app.models.enums import MFA_MANDATORY_ROLES, SecurityEventType
 from app.models.role import Role
@@ -160,7 +162,35 @@ async def me(current_user: User = Depends(get_current_user), db: AsyncSession = 
         username=current_user.username,
         role=role.name,
         mfa_enabled=current_user.mfa_enabled,
+        auth_source="LOCAL" if current_user.password_hash is not None else "LDAP",
+        created_at=current_user.created_at,
     )
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, int | str]:
+    if current_user.password_hash is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="password is managed by the external directory")
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="current password is incorrect")
+    if len(payload.new_password) < 12:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="new password must be at least 12 characters")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="new password must be different")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.add(current_user)
+    revoked = await revoke_other_sessions_for_user(current_user.id, session_token or "")
+    await record_security_event(
+        db, SecurityEventType.PASSWORD_CHANGED, user_id=current_user.id,
+        metadata={"other_sessions_revoked": revoked},
+    )
+    await db.commit()
+    return {"status": "ok", "other_sessions_revoked": revoked}
 
 
 @router.post("/mfa/verify", response_model=LoginResponse)
