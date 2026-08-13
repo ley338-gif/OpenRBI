@@ -79,10 +79,10 @@ export function Dashboard() {
       <div className="stat-grid dashboard-kpis">
         <StatCard icon={<Icons.Sessions />} label="Active sessions" value={data?.kpis.active_sessions ?? "—"} hint={data?.kpis.active_sessions_delta_last_hour == null ? "No hour-old comparison" : `${data.kpis.active_sessions_delta_last_hour >= 0 ? "+" : ""}${data.kpis.active_sessions_delta_last_hour} in the last hour`} />
         <StatCard icon={<Icons.Users />} label="Users" value={data?.kpis.users ?? "—"} hint="Registered accounts" />
-        <StatCard icon={<Icons.File />} label="Files processed (24h)" value={data?.kpis.files_processed_24h ?? "—"} hint="Real file lifecycle records" />
-        <StatCard icon={<Icons.Quarantine />} label="Blocked files (24h)" value={data?.kpis.blocked_files_24h ?? "—"} hint="Rejected by review or policy" />
-        <StatCard icon={<Icons.Incident />} label="Incidents (24h)" value={data?.kpis.incidents_24h ?? "—"} hint="Created in the last 24 hours" />
-        <StatCard icon={<Icons.Shield />} label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} hint={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total} workers healthy` : undefined} />
+        <StatCard tone="info" icon={<Icons.File />} label="Files processed (24h)" value={data?.kpis.files_processed_24h ?? "—"} hint="Real file lifecycle records" />
+        <StatCard tone="danger" icon={<Icons.Quarantine />} label="Blocked files (24h)" value={data?.kpis.blocked_files_24h ?? "—"} hint="Rejected by review or policy" />
+        <StatCard tone="warning" icon={<Icons.Incident />} label="Incidents (24h)" value={data?.kpis.incidents_24h ?? "—"} hint="Created in the last 24 hours" />
+        <StatCard tone="success" icon={<Icons.Shield />} label="System health" value={data ? <StatusBadge value={data.kpis.system_health} /> : "—"} hint={data ? `${data.kpis.workers_healthy} / ${data.kpis.workers_total} workers healthy` : undefined} />
       </div>
 
       <div className="dashboard-ops-grid dashboard-ops-grid-top">

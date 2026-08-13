@@ -69,10 +69,10 @@ export function Users() {
     <PageHeader title="Users" subtitle="Manage user accounts, roles, groups and MFA across the organization." actions={<button className="btn btn-primary" onClick={() => setShowCreate(true)}><Icons.Users /> Create local user</button>} />
     <div className="stat-grid users-kpis">
       <StatCard icon={<Icons.Users />} label="Total users" value={data?.stats.total ?? "—"} />
-      <StatCard icon={<Icons.User />} label="Active users" value={data?.stats.active ?? "—"} hint="Active account status" />
-      <StatCard icon={<Icons.Shield />} label="MFA enabled" value={data ? `${data.stats.mfa_enabled} (${mfaPercent}%)` : "—"} />
-      <StatCard icon={<Icons.Settings />} label="Administrators" value={data?.stats.administrators ?? "—"} />
-      <StatCard icon={<Icons.Groups />} label="Groups" value={data?.stats.groups ?? "—"} />
+      <StatCard tone="success" icon={<Icons.User />} label="Active users" value={data?.stats.active ?? "—"} hint="Active account status" />
+      <StatCard tone="success" icon={<Icons.Shield />} label="MFA enabled" value={data ? `${data.stats.mfa_enabled} (${mfaPercent}%)` : "—"} />
+      <StatCard tone="warning" icon={<Icons.Settings />} label="Administrators" value={data?.stats.administrators ?? "—"} />
+      <StatCard tone="info" icon={<Icons.Groups />} label="Groups" value={data?.stats.groups ?? "—"} />
     </div>
 
     {showCreate && <CreateUserForm groups={groups} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); notify("Local user created"); load(); }} />}

@@ -5,6 +5,7 @@ import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States"
 import { FormField } from "@shared/components/FormField";
 import { Icons } from "@shared/components/Icons";
 import { PageHeader } from "@shared/components/PageHeader";
+import { StatCard } from "@shared/components/StatCard";
 import { useToast } from "@shared/components/Toast";
 import { adminApi } from "../api/adminApi";
 
@@ -51,12 +52,12 @@ export function Policies() {
 
   return <div className="page policies-page">
     <PageHeader title="Policies" subtitle="Versioned MIME and source rules controlling downloads, uploads, and file handling." actions={<button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ Create Policy</button>} />
-    <div className="policy-kpis">
-      <article className="kpi-card"><span className="kpi-icon"><Icons.Shield /></span><div><small>Total policies</small><strong>{data.stats.total}</strong><p>{data.stats.total_versions} version{data.stats.total_versions === 1 ? "" : "s"}</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon green"><Icons.Clipboard /></span><div><small>Published policies</small><strong>{data.stats.published}</strong><p>Current live versions</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon amber"><Icons.File /></span><div><small>Draft policies</small><strong>{data.stats.drafts}</strong><p>Unpublished changes</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon"><Icons.Groups /></span><div><small>Policies in use</small><strong>{data.stats.in_use}</strong><p>Assigned to groups</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon blue"><Icons.RefreshCw /></span><div><small>Last updated</small><strong className="kpi-date">{formatDate(data.stats.last_updated_at)}</strong><p>{data.stats.last_updated_by ? `By ${data.stats.last_updated_by}` : "Actor unavailable"}</p></div></article>
+    <div className="stat-grid policy-kpis">
+      <StatCard compact icon={<Icons.Shield />} label="Total policies" value={data.stats.total} hint={`${data.stats.total_versions} version${data.stats.total_versions === 1 ? "" : "s"}`} />
+      <StatCard compact tone="success" icon={<Icons.Clipboard />} label="Published policies" value={data.stats.published} hint="Current live versions" />
+      <StatCard compact tone="warning" icon={<Icons.File />} label="Draft policies" value={data.stats.drafts} hint="Unpublished changes" />
+      <StatCard compact tone="info" icon={<Icons.Groups />} label="Policies in use" value={data.stats.in_use} hint="Assigned to groups" />
+      <StatCard compact icon={<Icons.RefreshCw />} label="Last updated" value={formatDate(data.stats.last_updated_at)} hint={data.stats.last_updated_by ? `By ${data.stats.last_updated_by}` : "Actor unavailable"} />
     </div>
 
     <section className="card policy-console">

@@ -46,10 +46,10 @@ export function Sessions() {
     <PageHeader title="Sessions" subtitle="Monitor and manage isolated browser sessions across all users." actions={<div className="dashboard-refresh"><span className="text-muted">{lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString()}` : "Loading…"}</span><button className="icon-btn" aria-label="Refresh sessions" onClick={load}><Icons.RefreshCw /></button></div>} />
     <div className="stat-grid sessions-kpis">
       <StatCard icon={<Icons.Sessions />} label="Active sessions" value={data?.stats.active ?? "—"} hint="Includes active, disconnected and isolated sandboxes" />
-      <StatCard icon={<Icons.Browser />} label="Sessions today" value={data?.stats.sessions_today ?? "—"} />
-      <StatCard icon={<Icons.Audit />} label="Average duration" value={data ? secondsDuration(data.stats.average_duration_seconds_24h) : "—"} hint="Sessions ended in the last 24h" />
-      <StatCard icon={<Icons.Incident />} label="Failed (24h)" value={data?.stats.failed_24h ?? "—"} />
-      <StatCard icon={<Icons.Shield />} label="Terminated (24h)" value={data?.stats.terminated_24h ?? "—"} hint="Not classified as failures" />
+      <StatCard tone="success" icon={<Icons.Browser />} label="Sessions today" value={data?.stats.sessions_today ?? "—"} />
+      <StatCard tone="warning" icon={<Icons.Audit />} label="Average duration" value={data ? secondsDuration(data.stats.average_duration_seconds_24h) : "—"} hint="Sessions ended in the last 24h" />
+      <StatCard tone="danger" icon={<Icons.Incident />} label="Failed (24h)" value={data?.stats.failed_24h ?? "—"} />
+      <StatCard tone="info" icon={<Icons.Shield />} label="Terminated (24h)" value={data?.stats.terminated_24h ?? "—"} hint="Not classified as failures" />
     </div>
     <section className="card sessions-management-card">
       <div className="sessions-filter-bar"><label className="users-search"><Icons.Search /><input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search username or session ID…" /></label><select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All statuses</option>{data?.statuses.map((item) => <option key={item}>{item}</option>)}</select><select value={workerId} onChange={(e) => { setWorkerId(e.target.value); setPage(1); }}><option value="">All workers</option>{workers.map((worker) => <option value={worker.id} key={worker.id}>{worker.hostname}</option>)}</select><select value={dateRange} onChange={(e) => { setDateRange(e.target.value); setPage(1); }}><option value="">All dates</option><option value="today">Today</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option></select>{hasFilters && <button className="btn btn-ghost btn-sm" onClick={clearFilters}>Clear filters</button>}</div>
