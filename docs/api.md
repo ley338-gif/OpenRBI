@@ -21,6 +21,8 @@ All user mutation endpoints remain ADMIN-only. `POST /admin/users/{id}/reset-pas
 
 `GET /admin/groups-overview` (ADMIN) supplies the paginated Groups operations view. It accepts `search` (name/description), `policy_id`, `sort_by` (`name`, `members`, `created_at`), `sort_dir`, `offset`, and `limit` (maximum 100), and returns aggregate totals plus policy names without per-group queries. Existing `GET /admin/groups` remains the compact unpaginated selector contract used by user and policy forms. Group create/delete and policy attachment endpoints remain unchanged and ADMIN-authorized.
 
+`GET /admin/sessions` (ADMIN/SECURITY_REVIEWER) returns a paginated session operations response with global KPIs and actual lifecycle-state values. It supports `search` (session UUID/username), `session_status`, `worker_id`, `since`, `sort_by` (`started_at`, `duration`, `username`, `status`), `sort_dir`, `offset`, and `limit` (maximum 100). User and worker information are joined in one query. Session detail and lifecycle-action authorization remain unchanged; `kill` is ADMIN-only.
+
 ## Health (Phase 19)
 
 `GET /health` (public, unauthenticated) — pure liveness, always `200 {"status": "ok"}` if the process is up; carries no dependency information.

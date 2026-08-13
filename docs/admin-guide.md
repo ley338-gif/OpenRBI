@@ -96,11 +96,15 @@ Every disable, MFA reset, lock, or role change is a security-critical action —
 
 ## Sessions
 
-The Sessions page lists every session on the system with client-side status/username filtering (the backend has no server-side filter or pagination on this endpoint yet — a documented gap, not something the UI silently pretends to have). Session detail shows full lifecycle info, resource limits, and recent security events, with Disconnect/Isolate/Restore/Kill buttons shown only when the session's current status actually allows that action. **Isolate** and **Kill** show specific, honest confirmation dialogs (e.g. *"Kill session S-1234? This immediately terminates the user's browser sandbox. Unsaved browser state will be lost."*) — verified live: isolating a real session actually leaves its sandbox container with zero attached Docker networks, and killing one actually removes the container.
+The Sessions page is a paginated operations and history view with server-side session-ID/username search, lifecycle-status and worker filters, date presets, sorting, and 15-second polling. Global KPI cards show live sandboxes, sessions started today, average duration for sessions ended in the last 24 hours, and separate failed/terminated counts. Terminated is presented as a normal lifecycle outcome, not automatically as an error.
+
+Every row links to the real user, assigned worker, and existing session detail. The detail view shows lifecycle information, resource limits, and recent security events, with Disconnect/Isolate/Restore/Kill buttons shown only when the current state allows them. **Isolate** and **Kill** use specific confirmation dialogs. No live screen viewing or administrative takeover is exposed.
+
+The current state model uses `ACTIVE` and `DISCONNECTED` as mutually exclusive session lifecycle states. `DISCONNECTED` means the isolated sandbox remains running but the viewer connection has been dropped; there is no independently persisted connection-state field, so the UI does not invent or duplicate a separate Connection column. Client IP, browser version, device/OS, geolocation, reconnect count, and termination reason are likewise not recorded today and are not displayed.
 
 <details><summary>Underlying API</summary>
 
-`GET /admin/sessions`, `GET /admin/sessions/{id}`, `GET /admin/users/{id}/sessions`, `POST /admin/sessions/{id}/{disconnect,isolate,restore,kill}`. Disconnect and Isolate are available to both ADMIN and SECURITY_REVIEWER; Kill is ADMIN-only (the project brief doesn't specify which role Kill needs — read as the more restrictive option when ambiguous, see [session-lifecycle.md](session-lifecycle.md)). Isolating a session always opens an Incident in addition to the `SESSION_ISOLATED` security event.
+`GET /admin/sessions` accepts `search`, `session_status`, `worker_id`, `since`, `sort_by`, `sort_dir`, `offset`, and `limit` and returns the page plus global operational statistics and actual state-machine values. `GET /admin/sessions/{id}`, `GET /admin/users/{id}/sessions`, `POST /admin/sessions/{id}/{disconnect,isolate,restore,kill}` remain available. Disconnect and Isolate are available to both ADMIN and SECURITY_REVIEWER; Kill is ADMIN-only. Isolating a session always opens an Incident in addition to the `SESSION_ISOLATED` security event.
 </details>
 
 ## Login Diagnostics (Roadmap B1.10.6)

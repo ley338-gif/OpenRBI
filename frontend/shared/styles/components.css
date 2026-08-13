@@ -1546,3 +1546,13 @@ table.data-table a:hover { text-decoration: underline; }
 .group-create-form { display: grid; grid-template-columns: 1fr 1.5fr auto; align-items: end; gap: var(--space-3); }
 @media (max-width: 900px) { .groups-secondary { display: none; } .group-create-form { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .groups-kpis { grid-template-columns: 1fr; } .groups-filter-bar { align-items: stretch; flex-direction: column; } .groups-filter-bar > * { width: 100%; } }
+
+/* Admin session operations */
+.sessions-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.sessions-management-card { padding: var(--space-4); }
+.sessions-filter-bar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
+.sessions-filter-bar select { min-width: 150px; }
+.sessions-table th button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; cursor: pointer; }
+.session-avatar svg { width: 17px; height: 17px; }.session-avatar.live { color: var(--status-healthy-fg); background: var(--status-healthy-bg); }
+@media (max-width: 1150px) { .sessions-kpis { grid-template-columns: repeat(3, 1fr); } .sessions-secondary { display: none; } }
+@media (max-width: 750px) { .sessions-kpis { grid-template-columns: 1fr; } .sessions-filter-bar { align-items: stretch; flex-direction: column; } .sessions-filter-bar > * { width: 100%; } }

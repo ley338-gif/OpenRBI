@@ -12,6 +12,7 @@ function queryString(params: Record<string, string | number | undefined>): strin
 }
 import type {
   AdminSessionDto,
+  AdminSessionListDto,
   BrowserNodeDto,
   DashboardRange,
   DashboardResponseDto,
@@ -78,7 +79,8 @@ export const adminApi = {
   deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),
 
   // Sessions
-  listSessions: () => api.get<AdminSessionDto[]>("/admin/sessions"),
+  listSessions: (params?: { search?: string; session_status?: string; worker_id?: string; since?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>
+    api.get<AdminSessionListDto>(`/admin/sessions${queryString(params ?? {})}`),
   getSession: (id: string) => api.get<AdminSessionDto>(`/admin/sessions/${id}`),
   disconnectSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/disconnect`),
   isolateSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/isolate`),

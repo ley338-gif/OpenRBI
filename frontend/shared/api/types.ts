@@ -87,6 +87,17 @@ export interface SessionResponseDto {
 export interface AdminSessionDto extends SessionResponseDto {
   user_id: string;
   username: string;
+  node_id: string | null;
+  worker_hostname: string | null;
+}
+
+export interface AdminSessionListDto {
+  items: AdminSessionDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  stats: { active: number; sessions_today: number; average_duration_seconds_24h: number | null; failed_24h: number; terminated_24h: number };
+  statuses: SessionStatus[];
 }
 
 // Roadmap B1.10.4 — bulk session revocation from the User Detail page
