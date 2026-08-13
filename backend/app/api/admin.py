@@ -8,6 +8,7 @@ from app.api.schemas.admin import (
     CreateGroupRequest,
     CreateUserRequest,
     GroupSummary,
+    LockoutStatus,
     ResetPasswordRequest,
     SetUserGroupsRequest,
     UpdateUserRoleRequest,
@@ -28,9 +29,12 @@ from app.services.users import (
     change_role,
     create_user,
     get_group_names,
+    get_lockout_status,
+    lock_account,
     reset_password,
     set_active,
     set_groups,
+    unlock_account,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_role("ADMIN"))])
@@ -127,6 +131,42 @@ async def reset_password_endpoint(
     await reset_password(db, user, new_password=payload.new_password, actor_id=current_user.id)
     await db.commit()
     return {"status": "ok"}
+
+
+@router.get("/users/{user_id}/lockout", response_model=LockoutStatus)
+async def get_lockout_status_endpoint(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> LockoutStatus:
+    """Roadmap B1.10.5 — read the same brute-force-lockout state /auth/login
+    itself checks (`is_login_locked`), so an admin can see whether a user
+    is currently locked out (and for how much longer) before deciding
+    whether to unlock them.
+    """
+    user = await _get_user_or_404(db, user_id)
+    return LockoutStatus(**await get_lockout_status(user))
+
+
+@router.post("/users/{user_id}/lock", response_model=LockoutStatus)
+async def lock_account_endpoint(
+    user_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> LockoutStatus:
+    """Account Lock: an admin-triggered version of the same lockout the
+    system already applies automatically after repeated failed logins —
+    distinct from Disable (`set_active`), which is a separate, DB-persisted
+    "account deactivated" state, not a login-lockout.
+    """
+    user = await _get_user_or_404(db, user_id)
+    await lock_account(db, user, actor_id=current_user.id)
+    await db.commit()
+    return LockoutStatus(**await get_lockout_status(user))
+
+
+@router.post("/users/{user_id}/unlock", response_model=LockoutStatus)
+async def unlock_account_endpoint(
+    user_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> LockoutStatus:
+    user = await _get_user_or_404(db, user_id)
+    await unlock_account(db, user, actor_id=current_user.id)
+    await db.commit()
+    return LockoutStatus(**await get_lockout_status(user))
 
 
 @router.put("/users/{user_id}/role", response_model=UserSummary)

@@ -117,6 +117,33 @@ test.describe("Admin Portal", () => {
     await expect(page.getByRole("button", { name: "Terminate all sessions" })).toHaveCount(0);
   });
 
+  test("User Detail (B1.10.5) Lock/Unlock account really blocks and restores login", async ({ page, request }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Users", exact: true }).click();
+    await page.getByRole("link", { name: USER_USERNAME }).click();
+
+    await expect(page.getByText(/not locked/i)).toBeVisible();
+    await page.getByRole("button", { name: "Lock account", exact: true }).click();
+    await page.getByRole("button", { name: "Lock account", exact: true }).last().click();
+    await expect(page.getByText(/^LOCKED/)).toBeVisible();
+
+    // Real backend round-trip, not just a UI state flip: the actual login
+    // endpoint now rejects the account's real, correct password.
+    const lockedLogin = await request.post("/api/auth/login", {
+      data: { username: USER_USERNAME, password: PASSWORD },
+    });
+    expect(lockedLogin.status()).toBe(429);
+
+    await page.getByRole("button", { name: "Unlock account", exact: true }).click();
+    await page.getByRole("button", { name: "Unlock account", exact: true }).last().click();
+    await expect(page.getByText(/not locked/i)).toBeVisible();
+
+    const unlockedLogin = await request.post("/api/auth/login", {
+      data: { username: USER_USERNAME, password: PASSWORD },
+    });
+    expect(unlockedLogin.status()).toBe(200);
+  });
+
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "System" }).click();

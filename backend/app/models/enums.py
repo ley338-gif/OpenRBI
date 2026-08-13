@@ -176,3 +176,11 @@ class SecurityEventType(str, enum.Enum):
     # revoked this user's sessions as one action" without inferring one
     # from a run of several SESSION_TERMINATED events with the same actor.
     USER_SESSIONS_REVOKED = "USER_SESSIONS_REVOKED"
+
+    # Roadmap Phase B / B1.10.5 — Account Lock/Unlock: an admin-triggered
+    # equivalent of the automatic brute-force login lockout (same Redis
+    # mechanism and window, see app/core/sessions.py's force_login_lock()),
+    # not a second, DB-persisted "disabled" concept — that's USER_DISABLED,
+    # unchanged and distinct.
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    ACCOUNT_UNLOCKED = "ACCOUNT_UNLOCKED"

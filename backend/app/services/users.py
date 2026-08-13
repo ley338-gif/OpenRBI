@@ -4,6 +4,12 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.core.sessions import (
+    clear_login_failures,
+    force_login_lock,
+    get_login_lockout_status,
+    revoke_all_sessions_for_user,
+)
 from app.models.enums import SecurityEventType
 from app.models.group import Group, UserGroup
 from app.models.role import Role
@@ -71,6 +77,36 @@ async def set_active(db: AsyncSession, user: User, *, active: bool, actor_id: uu
     event_type = SecurityEventType.USER_ENABLED if active else SecurityEventType.USER_DISABLED
     await record_security_event(db, event_type, user_id=user.id, metadata={"actor": str(actor_id)})
     await db.flush()
+
+
+async def lock_account(db: AsyncSession, user: User, *, actor_id: uuid.UUID) -> None:
+    """Roadmap B1.10.5 — Account Lock: an admin-triggered equivalent of the
+    automatic brute-force login lockout (same Redis mechanism/window as
+    `is_login_locked`/`record_login_failure`), distinct from Disable
+    (`set_active`, DB-persisted, blocks every request via `get_current_user`)
+    — this only blocks new logins, matching what "locked" already means
+    elsewhere in this system, and also revokes any session the user
+    currently has, so it takes effect immediately.
+    """
+    await force_login_lock(user.username)
+    revoked = await revoke_all_sessions_for_user(user.id)
+    await record_security_event(
+        db, SecurityEventType.ACCOUNT_LOCKED, user_id=user.id,
+        metadata={"actor": str(actor_id), "sessions_revoked": revoked},
+    )
+    await db.flush()
+
+
+async def unlock_account(db: AsyncSession, user: User, *, actor_id: uuid.UUID) -> None:
+    await clear_login_failures(user.username)
+    await record_security_event(
+        db, SecurityEventType.ACCOUNT_UNLOCKED, user_id=user.id, metadata={"actor": str(actor_id)}
+    )
+    await db.flush()
+
+
+async def get_lockout_status(user: User) -> dict:
+    return await get_login_lockout_status(user.username)
 
 
 async def reset_password(db: AsyncSession, user: User, *, new_password: str, actor_id: uuid.UUID) -> None:
