@@ -13,7 +13,8 @@ from app.api.schemas.admin import (
     UpdateUserRoleRequest,
     UserSummary,
 )
-from app.api.schemas.sessions import AdminSessionResponse
+from app.api.display import force_disconnect
+from app.api.schemas.sessions import AdminSessionResponse, RevokeSessionsResponse
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
 from app.models.browser_session import BrowserSession
@@ -21,6 +22,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.models.group import Group
 from app.services.groups import GroupServiceError, create_group, delete_group, list_groups_with_member_counts
+from app.services.sessions import revoke_user_sessions
 from app.services.users import (
     UserServiceError,
     change_role,
@@ -208,3 +210,20 @@ async def list_user_sessions(user_id: uuid.UUID, db: AsyncSession = Depends(get_
         select(BrowserSession).where(BrowserSession.user_id == user.id).order_by(BrowserSession.created_at.desc())
     )
     return [AdminSessionResponse.from_model_with_user(s, user.username) for s in result.scalars()]
+
+
+@router.post("/users/{user_id}/sessions/revoke", response_model=RevokeSessionsResponse)
+async def revoke_sessions(
+    user_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> RevokeSessionsResponse:
+    """Roadmap B1.10.4 — bulk termination, the by-user counterpart to
+    /admin/sessions/{id}/kill. ADMIN-only (this whole router is), matching
+    Kill's own restriction rather than SECURITY_REVIEWER's broader
+    disconnect/isolate access.
+    """
+    user = await _get_user_or_404(db, user_id)
+    terminated = await revoke_user_sessions(db, user, actor_id=current_user.id)
+    await db.commit()
+    for session in terminated:
+        await force_disconnect(session.id)
+    return RevokeSessionsResponse(terminated_count=len(terminated), session_ids=[s.id for s in terminated])

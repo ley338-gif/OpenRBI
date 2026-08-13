@@ -168,3 +168,11 @@ class SecurityEventType(str, enum.Enum):
     WORKER_DRAIN_DISABLED = "WORKER_DRAIN_DISABLED"
     WORKER_MAINTENANCE_ENABLED = "WORKER_MAINTENANCE_ENABLED"
     WORKER_MAINTENANCE_DISABLED = "WORKER_MAINTENANCE_DISABLED"
+
+    # Roadmap Phase B / B1.10.4 — bulk termination of every live session a
+    # user has, from the User Detail page. Distinct from SESSION_TERMINATED
+    # (still emitted once per session terminated this way, same as a single
+    # Kill) so a reviewer can see both "this session ended" and "an admin
+    # revoked this user's sessions as one action" without inferring one
+    # from a run of several SESSION_TERMINATED events with the same actor.
+    USER_SESSIONS_REVOKED = "USER_SESSIONS_REVOKED"

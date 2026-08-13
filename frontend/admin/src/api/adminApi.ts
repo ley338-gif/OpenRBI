@@ -28,6 +28,7 @@ import type {
   LdapTestResponseDto,
   NodeHistoryPointDto,
   PolicyDetailDto,
+  RevokeSessionsResponseDto,
   PolicySummaryDto,
   QuarantineFileDto,
   Role,
@@ -58,6 +59,7 @@ export const adminApi = {
   updateGroups: (id: string, groupIds: string[]) =>
     api.put<UserSummaryDto>(`/admin/users/${id}/groups`, { group_ids: groupIds }),
   userSessions: (id: string) => api.get<AdminSessionDto[]>(`/admin/users/${id}/sessions`),
+  revokeUserSessions: (id: string) => api.post<RevokeSessionsResponseDto>(`/admin/users/${id}/sessions/revoke`),
 
   // Groups
   listGroups: () => api.get<GroupSummaryDto[]>("/admin/groups"),

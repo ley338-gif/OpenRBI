@@ -13,6 +13,7 @@ type PendingAction =
   | { kind: "disable" }
   | { kind: "enable" }
   | { kind: "reset-mfa" }
+  | { kind: "revoke-sessions" }
   | { kind: "session"; action: "disconnect" | "isolate" | "restore" | "kill"; sessionId: string };
 
 export function UserDetail() {
@@ -53,6 +54,10 @@ export function UserDetail() {
       } else if (pending.kind === "reset-mfa") {
         await adminApi.resetUserMfa(id);
         notify("MFA reset — the user will be asked to re-enroll on next login");
+        load();
+      } else if (pending.kind === "revoke-sessions") {
+        const result = await adminApi.revokeUserSessions(id);
+        notify(result.terminated_count === 0 ? "No live sessions to terminate" : `Terminated ${result.terminated_count} session(s)`);
         load();
       } else {
         const call = {
@@ -158,7 +163,14 @@ export function UserDetail() {
       </div>
 
       <div className="card">
-        <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Sessions</h2>
+        <div className="flex-between" style={{ marginBottom: "8px" }}>
+          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Sessions</h2>
+          {sessions.some((s) => s.status !== "TERMINATED" && s.status !== "FAILED") && (
+            <button type="button" className="btn btn-danger btn-sm" onClick={() => setPending({ kind: "revoke-sessions" })}>
+              Terminate all sessions
+            </button>
+          )}
+        </div>
         {sessions.length === 0 ? (
           <p className="text-muted">No sessions.</p>
         ) : (
@@ -246,6 +258,17 @@ export function UserDetail() {
           title={`Reset MFA for ${user.username}?`}
           description="This disables their current TOTP enrollment and invalidates all their recovery codes. They will be required to re-enroll on their next login."
           confirmLabel="Reset MFA"
+          danger
+          busy={busy}
+          onConfirm={() => void confirmPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
+      {pending?.kind === "revoke-sessions" && (
+        <ConfirmDialog
+          title={`Terminate all sessions for ${user.username}?`}
+          description="Immediately terminates every live browser sandbox this user currently has. Unsaved browser state in each will be lost. This cannot be undone."
+          confirmLabel="Terminate all"
           danger
           busy={busy}
           onConfirm={() => void confirmPending()}

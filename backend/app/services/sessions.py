@@ -209,6 +209,52 @@ async def terminate_session(db: AsyncSession, session: BrowserSession, *, actor_
     await db.flush()
 
 
+_LIVE_STATUSES = (
+    SessionStatus.QUEUED,
+    SessionStatus.STARTING,
+    SessionStatus.ACTIVE,
+    SessionStatus.DISCONNECTED,
+    SessionStatus.ISOLATING,
+    SessionStatus.ISOLATED,
+)
+
+
+async def revoke_user_sessions(db: AsyncSession, user: User, *, actor_id: uuid.UUID) -> list[BrowserSession]:
+    """Roadmap B1.10.4 — terminate every live session a user currently has,
+    as one admin action from the User Detail page. Reuses terminate_session()
+    per session (so each one still gets its own idempotent-terminate
+    behavior and its own SESSION_TERMINATED event), then records one
+    additional USER_SESSIONS_REVOKED event summarizing the batch — a
+    reviewer should be able to see both "this session ended" and "an admin
+    revoked this user's sessions" without inferring the latter from a run
+    of same-actor SESSION_TERMINATED events.
+
+    A session that fails to terminate (SessionServiceError, e.g. the
+    sandbox runtime is unreachable) is skipped, not fatal to the rest of
+    the batch — the caller gets back only the sessions that actually
+    terminated.
+    """
+    result = await db.execute(
+        select(BrowserSession).where(BrowserSession.user_id == user.id, BrowserSession.status.in_(_LIVE_STATUSES))
+    )
+    sessions = list(result.scalars())
+    terminated: list[BrowserSession] = []
+    for session in sessions:
+        try:
+            await terminate_session(db, session, actor_id=actor_id)
+        except SessionServiceError:
+            continue
+        terminated.append(session)
+
+    if terminated:
+        await record_security_event(
+            db, SecurityEventType.USER_SESSIONS_REVOKED, user_id=user.id,
+            metadata={"actor": str(actor_id), "session_count": len(terminated)},
+        )
+        await db.flush()
+    return terminated
+
+
 async def isolate_session(db: AsyncSession, session: BrowserSession, *, actor_id: uuid.UUID) -> None:
     """Network egress DENY ALL (enforced by the Session Agent disconnecting
     the sandbox from every network it's on, Phase 6) while the sandbox
