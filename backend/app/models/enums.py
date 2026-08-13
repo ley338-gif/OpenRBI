@@ -142,3 +142,13 @@ class SecurityEventType(str, enum.Enum):
     LDAP_ENABLED = "LDAP_ENABLED"
     LDAP_DISABLED = "LDAP_DISABLED"
     LDAP_CONNECTION_TESTED = "LDAP_CONNECTION_TESTED"
+
+    # Roadmap Phase B / B1.9 — first-run bootstrap of the initial local
+    # administrator. INITIAL_ADMIN_CREATED fires when the bootstrap admin
+    # row is created (password set, MFA not yet enrolled); SYSTEM_INITIALIZED
+    # fires once, when the mandatory MFA enrollment for that same account
+    # completes and the installation becomes permanently closed to further
+    # bootstrap attempts — mirrors POLICY_CHANGED vs. POLICY_PUBLISHED's
+    # "content changed" vs. "the thing actually took effect" split.
+    INITIAL_ADMIN_CREATED = "INITIAL_ADMIN_CREATED"
+    SYSTEM_INITIALIZED = "SYSTEM_INITIALIZED"

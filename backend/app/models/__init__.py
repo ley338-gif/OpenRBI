@@ -14,6 +14,7 @@ from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.models.quarantine import QuarantineFile
 from app.models.role import Role
 from app.models.security_event import SecurityEvent
+from app.models.system_state import SystemState
 from app.models.user import User
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "RecoveryCode",
     "Role",
     "SecurityEvent",
+    "SystemState",
     "User",
     "UserGroup",
 ]
