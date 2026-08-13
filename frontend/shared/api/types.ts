@@ -233,6 +233,60 @@ export interface SecurityEventDto {
   created_at: string;
 }
 
+// Every value of backend/app/models/enums.py's SecurityEventType, kept in
+// sync by hand like this project's other backend-enum mirrors (e.g.
+// Sessions.tsx's own STATUSES constant) — used only to populate the Audit
+// page's event-type filter suggestions, not to validate/reject anything;
+// the backend remains authoritative on what's a real event type.
+export const SECURITY_EVENT_TYPES = [
+  "USER_CREATED",
+  "USER_DISABLED",
+  "USER_ENABLED",
+  "USER_LOGIN",
+  "USER_LOGIN_FAILED",
+  "LOGIN_LOCKED",
+  "MFA_ENROLLED",
+  "MFA_FAILED",
+  "MFA_RESET",
+  "RECOVERY_CODE_USED",
+  "SESSION_STARTED",
+  "SESSION_DISCONNECTED",
+  "SESSION_ISOLATED",
+  "SESSION_RESTORED",
+  "SESSION_TERMINATED",
+  "NETWORK_ACCESS_BLOCKED",
+  "DOWNLOAD_REQUESTED",
+  "DOWNLOAD_BLOCKED",
+  "FILE_QUARANTINED",
+  "FILE_RELEASED",
+  "FILE_REJECTED",
+  "MALWARE_DETECTED",
+  "POLICY_CHANGED",
+  "POLICY_PUBLISHED",
+  "NODE_DRAINED", // superseded by WORKER_DRAIN_ENABLED (B1.10.1) but kept for filtering older rows
+  "USER_ROLE_CHANGED",
+  "USER_GROUPS_CHANGED",
+  "PASSWORD_RESET_BY_ADMIN",
+  "GROUP_CREATED",
+  "GROUP_DELETED",
+  "UPLOAD_REQUESTED",
+  "UPLOAD_BLOCKED",
+  "USER_PROVISIONED_VIA_LDAP",
+  "LDAP_CONFIG_CHANGED",
+  "LDAP_ENABLED",
+  "LDAP_DISABLED",
+  "LDAP_CONNECTION_TESTED",
+  "INITIAL_ADMIN_CREATED",
+  "SYSTEM_INITIALIZED",
+  "WORKER_DRAIN_ENABLED",
+  "WORKER_DRAIN_DISABLED",
+  "WORKER_MAINTENANCE_ENABLED",
+  "WORKER_MAINTENANCE_DISABLED",
+  "USER_SESSIONS_REVOKED",
+  "ACCOUNT_LOCKED",
+  "ACCOUNT_UNLOCKED",
+] as const;
+
 export type ComponentStatus = "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
 
 export interface ComponentHealthDto {
