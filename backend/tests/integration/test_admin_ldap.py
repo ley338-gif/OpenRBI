@@ -94,6 +94,32 @@ async def test_admin_can_read_empty_config(db, client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "expected_message"),
+    [
+        ({"server_uri": "https://directory.example.org"}, "ldap:// or ldaps://"),
+        ({"base_dn": ""}, "Base DN"),
+        ({"user_search_filter": "(uid=someone)"}, "{username}"),
+        ({"server_uri": "ldaps://directory.example.org:636", "use_starttls": True}, "StartTLS"),
+        ({"server_uri": "ldap://directory.example.org:389", "use_starttls": False}, "requires StartTLS"),
+    ],
+)
+async def test_invalid_connection_settings_are_rejected_before_ldap_access(db, client, overrides, expected_message):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+
+    response = await client.put(
+        "/admin/ldap/config",
+        json=_valid_payload(**overrides),
+        cookies={"openrbi_session": cookie},
+    )
+
+    assert response.status_code == 422
+    assert expected_message in response.text
+    assert await db.get(LdapConfig, LDAP_CONFIG_ID) is None
+
+
+@pytest.mark.asyncio
 async def test_response_never_includes_bind_password(db, client):
     admin, password = await make_user(db, role_name="ADMIN")
     cookie = await login_with_mfa_enrollment(client, admin.username, password)

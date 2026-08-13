@@ -11,7 +11,46 @@ docs/adr/0016-ldap-admin-configuration.md.
 
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class _LdapConnectionFields(BaseModel):
+    server_uri: str = Field(min_length=1, max_length=512)
+    use_starttls: bool
+    bind_dn: str = Field(max_length=512)
+    base_dn: str = Field(max_length=512)
+    user_search_filter: str = Field(min_length=1, max_length=512)
+    group_attribute: str = Field(min_length=1, max_length=255)
+
+    @field_validator("server_uri")
+    @classmethod
+    def validate_server_uri(cls, value: str) -> str:
+        value = value.strip()
+        if not value.lower().startswith(("ldap://", "ldaps://")):
+            raise ValueError("Server URI must use ldap:// or ldaps://")
+        return value
+
+    @field_validator("base_dn")
+    @classmethod
+    def validate_base_dn(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Base DN is required")
+        return value.strip()
+
+    @field_validator("user_search_filter")
+    @classmethod
+    def validate_search_filter(cls, value: str) -> str:
+        if "{username}" not in value:
+            raise ValueError("User search filter must contain {username}")
+        return value
+
+    @model_validator(mode="after")
+    def validate_tls_mode(self):
+        if self.server_uri.lower().startswith("ldaps://") and self.use_starttls:
+            raise ValueError("StartTLS cannot be combined with an ldaps:// URI")
+        if self.server_uri.lower().startswith("ldap://") and not self.use_starttls:
+            raise ValueError("Plain ldap:// requires StartTLS; unencrypted LDAP is not supported")
+        return self
 
 
 class LdapConfigResponse(BaseModel):
@@ -58,33 +97,21 @@ class LdapConfigResponse(BaseModel):
         )
 
 
-class LdapConfigUpdateRequest(BaseModel):
+class LdapConfigUpdateRequest(_LdapConnectionFields):
     enabled: bool
-    server_uri: str = Field(min_length=1, max_length=512)
-    use_starttls: bool
-    bind_dn: str = Field(max_length=512)
     # Omitted -> keep the existing stored secret. Present and non-empty ->
     # replace it. Present and empty string is treated the same as omitted
     # (Section 4: an empty field on update must never clear the secret) —
     # enforced in the endpoint, not here, since that needs the existing row.
     bind_password: str | None = None
-    base_dn: str = Field(max_length=512)
-    user_search_filter: str = Field(min_length=1, max_length=512)
-    group_attribute: str = Field(min_length=1, max_length=255)
     group_role_mapping: dict[str, str] = Field(default_factory=dict)
 
 
-class LdapTestRequest(BaseModel):
-    server_uri: str = Field(min_length=1, max_length=512)
-    use_starttls: bool
-    bind_dn: str = Field(max_length=512)
+class LdapTestRequest(_LdapConnectionFields):
     # Always required for a test call (never "keep the stored one") — the
     # test is stateless and never touches the DB, so there is no existing
     # secret to fall back to here.
     bind_password: str
-    base_dn: str = Field(max_length=512)
-    user_search_filter: str = Field(min_length=1, max_length=512)
-    group_attribute: str = Field(min_length=1, max_length=255)
     test_username: str | None = None
 
 
