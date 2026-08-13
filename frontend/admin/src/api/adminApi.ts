@@ -27,6 +27,7 @@ import type {
   LdapTestRequest,
   LdapTestResponseDto,
   LockoutStatusDto,
+  LoginDiagnosticsResponseDto,
   NodeHistoryPointDto,
   PolicyDetailDto,
   RevokeSessionsResponseDto,
@@ -154,6 +155,10 @@ export const adminApi = {
   mfaVerify: (mfaToken: string, code: string) => api.post("/auth/mfa/verify", { mfa_token: mfaToken, code }),
   // Admin-only MFA (app/api/admin_mfa.py)
   resetUserMfa: (userId: string) => api.post<{ status: string }>(`/mfa/admin/users/${userId}/reset`),
+
+  // Login Diagnostics (app/api/admin_login_diagnostics.py — B1.10.6)
+  loginDiagnostics: (username: string) =>
+    api.get<LoginDiagnosticsResponseDto>(`/admin/login-diagnostics?username=${encodeURIComponent(username)}`),
 };
 
 export type { SessionStatus };

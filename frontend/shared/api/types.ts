@@ -101,6 +101,25 @@ export interface LockoutStatusDto {
   locked_seconds_remaining: number | null;
 }
 
+// Roadmap B1.10.6 — Login Diagnostics
+export interface RecentFailedAttemptDto {
+  event_type: string;
+  created_at: string;
+}
+
+export interface LoginDiagnosticsResponseDto {
+  username: string;
+  user_id: string | null;
+  account_exists: boolean;
+  is_active: boolean | null;
+  mfa_enabled: boolean | null;
+  auth_source: string | null;
+  ldap_enabled: boolean;
+  lockout: LockoutStatusDto;
+  recent_failed_attempts: RecentFailedAttemptDto[];
+  possible_reasons: string[];
+}
+
 export type QuarantineStatus = "PENDING_SCAN" | "SCANNING" | "QUARANTINED" | "RELEASED" | "REJECTED" | "DELETED";
 export type ScannerStatus = "PENDING" | "SCANNING" | "CLEAN" | "INFECTED" | "ERROR";
 export type FileAction = "AUTO_RELEASE" | "QUARANTINE" | "DENY";

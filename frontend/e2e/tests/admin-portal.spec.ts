@@ -144,6 +144,27 @@ test.describe("Admin Portal", () => {
     expect(unlockedLogin.status()).toBe(200);
   });
 
+  test("Login Diagnostics (B1.10.6) is read-only and correctly reports both a known and an unknown username", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Login Diagnostics" }).click();
+    await expect(page.getByRole("heading", { name: "Login Diagnostics" })).toBeVisible();
+
+    // A real seeded account: exists, active, no lockout.
+    await page.getByPlaceholder("Username").fill(USER_USERNAME);
+    await page.getByRole("button", { name: "Diagnose" }).click();
+    await expect(page.getByText("YES", { exact: true })).toBeVisible();
+    await expect(page.getByText("NOT LOCKED")).toBeVisible();
+    await expect(page.getByRole("link", { name: /view full user detail/i })).toBeVisible();
+
+    // A username that doesn't exist: no fabricated account data, an
+    // honest "no account found" reason, and no dangling detail link.
+    await page.getByPlaceholder("Username").fill("definitely_not_a_real_username_xyz");
+    await page.getByRole("button", { name: "Diagnose" }).click();
+    await expect(page.getByText("NO", { exact: true })).toBeVisible();
+    await expect(page.getByText(/no account found/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /view full user detail/i })).toHaveCount(0);
+  });
+
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "System" }).click();
