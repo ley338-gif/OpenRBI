@@ -226,6 +226,20 @@ export interface PolicySummaryDto {
   description: string | null;
   current_version_id: string | null;
   current_version_number: number | null;
+  has_draft: boolean;
+  version_count: number;
+  assigned_groups: string[];
+  created_at: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export interface PolicyListResponseDto {
+  items: PolicySummaryDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  stats: { total: number; published: number; drafts: number; in_use: number; total_versions: number; last_updated_at: string | null; last_updated_by: string | null };
 }
 
 export interface FileRuleResponseDto {

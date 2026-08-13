@@ -7,10 +7,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.enums import FileAction, FileRuleType, PolicyType, PolicyVersionStatus
-from app.models.mixins import CreatedAtMixin, UUIDPKMixin
+from app.models.mixins import CreatedAtMixin, TimestampMixin, UUIDPKMixin
 
 
-class Policy(UUIDPKMixin, CreatedAtMixin, Base):
+class Policy(UUIDPKMixin, TimestampMixin, Base):
     """A named, versioned policy (see docs/policies.md). The concrete rules
     live on PolicyVersion; a Policy is just the stable identity groups
     attach to.

@@ -128,6 +128,8 @@ Lists every `BrowserNode` (single node in MVP 1, but modeled as a real list) wit
 
 The Policies page and its per-policy detail view give the existing policy engine a structured editor — a rule builder (rule type, match pattern, action, priority), never a raw JSON textbox as the primary UX. Draft → publish → rollback all work through real buttons. **Only MIME/SOURCE file rules are actually enforced** — the editor only offers those two rule types for exactly that reason; see [policies.md#what-a-policys-policy_type-actually-does](policies.md#what-a-policys-policy_type-actually-does) before creating a `NETWORK`/`CLIPBOARD`/`BROWSER`/`SESSION`-labeled policy expecting it to do something at runtime — the portal still lets you create one (matching the backend, which also allows it), with a hint explaining why it won't do anything.
 
+The overview is a server-backed operations console with totals for policy objects, published policies, policies with drafts, group-assigned policies, and total versions. Search covers names and descriptions; type, published/draft state, and assigned/unassigned usage can be filtered independently, with sortable columns and 10/25/50/100-row pagination. A policy can have a current published version and a newer draft at the same time, and both states are shown. “In use” means attached to at least one group; OpenRBI has no worker- or direct-user-policy assignment model.
+
 <details><summary>Underlying API</summary>
 
 Full draft → publish → rollback workflow under `/admin/policies/*` — see [policies.md](policies.md) for the conflict model and versioning rules. A published version is immutable; editing one always means creating a new draft (`PUT .../versions/{id}` while still `DRAFT`, or `POST .../versions` for a brand new one).
