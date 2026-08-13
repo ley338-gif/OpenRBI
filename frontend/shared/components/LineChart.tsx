@@ -72,7 +72,19 @@ export function LineChart({
   const minValue = Math.min(...values, 0);
   const range = maxValue - minValue || 1;
 
-  const xFor = (i: number) => paddingLeft + (data.length === 1 ? plotWidth / 2 : (i / (data.length - 1)) * plotWidth);
+  // Positioned by real elapsed time, not array index: the backend only
+  // returns buckets that actually have data (app/services/metrics_history.py),
+  // so a gap in collection (e.g. the backend being restarted) means real,
+  // irregular time deltas between consecutive points — spacing them evenly
+  // by index would visually compress/stretch time and mislead about when
+  // things happened.
+  const times = data.map((p) => new Date(p.t).getTime());
+  const minTime = times[0];
+  const maxTime = times[times.length - 1];
+  const timeRange = maxTime - minTime || 1;
+
+  const xFor = (i: number) =>
+    paddingLeft + (data.length === 1 ? plotWidth / 2 : ((times[i] - minTime) / timeRange) * plotWidth);
   const yFor = (v: number) => paddingTop + plotHeight - ((v - minValue) / range) * plotHeight;
 
   const linePoints = data.map((p, i) => `${xFor(i)},${yFor(p.value)}`).join(" ");
@@ -126,17 +138,25 @@ export function LineChart({
           ) : null,
         )}
 
-        {data.map((_p, i) => (
-          <rect
-            key={`hit-${i}`}
-            x={xFor(i) - plotWidth / Math.max(data.length, 1) / 2}
-            y={paddingTop}
-            width={plotWidth / Math.max(data.length, 1)}
-            height={plotHeight}
-            fill="transparent"
-            onMouseEnter={() => setHoverIndex(i)}
-          />
-        ))}
+        {data.map((_p, i) => {
+          // Hit region spans the midpoint to each neighbor, not a fixed
+          // fraction of the plot width — points aren't evenly spaced in
+          // time (see xFor above), so a uniform hit-width would drift out
+          // of alignment with the visible point wherever a gap exists.
+          const left = i === 0 ? paddingLeft : (xFor(i - 1) + xFor(i)) / 2;
+          const right = i === data.length - 1 ? paddingLeft + plotWidth : (xFor(i) + xFor(i + 1)) / 2;
+          return (
+            <rect
+              key={`hit-${i}`}
+              x={left}
+              y={paddingTop}
+              width={Math.max(right - left, 1)}
+              height={plotHeight}
+              fill="transparent"
+              onMouseEnter={() => setHoverIndex(i)}
+            />
+          );
+        })}
 
         {hoverIndex !== null && (
           <line
