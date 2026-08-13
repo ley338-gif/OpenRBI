@@ -35,9 +35,29 @@ async def _lifespan(app: FastAPI):
     # to this process's own stdout/log, never exposed through any API. A
     # `user`-only listener never runs this — it has no /setup/* routes and
     # nothing in that process needs the token at all.
+    #
+    # Deliberately best-effort, never fatal: this project's own documented
+    # install order (docs/deployment.md) — and CI's, .github/workflows/
+    # ci.yml — is `docker compose up -d --build` *then* a separate
+    # `alembic upgrade head`, i.e. the app is expected to start
+    # successfully before its own schema exists yet. Before B1.9 nothing
+    # at startup ever touched the database, so that ordering was safe
+    # unconditionally; this is the one exception, and it must not turn a
+    # missing/not-yet-migrated system_state table into the whole process
+    # refusing to start (a real regression caught by CI, not assumed away
+    # here) — a genuine DB outage at startup should still leave the
+    # process up to serve /health honestly, not crash-loop.
     if settings.listener_mode in ("admin", "both"):
-        async with async_session_factory() as db:
-            token = await regenerate_setup_token(db)
+        try:
+            async with async_session_factory() as db:
+                token = await regenerate_setup_token(db)
+        except Exception:
+            logger.warning(
+                "Could not check/generate the first-run setup token at startup "
+                "(database not migrated yet?) — will retry on next restart.",
+                exc_info=True,
+            )
+            token = None
         if token:
             logger.warning(
                 "\n"
