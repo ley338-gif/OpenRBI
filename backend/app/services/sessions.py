@@ -59,17 +59,18 @@ async def _wait_for_display_ready(
     raise SessionAgentError(f"display never became ready: {last_error}")
 
 
-async def select_node(db: AsyncSession) -> BrowserNode:
+async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
     """Refreshes the (single, in MVP 1) BrowserNode row from the Session
-    Agent's live self-report and returns it if it has free capacity. This
-    is the abstract scheduling seam docs/architecture.md describes — trivial
-    today, but callers never assume a specific node, so real multi-node
-    selection can replace this body later without changing callers.
+    Agent's live self-report (status/capacity/active_sessions/runtime/
+    version/CPU/RAM — Roadmap B1.10.1) and returns it, without judging
+    whether it's usable for scheduling — that's select_node()'s job below.
+    Shared by select_node() (refreshed on every session creation) and
+    app/core/node_poller.py (refreshed on a fixed interval regardless of
+    session traffic, so telemetry doesn't go stale between creations).
+    Raises SessionAgentError, not NoCapacityError — callers that care about
+    scheduling wrap this; the poller doesn't.
     """
-    try:
-        status = await session_agent_client.get_node_status()
-    except SessionAgentError as exc:
-        raise NoCapacityError(f"session agent unavailable: {exc}") from exc
+    status = await session_agent_client.get_node_status()
 
     result = await db.execute(select(BrowserNode).where(BrowserNode.hostname == status.hostname))
     node = result.scalar_one_or_none()
@@ -77,18 +78,36 @@ async def select_node(db: AsyncSession) -> BrowserNode:
         node = BrowserNode(hostname=status.hostname)
         db.add(node)
 
-    # DRAINING is an admin-set scheduling gate (project brief §23), not
-    # something the Session Agent itself knows about or reports — it will
-    # always self-report ONLINE. Don't let this heartbeat refresh silently
-    # undo an admin's drain; only overwrite status when it isn't DRAINING.
-    if node.status != BrowserNodeStatus.DRAINING:
+    # DRAINING/MAINTENANCE are admin-set scheduling gates (project brief
+    # §23, extended by Roadmap B1.10.1), not something the Session Agent
+    # itself knows about or reports — it will always self-report ONLINE.
+    # Don't let this heartbeat refresh silently undo an admin's drain or
+    # maintenance hold; only overwrite status when it's neither.
+    if node.status not in (BrowserNodeStatus.DRAINING, BrowserNodeStatus.MAINTENANCE):
         node.status = BrowserNodeStatus(status.status)
     node.capacity = status.capacity
     node.active_sessions = status.active_sessions
     node.runtime = status.runtime
     node.version = status.version
+    node.cpu_percent = status.cpu_percent
+    node.ram_total_mb = status.ram_total_mb
+    node.ram_used_mb = status.ram_used_mb
+    node.node_started_at = status.node_started_at
     node.last_heartbeat = datetime.now(UTC)
     await db.flush()
+    return node
+
+
+async def select_node(db: AsyncSession) -> BrowserNode:
+    """The abstract scheduling seam docs/architecture.md describes —
+    trivial today, but callers never assume a specific node, so real
+    multi-node selection can replace this body later without changing
+    callers.
+    """
+    try:
+        node = await refresh_node_from_agent(db)
+    except SessionAgentError as exc:
+        raise NoCapacityError(f"session agent unavailable: {exc}") from exc
 
     if node.status != BrowserNodeStatus.ONLINE:
         raise NoCapacityError(f"node {node.hostname} is {node.status.value}, not accepting new sessions")

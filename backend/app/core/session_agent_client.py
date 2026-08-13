@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 import httpx
 
@@ -26,6 +27,10 @@ class NodeStatus:
     runtime: str
     version: str
     sandbox_image_available: bool
+    cpu_percent: float
+    ram_total_mb: int
+    ram_used_mb: int
+    node_started_at: datetime
 
 
 class SessionAgentError(RuntimeError):
@@ -63,6 +68,10 @@ async def get_node_status() -> NodeStatus:
         runtime=body["runtime"],
         version=body["version"],
         sandbox_image_available=body["sandbox_image_available"],
+        cpu_percent=body["cpu_percent"],
+        ram_total_mb=body["ram_total_mb"],
+        ram_used_mb=body["ram_used_mb"],
+        node_started_at=datetime.fromisoformat(body["node_started_at"]),
     )
 
 

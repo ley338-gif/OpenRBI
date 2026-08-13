@@ -44,6 +44,13 @@ class BrowserNodeStatus(str, enum.Enum):
     DRAINING = "DRAINING"
     OFFLINE = "OFFLINE"
     DEGRADED = "DEGRADED"
+    # Roadmap B1.10.1 — admin-set, like DRAINING: unlike DRAINING (which
+    # still counts toward "the scheduler could use this node once it's
+    # done draining"), MAINTENANCE means "don't consider this node at all,
+    # an admin took it out of service on purpose." See
+    # app/services/worker_health.py for the full Healthy/Degraded/
+    # Draining/Maintenance/Offline definitions this feeds into.
+    MAINTENANCE = "MAINTENANCE"
 
 
 class SessionStatus(str, enum.Enum):
@@ -152,3 +159,12 @@ class SecurityEventType(str, enum.Enum):
     # "content changed" vs. "the thing actually took effect" split.
     INITIAL_ADMIN_CREATED = "INITIAL_ADMIN_CREATED"
     SYSTEM_INITIALIZED = "SYSTEM_INITIALIZED"
+
+    # Roadmap Phase B / B1.10 — worker/session operations. WORKER_DRAINED
+    # was NODE_DRAINED before this (kept, still a valid historical value —
+    # Postgres enums can't drop values); WORKER_DRAIN_DISABLED is the
+    # previously-missing complement (undrain_node() never audited before).
+    WORKER_DRAIN_ENABLED = "WORKER_DRAIN_ENABLED"
+    WORKER_DRAIN_DISABLED = "WORKER_DRAIN_DISABLED"
+    WORKER_MAINTENANCE_ENABLED = "WORKER_MAINTENANCE_ENABLED"
+    WORKER_MAINTENANCE_DISABLED = "WORKER_MAINTENANCE_DISABLED"

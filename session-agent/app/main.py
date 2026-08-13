@@ -1,5 +1,7 @@
+import os
 from datetime import UTC, datetime
 
+import psutil
 from fastapi import Depends, FastAPI
 
 from app.api.sandboxes import router as sandboxes_router
@@ -18,6 +20,14 @@ app = FastAPI(
 
 app.include_router(sandboxes_router)
 
+# Roadmap B1.10.1 — a throwaway first call at import time: psutil.cpu_percent()
+# measures the delta since its *previous* call, so an uncalled first
+# invocation from a real request would report a meaningless 0.0 (or the
+# usage since machine boot). This warms it up once so the first real
+# /v1/nodes/self response is already a real short-window sample.
+psutil.cpu_percent(interval=None)
+_PROCESS_STARTED_AT = datetime.fromtimestamp(psutil.Process(os.getpid()).create_time(), tz=UTC)
+
 
 @app.get("/health")
 async def health() -> dict[str, str]:
@@ -25,18 +35,25 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/v1/nodes/self", dependencies=[Depends(require_control_plane_token)])
-async def node_status() -> dict[str, str | int]:
+async def node_status() -> dict[str, str | int | float | bool]:
     """Real BrowserNode self-report (capacity/active_sessions/runtime/
-    version) — the control plane's Phase 23 heartbeat loop polls this to
-    populate the BrowserNode row. Single-node MVP 1 still models this as a
-    first-class, polled status rather than assumed-always-online (see
-    docs/architecture.md#multi-node-readiness).
+    version/CPU/RAM) — the control plane's poller (app/core/node_poller.py)
+    and select_node() both call this to populate the BrowserNode row.
+    Single-node MVP 1 still models this as a first-class, polled status
+    rather than assumed-always-online (see docs/architecture.md#multi-node-readiness).
+
+    CPU/RAM are host-wide (psutil.cpu_percent/virtual_memory), not scoped to
+    this container's own cgroup — deliberately: the browser sandboxes this
+    agent manages are sibling containers on the same host, so host-wide
+    load is what "how loaded is this worker" actually means for an
+    operator, not just this one process's own footprint.
     """
     settings = get_settings()
     provider = get_provider()
     active_sessions = await provider.count_active_sessions()
     version = await provider.runtime_version()
     image_available = await provider.sandbox_image_available(settings.sandbox_image)
+    memory = psutil.virtual_memory()
     return {
         "hostname": settings.node_name,
         "status": "ONLINE",
@@ -46,6 +63,10 @@ async def node_status() -> dict[str, str | int]:
         "version": version,
         "sandbox_image_available": image_available,
         "heartbeat_at": datetime.now(UTC).isoformat(),
+        "cpu_percent": psutil.cpu_percent(interval=None),
+        "ram_total_mb": int(memory.total / (1024 * 1024)),
+        "ram_used_mb": int((memory.total - memory.available) / (1024 * 1024)),
+        "node_started_at": _PROCESS_STARTED_AT.isoformat(),
     }
 
 
