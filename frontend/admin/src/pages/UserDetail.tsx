@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
 import { FormField } from "@shared/components/FormField";
+import { PageHeader } from "@shared/components/PageHeader";
+import { DefinitionList } from "@shared/components/DefinitionList";
+import { ActionMenu } from "@shared/components/ActionMenu";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { AdminSessionDto, LockoutStatusDto, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
@@ -117,70 +120,66 @@ export function UserDetail() {
   return (
     <div className="page">
       <p><Link to="/users">← Users</Link></p>
-      <h1>{user.username}</h1>
+      <PageHeader
+        title={user.username}
+        meta={<StatusBadge value={user.is_active ? "ACTIVE" : "DISABLED"} />}
+        actions={
+          <>
+            {user.is_active ? (
+              <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "disable" })}>
+                Disable
+              </button>
+            ) : (
+              <button type="button" className="btn btn-secondary" onClick={() => setPending({ kind: "enable" })}>
+                Enable
+              </button>
+            )}
+            <button type="button" className="btn btn-secondary" onClick={() => setShowResetPassword(true)}>
+              Reset password
+            </button>
+            {user.mfa_enabled && (
+              <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "reset-mfa" })}>
+                Reset MFA
+              </button>
+            )}
+            {lockout.locked ? (
+              <button type="button" className="btn btn-secondary" onClick={() => setPending({ kind: "unlock" })}>
+                Unlock account
+              </button>
+            ) : (
+              <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "lock" })}>
+                Lock account
+              </button>
+            )}
+          </>
+        }
+      />
 
       <div className="card">
-        <dl className="detail-grid">
-          <div>
-            <dt>Status</dt>
-            <dd><StatusBadge value={user.is_active ? "ACTIVE" : "DISABLED"} /></dd>
-          </div>
-          <div>
-            <dt>Role</dt>
-            <dd>{user.role}</dd>
-          </div>
-          <div>
-            <dt>Groups</dt>
-            <dd>{user.groups.join(", ") || "—"}</dd>
-          </div>
-          <div>
-            <dt>MFA</dt>
-            <dd><StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /></dd>
-          </div>
-          <div>
-            <dt>Login lockout</dt>
-            <dd>
-              <StatusBadge value={lockout.locked ? "LOCKED" : "NOT LOCKED"} />
-              {lockout.locked && lockout.locked_seconds_remaining !== null && (
-                <span className="text-muted" style={{ marginLeft: "6px", fontSize: "0.85rem" }}>
-                  clears in {Math.ceil(lockout.locked_seconds_remaining / 60)} min
-                </span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Created</dt>
-            <dd>{formatDateTime(user.created_at)}</dd>
-          </div>
-        </dl>
-        <div style={{ display: "flex", gap: "8px" }}>
-          {user.is_active ? (
-            <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "disable" })}>
-              Disable
-            </button>
-          ) : (
-            <button type="button" className="btn btn-secondary" onClick={() => setPending({ kind: "enable" })}>
-              Enable
-            </button>
-          )}
-          <button type="button" className="btn btn-secondary" onClick={() => setShowResetPassword(true)}>
-            Reset password
-          </button>
-          {user.mfa_enabled && (
-            <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "reset-mfa" })}>
-              Reset MFA
-            </button>
-          )}
-          {lockout.locked ? (
-            <button type="button" className="btn btn-secondary" onClick={() => setPending({ kind: "unlock" })}>
-              Unlock account
-            </button>
-          ) : (
-            <button type="button" className="btn btn-danger" onClick={() => setPending({ kind: "lock" })}>
-              Lock account
-            </button>
-          )}
+        <div className="section-header">
+          <h2>Overview</h2>
         </div>
+        <DefinitionList
+          items={[
+            { label: "Role", value: user.role },
+            { label: "Groups", value: user.groups.join(", ") || "—" },
+            { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
+            {
+              label: "Login lockout",
+              value: (
+                <>
+                  <StatusBadge value={lockout.locked ? "LOCKED" : "NOT LOCKED"} />
+                  {lockout.locked && lockout.locked_seconds_remaining !== null && (
+                    <span className="text-muted" style={{ marginLeft: "6px", fontSize: "0.85rem" }}>
+                      clears in {Math.ceil(lockout.locked_seconds_remaining / 60)} min
+                    </span>
+                  )}
+                </>
+              ),
+            },
+            { label: "Created", value: formatDateTime(user.created_at) },
+          ]}
+        />
 
         {showResetPassword && (
           <form onSubmit={submitResetPassword} style={{ marginTop: "16px", maxWidth: "320px" }}>
@@ -200,8 +199,8 @@ export function UserDetail() {
       </div>
 
       <div className="card">
-        <div className="flex-between" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Sessions</h2>
+        <div className="section-header">
+          <h2>Sessions</h2>
           {sessions.some((s) => s.status !== "TERMINATED" && s.status !== "FAILED") && (
             <button type="button" className="btn btn-danger btn-sm" onClick={() => setPending({ kind: "revoke-sessions" })}>
               Terminate all sessions
@@ -209,7 +208,7 @@ export function UserDetail() {
           )}
         </div>
         {sessions.length === 0 ? (
-          <p className="text-muted">No sessions.</p>
+          <EmptyState title="No sessions">This user has never started a Secure Browser session.</EmptyState>
         ) : (
           <div className="table-wrap">
             <table className="data-table">
@@ -246,9 +245,11 @@ export function UserDetail() {
       </div>
 
       <div className="card">
-        <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Recent activity</h2>
+        <div className="section-header">
+          <h2>Recent activity</h2>
+        </div>
         {events.length === 0 ? (
-          <p className="text-muted">No recorded activity.</p>
+          <EmptyState title="No recorded activity">Security events involving this account will appear here.</EmptyState>
         ) : (
           <table className="data-table">
             <thead>
@@ -349,26 +350,30 @@ function SessionActions({
 }) {
   const live = session.status !== "TERMINATED" && session.status !== "FAILED";
   if (!live) return <span className="text-muted">—</span>;
+
+  // The one contextual action stays a visible button (never buried in a
+  // menu, section 23); Disconnect — the least consequential option — moves
+  // into the "⋯" menu alongside it. Kill stays visible too, since it's the
+  // most severe action and shouldn't require an extra click to discover.
+  const primary =
+    session.status === "ISOLATED"
+      ? { label: "Restore", action: "restore" as const }
+      : { label: "Isolate", action: "isolate" as const };
+
+  const menuItems = [];
+  if (session.status === "ACTIVE" || session.status === "DISCONNECTED") {
+    menuItems.push({ label: "Disconnect", onSelect: () => onAction("disconnect") });
+  }
+
   return (
-    <div style={{ display: "flex", gap: "4px" }}>
-      {(session.status === "ACTIVE" || session.status === "DISCONNECTED") && (
-        <>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction("disconnect")}>
-            Disconnect
-          </button>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction("isolate")}>
-            Isolate
-          </button>
-        </>
-      )}
-      {session.status === "ISOLATED" && (
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction("restore")}>
-          Restore
-        </button>
-      )}
+    <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction(primary.action)}>
+        {primary.label}
+      </button>
       <button type="button" className="btn btn-danger btn-sm" onClick={() => onAction("kill")}>
         Kill
       </button>
+      {menuItems.length > 0 && <ActionMenu items={menuItems} label="More session actions" />}
     </div>
   );
 }

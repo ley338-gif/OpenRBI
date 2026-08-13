@@ -13,7 +13,7 @@ test.describe("User Portal", () => {
   test("rejects wrong credentials with a generic message, not a raw error", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Username").fill(USERNAME);
-    await page.getByLabel("Password").fill("definitely-wrong");
+    await page.getByLabel("Password", { exact: true }).fill("definitely-wrong");
     await page.getByRole("button", { name: "Log in" }).click();
     await expect(page.getByText(/invalid credentials/i)).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Traceback");
@@ -23,7 +23,7 @@ test.describe("User Portal", () => {
   test("logs in, starts a real Secure Browser session with a live noVNC connection, then ends it", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Username").fill(USERNAME);
-    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
 
     // USER role has no mandatory MFA — should land straight on the dashboard.
@@ -53,11 +53,12 @@ test.describe("User Portal", () => {
   test("logging out invalidates the session and returns to the login form", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Username").fill(USERNAME);
-    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
-    await page.getByRole("button", { name: /log out/i }).click();
+    await page.getByRole("button", { name: new RegExp(USERNAME, "i") }).click();
+    await page.getByRole("menuitem", { name: /log out/i }).click();
     await expect(page.getByLabel("Username")).toBeVisible();
 
     // A cleared session shouldn't let a fresh navigation back to the
@@ -65,5 +66,59 @@ test.describe("User Portal", () => {
     // to /login again, not show a cached authenticated view.
     await page.goto("/");
     await expect(page.getByLabel("Username")).toBeVisible();
+  });
+
+  test("dashboard shows a PageHeader subtitle, a Secure Browser CTA, and a real empty state for downloads", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Username").fill(USERNAME);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Log in" }).click();
+
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    // PageHeader's subtitle line — every top-level page should have one.
+    await expect(page.getByText(/current overview of your secure browsing environment/i)).toBeVisible();
+
+    // The CTA is the one primary action on the dashboard (section 39: one
+    // primary action per area) — exactly one Secure Browser link, wording
+    // depending on whether a previous test in this file left a session
+    // DISCONNECTED rather than TERMINATED (a known, documented backend
+    // race — see CHANGELOG's "Productization v0.1.1" entry — not
+    // something this UI test should be sensitive to).
+    await expect(page.getByRole("link", { name: /^(Start|Open) Secure Browser$/ })).toBeVisible();
+
+    // A freshly seeded user has no downloads — the empty state must be a
+    // real structured message, not a bare table with no rows.
+    await expect(page.getByText("No downloads yet")).toBeVisible();
+  });
+
+  test("the Help menu opens and links to a real, reachable guide (not a fake or broken link)", async ({ page, request }) => {
+    await page.goto("/");
+    await page.getByLabel("Username").fill(USERNAME);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Help" }).click();
+    const link = page.getByRole("menuitem", { name: /user guide/i });
+    await expect(link).toBeVisible();
+    const href = await link.getAttribute("href");
+    expect(href).toBeTruthy();
+
+    // The link itself must actually resolve — served from docs/*.md
+    // copied into the image at build time (frontend/Dockerfile), not a
+    // hardcoded external URL that could 404 on an offline deployment.
+    const res = await request.get(href!);
+    expect(res.status()).toBe(200);
+  });
+
+  test("the Notifications button is honest about having no data, not filled with invented demo entries", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Username").fill(USERNAME);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Notifications" }).click();
+    await expect(page.getByText(/no notifications yet/i)).toBeVisible();
   });
 });

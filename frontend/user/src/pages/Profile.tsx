@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useAuth } from "@shared/auth/AuthContext";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { ErrorBanner, FormField } from "@shared/components/FormField";
+import { PageHeader } from "@shared/components/PageHeader";
+import { DefinitionList } from "@shared/components/DefinitionList";
 import { userApi } from "../api/userApi";
 
 /**
@@ -46,24 +48,15 @@ export function Profile() {
 
   return (
     <div className="page">
-      <h1>Profile</h1>
+      <PageHeader title="Profile" subtitle="Your account identity and multi-factor authentication status." />
       <div className="card">
-        <dl className="detail-grid">
-          <div>
-            <dt>Username</dt>
-            <dd>{user.username}</dd>
-          </div>
-          <div>
-            <dt>Role</dt>
-            <dd>{user.role}</dd>
-          </div>
-          <div>
-            <dt>MFA</dt>
-            <dd>
-              <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} />
-            </dd>
-          </div>
-        </dl>
+        <DefinitionList
+          items={[
+            { label: "Username", value: user.username },
+            { label: "Role", value: user.role },
+            { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
+          ]}
+        />
       </div>
 
       {!user.mfa_enabled && (

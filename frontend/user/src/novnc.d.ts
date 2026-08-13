@@ -4,5 +4,9 @@ declare module "@novnc/novnc" {
     disconnect(): void
     viewOnly: boolean
     scaleViewport: boolean
+    resizeSession: boolean
+    /** Sends text to the remote session's clipboard — a real, native
+     * noVNC method (core/rfb.js), not a custom addition. */
+    clipboardPasteFrom(text: string): void
   }
 }

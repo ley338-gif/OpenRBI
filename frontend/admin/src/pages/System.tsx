@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
 import type { SystemHealthDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
+const STATUS_PRIORITY: Record<string, number> = { UNAVAILABLE: 0, DEGRADED: 1, HEALTHY: 2 };
 const POLL_INTERVAL_MS = 15_000;
 
 /**
@@ -43,21 +45,36 @@ export function System() {
     return () => clearInterval(id);
   }, []);
 
-  if (error && !health) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error && !health) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!health) return <LoadingBlock label="Loading system status…" />;
+
+  const sortedComponents = [...health.components].sort(
+    (a, b) => (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9),
+  );
 
   return (
     <div className="page">
-      <div className="flex-between" style={{ marginBottom: "16px" }}>
-        <h1 style={{ margin: 0 }}>System</h1>
-        <span className="text-muted" style={{ fontSize: "0.85rem" }}>
-          {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : ""}
-        </span>
-      </div>
+      <PageHeader
+        title="System"
+        subtitle="Live health of every backend dependency."
+        actions={
+          <span className="text-muted" style={{ fontSize: "0.85rem" }}>
+            {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : ""}
+          </span>
+        }
+      />
 
       <div className="card">
-        <div className="flex-between" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Overall status</h2>
+        <div className="section-header">
+          <h2>Overall status</h2>
           <StatusBadge value={health.status} />
         </div>
         <table className="data-table">
@@ -69,7 +86,7 @@ export function System() {
             </tr>
           </thead>
           <tbody>
-            {health.components.map((c) => (
+            {sortedComponents.map((c) => (
               <tr key={c.name}>
                 <td>{c.name}</td>
                 <td><StatusBadge value={c.status} /></td>

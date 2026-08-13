@@ -61,7 +61,13 @@ A plain `ldap://` URI with StartTLS turned off is refused (both here and in the 
 
 ## Dashboard
 
-Shows active/isolated session counts, open incidents, quarantine items awaiting review, overall system health, and the most recent security events — all aggregated client-side from the same list/health endpoints described below (there is no dedicated dashboard-stats endpoint yet; see [architecture.md](architecture.md) for this documented gap). Never a fabricated chart — if there's no time-series API, there's no chart for it.
+Shows active/isolated session counts, open incidents, quarantine items awaiting review, and overall system health as KPI cards — all aggregated client-side from the same list/health endpoints described below (there is no dedicated dashboard-stats endpoint yet; see [architecture.md](architecture.md) for this documented gap). Never a fabricated chart — if there's no time-series API, there's no chart for it.
+
+**Needs attention** lists real, current problems only: open high/critical incidents, isolated sessions, quarantined files awaiting review, and any degraded health component. When there are none, it says so plainly instead of showing an empty table or inventing something to display. **Recent activity** is a feed of the latest real security events, not a separate log.
+
+## Help and Notifications
+
+Every page in both portals has a **Help** menu (top bar) linking to the real Markdown docs in this `docs/` folder, served by nginx directly from the deployed image — not a hardcoded external URL that would 404 on an offline or air-gapped deployment. The **Notifications** button is honest about the platform not having a real notification/alerting feed yet: it opens to an explicit "No notifications yet" state rather than being filled with placeholder entries.
 
 ## Users and groups
 

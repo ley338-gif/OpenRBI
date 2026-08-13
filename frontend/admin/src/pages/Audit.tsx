@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { TableToolbar } from "@shared/components/TableToolbar";
 import { formatDateTime } from "@shared/format";
 import { SECURITY_EVENT_TYPES, type SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
@@ -25,6 +27,7 @@ export function Audit() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   function load() {
+    setError(null);
     adminApi
       .listSecurityEvents({
         event_type: eventType || undefined,
@@ -38,56 +41,66 @@ export function Audit() {
 
   useEffect(load, [offset, eventType, userId]);
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!events) return <LoadingBlock label="Loading audit trail…" />;
 
   return (
     <div className="page">
-      <h1>Audit</h1>
+      <PageHeader title="Audit" subtitle="Append-only trail of every security-relevant action." />
 
-      <div className="filter-bar">
-        <input
-          list="security-event-types"
-          placeholder="Filter by event type"
-          value={eventType}
-          onChange={(e) => {
-            setOffset(0);
-            setEventType(e.target.value);
-          }}
-          style={{ width: "260px" }}
-        />
-        <datalist id="security-event-types">
-          {SECURITY_EVENT_TYPES.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-        <input
-          placeholder="Filter by user ID"
-          value={userId}
-          onChange={(e) => {
-            setOffset(0);
-            setUserId(e.target.value);
-          }}
-          className="mono"
-          style={{ width: "280px" }}
-        />
-        {(eventType || userId) && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
+      <TableToolbar
+        search={eventType}
+        onSearchChange={(v) => {
+          setOffset(0);
+          setEventType(v);
+        }}
+        searchPlaceholder="Filter by event type (e.g. SESSION_ISOLATED)…"
+        searchListId="security-event-types"
+        onRefresh={load}
+        filters={
+          <input
+            placeholder="Filter by user ID"
+            value={userId}
+            onChange={(e) => {
               setOffset(0);
-              setEventType("");
-              setUserId("");
+              setUserId(e.target.value);
             }}
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
+            className="mono"
+            style={{ width: "260px" }}
+          />
+        }
+        actions={
+          (eventType || userId) && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setOffset(0);
+                setEventType("");
+                setUserId("");
+              }}
+            >
+              Clear filters
+            </button>
+          )
+        }
+      />
+      <datalist id="security-event-types">
+        {SECURITY_EVENT_TYPES.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
 
       {events.length === 0 ? (
-        <EmptyState>No security events match.</EmptyState>
+        <EmptyState title="No security events match">Try a different event-type filter.</EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="data-table">

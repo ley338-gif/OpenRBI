@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import RFB from "@novnc/novnc";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { ErrorBanner } from "@shared/components/FormField";
+import { PageHeader } from "@shared/components/PageHeader";
+import { IconButton } from "@shared/components/IconButton";
+import { EmptyState } from "@shared/components/States";
+import { Icons } from "@shared/components/Icons";
 import { useToast } from "@shared/components/Toast";
 import type { SessionResponseDto, SessionStatus } from "@shared/api/types";
 import { userApi, displayWebSocketUrl } from "../api/userApi";
@@ -12,7 +16,9 @@ const CONNECTABLE = new Set<SessionStatus>(["ACTIVE", "DISCONNECTED"]);
 
 // Matches the sandbox's actual Xvfb resolution (1280x800,
 // docker/browser/entrypoint.sh) exactly.
-const SANDBOX_ASPECT = 1280 / 800;
+const SANDBOX_WIDTH = 1280;
+const SANDBOX_HEIGHT = 800;
+const SANDBOX_ASPECT = SANDBOX_WIDTH / SANDBOX_HEIGHT;
 
 /** Largest box of SANDBOX_ASPECT that fits inside (availW, availH) without
  * overflowing either dimension — a plain "contain fit", computed in JS
@@ -83,30 +89,68 @@ export function SecureBrowser() {
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [rfbConnected, setRfbConnected] = useState(false);
+  const [fitMode, setFitMode] = useState<"fit" | "native">("fit");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerCardRef = useRef<HTMLDivElement>(null);
+  const viewerAreaRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
   const pollRef = useRef<number | null>(null);
   const liveRef = useRef<number | null>(null);
   const [boxSize, setBoxSize] = useState({ width: 960, height: 600 });
 
   // Recompute the viewer's exact pixel size whenever the card around it
-  // resizes, so the box always matches the sandbox's aspect ratio exactly
+  // resizes, so "Fit" always matches the sandbox's aspect ratio exactly
   // and scaleViewport has zero slack to fill with black bars — using the
   // full height and width the page layout actually gives this card,
   // instead of a fixed aspect-ratio/max-height pair that could disagree
-  // with each other at some window sizes.
+  // with each other at some window sizes. In "native" mode the box is
+  // just the sandbox's real resolution, and the area scrolls instead.
   useEffect(() => {
     const el = viewerCardRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
-      setBoxSize(containFit(entry.contentRect.width, entry.contentRect.height));
+      if (fitMode === "native") {
+        setBoxSize({ width: SANDBOX_WIDTH, height: SANDBOX_HEIGHT });
+      } else {
+        setBoxSize(containFit(entry.contentRect.width, entry.contentRect.height));
+      }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [session]);
+  }, [session, fitMode]);
+
+  useEffect(() => {
+    if (rfbRef.current) rfbRef.current.scaleViewport = fitMode === "fit";
+  }, [fitMode]);
+
+  useEffect(() => {
+    function onFsChange() {
+      setIsFullscreen(document.fullscreenElement === viewerAreaRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (viewerAreaRef.current) {
+      viewerAreaRef.current.requestFullscreen().catch(() => notify("Fullscreen isn't available in this browser.", "error"));
+    }
+  }
+
+  async function sendClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      rfbRef.current?.clipboardPasteFrom(text);
+      notify("Clipboard sent to the session");
+    } catch {
+      notify("Couldn't read your clipboard — check the browser's clipboard permission.", "error");
+    }
+  }
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -153,32 +197,45 @@ export function SecureBrowser() {
     setRfbConnected(false);
   }, []);
 
-  const connectDisplay = useCallback((sessionId: string) => {
-    if (!containerRef.current || rfbRef.current) return;
-    setConnectError(null);
-    const rfb = new RFB(containerRef.current, displayWebSocketUrl(sessionId));
-    // Scale the remote framebuffer to fill the viewer instead of rendering
-    // it at the sandbox's native resolution in a corner of a much larger
-    // container — real feedback: without this, most of the card was empty
-    // black space around a small fixed-size canvas. Not resizeSession: the
-    // sandbox's Xvfb resolution is fixed server-side, so asking the server
-    // to resize would just fail silently; scaling the client-side canvas
-    // is the only real option here.
-    rfb.scaleViewport = true;
-    rfb.addEventListener("connect", () => {
-      setRfbConnected(true);
-      // The backend just flipped this session back to ACTIVE as a side
-      // effect of accepting this connection — refetch so the status badge
-      // reflects that instead of whatever it showed before reconnecting.
-      userApi.getSession(sessionId).then(setSession).catch(() => {});
-    });
-    rfb.addEventListener("disconnect", () => {
-      setRfbConnected(false);
-      rfbRef.current = null;
-    });
-    rfb.addEventListener("credentialsrequired", () => setConnectError("The remote display rejected the connection."));
-    rfbRef.current = rfb;
-  }, []);
+  const connectDisplay = useCallback(
+    (sessionId: string) => {
+      if (!containerRef.current || rfbRef.current) return;
+      setConnectError(null);
+      const rfb = new RFB(containerRef.current, displayWebSocketUrl(sessionId));
+      // Scale the remote framebuffer to fill the viewer instead of
+      // rendering it at the sandbox's native resolution in a corner of a
+      // much larger container — real feedback: without this, most of the
+      // card was empty black space around a small fixed-size canvas. Not
+      // resizeSession: the sandbox's Xvfb resolution is fixed server-side,
+      // so asking the server to resize would just fail silently; scaling
+      // the client-side canvas is the only real option here.
+      rfb.scaleViewport = fitMode === "fit";
+      rfb.addEventListener("connect", () => {
+        setRfbConnected(true);
+        // The backend just flipped this session back to ACTIVE as a side
+        // effect of accepting this connection — refetch so the status
+        // badge reflects that instead of whatever it showed before
+        // reconnecting.
+        userApi.getSession(sessionId).then(setSession).catch(() => {});
+      });
+      rfb.addEventListener("disconnect", () => {
+        setRfbConnected(false);
+        rfbRef.current = null;
+      });
+      rfb.addEventListener("credentialsrequired", () => setConnectError("The remote display rejected the connection."));
+      // Real, noVNC-native clipboard sync from the remote session back to
+      // this device — only wired one direction automatically (remote ->
+      // local); the other direction is the explicit "Send clipboard"
+      // button above, since silently overwriting the user's own clipboard
+      // on every keystroke would be surprising.
+      rfb.addEventListener("clipboard", (e: Event) => {
+        const text = (e as CustomEvent<{ text: string }>).detail?.text;
+        if (text) navigator.clipboard.writeText(text).catch(() => {});
+      });
+      rfbRef.current = rfb;
+    },
+    [fitMode],
+  );
 
   // Poll the session's real status (QUEUED -> STARTING -> ACTIVE, or a
   // failure/isolation transition) until it reaches ACTIVE/DISCONNECTED —
@@ -228,7 +285,7 @@ export function SecureBrowser() {
     } finally {
       setStarting(false);
     }
-  }, [connectDisplay, pollSession]);
+  }, [pollSession]);
 
   const endSession = useCallback(async () => {
     if (!session) return;
@@ -292,31 +349,21 @@ export function SecureBrowser() {
   }, [session, connectDisplay, watchLiveSession, stopLiveWatch]);
 
   const busy = starting || (session && !TERMINAL.has(session.status) && session.status !== "ISOLATED" && !rfbConnected);
+  const showViewer = session && !TERMINAL.has(session.status) && session.status !== "ISOLATED";
 
   return (
     <div className="page" style={{ display: "flex", flexDirection: "column" }}>
-      <div className="flex-between" style={{ flexShrink: 0 }}>
-        <div>
-          <h1 style={{ marginBottom: 0 }}>Secure Browser</h1>
-          {session && (
-            <p className="text-muted" style={{ margin: "4px 0 0" }}>
-              Session {session.id.slice(0, 8)} · <StatusBadge value={session.status} /> · started {" "}
-              {session.started_at ? new Date(session.started_at).toLocaleTimeString() : "—"}
-            </p>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          {session && CONNECTABLE.has(session.status) ? (
-            <button type="button" className="btn btn-danger" onClick={() => void endSession()}>
-              End session
-            </button>
-          ) : (
+      <PageHeader
+        title="Secure Browser"
+        subtitle="Your isolated remote browser — nothing here ever reaches this device."
+        actions={
+          !showViewer && (
             <button type="button" className="btn btn-primary" onClick={() => void start()} disabled={starting}>
               {starting ? <span className="spinner" /> : null} Start Secure Browser
             </button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {startError && <ErrorBanner>{startError}</ErrorBanner>}
       {connectError && <ErrorBanner>{connectError}</ErrorBanner>}
@@ -338,38 +385,55 @@ export function SecureBrowser() {
         </div>
       )}
 
-      {session && !TERMINAL.has(session.status) && session.status !== "ISOLATED" && (
-        <div
-          ref={viewerCardRef}
-          className="card"
-          style={{
-            padding: 0,
-            overflow: "hidden",
-            flex: 1,
-            minHeight: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-          }}
-        >
-          {!rfbConnected && (
-            <div className="loading-block" style={{ position: "absolute", zIndex: 1, width: "100%" }}>
-              <span className="spinner" />
-              {session.status === "QUEUED" && " Waiting for capacity…"}
-              {session.status === "STARTING" && " Preparing sandbox…"}
-              {CONNECTABLE.has(session.status) && " Connecting display…"}
+      {showViewer && (
+        <div ref={viewerAreaRef} className="card" style={{ padding: 0, overflow: "hidden", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div className="viewer-toolbar">
+            <div className="viewer-toolbar-group">
+              <StatusBadge value={session.status} />
+              <span className="mono">{session.id.slice(0, 8)}</span>
+              <span>Started {session.started_at ? new Date(session.started_at).toLocaleTimeString() : "—"}</span>
             </div>
-          )}
-          <div
-            ref={containerRef}
-            // Explicit pixel size from the containFit() calculation above —
-            // always exactly the sandbox's own aspect ratio, sized to use
-            // the full width or full height of this card (whichever is the
-            // binding constraint), so scaleViewport fills it completely
-            // with no black bars on any side.
-            style={{ width: boxSize.width, height: boxSize.height, background: "#000" }}
-          />
+            <div className="viewer-toolbar-group">
+              <button
+                type="button"
+                className={`viewer-toolbar-toggle${fitMode === "fit" ? " active" : ""}`}
+                onClick={() => setFitMode("fit")}
+                aria-pressed={fitMode === "fit"}
+              >
+                Fit
+              </button>
+              <button
+                type="button"
+                className={`viewer-toolbar-toggle${fitMode === "native" ? " active" : ""}`}
+                onClick={() => setFitMode("native")}
+                aria-pressed={fitMode === "native"}
+              >
+                100%
+              </button>
+              <div className="viewer-toolbar-divider" />
+              <IconButton label="Send clipboard to session" onClick={() => void sendClipboard()}>
+                <Icons.Clipboard width={16} height={16} />
+              </IconButton>
+              <IconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
+                {isFullscreen ? <Icons.Minimize width={16} height={16} /> : <Icons.Maximize width={16} height={16} />}
+              </IconButton>
+              <div className="viewer-toolbar-divider" />
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => void endSession()}>
+                End session
+              </button>
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "auto", background: "#000" }} ref={viewerCardRef}>
+            {!rfbConnected && (
+              <div className="loading-block" style={{ position: "absolute", zIndex: 1, width: "100%", color: "var(--color-slate-300)" }}>
+                <span className="spinner" />
+                {session.status === "QUEUED" && " Waiting for capacity…"}
+                {session.status === "STARTING" && " Preparing sandbox…"}
+                {CONNECTABLE.has(session.status) && " Connecting display…"}
+              </div>
+            )}
+            <div ref={containerRef} style={{ width: boxSize.width, height: boxSize.height, flexShrink: 0, background: "#000" }} />
+          </div>
         </div>
       )}
 
@@ -377,7 +441,9 @@ export function SecureBrowser() {
 
       {!session && !starting && (
         <div className="card">
-          <p className="text-muted">No session yet. Click "Start Secure Browser" to open an isolated remote browser.</p>
+          <EmptyState icon={<Icons.Browser width={20} height={20} />} title="No active session">
+            Start an isolated remote browser to browse the web safely — use the "Start Secure Browser" button above.
+          </EmptyState>
         </div>
       )}
 

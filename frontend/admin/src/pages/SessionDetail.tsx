@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { DefinitionList } from "@shared/components/DefinitionList";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { AdminSessionDto, SecurityEventDto } from "@shared/api/types";
@@ -82,81 +84,62 @@ export function SessionDetail() {
   return (
     <div className="page">
       <p><Link to="/sessions">← Sessions</Link></p>
-      <div className="flex-between">
-        <h1 style={{ marginBottom: 0 }}>
-          Session <span className="mono">{session.id.slice(0, 8)}</span>
-        </h1>
-        {live && (
-          <div style={{ display: "flex", gap: "8px" }}>
-            {(session.status === "ACTIVE" || session.status === "DISCONNECTED") && (
-              <>
-                <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("disconnect")}>
-                  Disconnect
+      <PageHeader
+        title={<>Session <span className="mono">{session.id.slice(0, 8)}</span></>}
+        subtitle={<Link to={`/users/${session.user_id}`}>{session.username}</Link>}
+        meta={<StatusBadge value={session.status} />}
+        actions={
+          live && (
+            <>
+              {(session.status === "ACTIVE" || session.status === "DISCONNECTED") && (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("disconnect")}>
+                    Disconnect
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("isolate")}>
+                    Isolate
+                  </button>
+                </>
+              )}
+              {session.status === "ISOLATED" && (
+                <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("restore")}>
+                  Restore
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("isolate")}>
-                  Isolate
-                </button>
-              </>
-            )}
-            {session.status === "ISOLATED" && (
-              <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("restore")}>
-                Restore
+              )}
+              <button type="button" className="btn btn-danger" onClick={() => setPendingAction("kill")}>
+                Kill
               </button>
-            )}
-            <button type="button" className="btn btn-danger" onClick={() => setPendingAction("kill")}>
-              Kill
-            </button>
-          </div>
-        )}
+            </>
+          )
+        }
+      />
+
+      <div className="card">
+        <div className="section-header">
+          <h2>Overview</h2>
+        </div>
+        <DefinitionList
+          items={[
+            { label: "Browser", value: session.browser },
+            { label: "Sandbox backend", value: session.sandbox_backend },
+            { label: "Display backend", value: session.display_backend },
+            { label: "Created", value: formatDateTime(session.created_at) },
+            { label: "Started", value: formatDateTime(session.started_at) },
+            { label: "Ended", value: formatDateTime(session.ended_at) },
+            {
+              label: "Resource limits",
+              value: `${session.cpu_limit} CPU · ${session.ram_limit_mb} MB RAM · ${session.pid_limit} PIDs · ${session.disk_limit_mb} MB disk`,
+            },
+          ]}
+        />
       </div>
 
       <div className="card">
-        <dl className="detail-grid">
-          <div>
-            <dt>User</dt>
-            <dd><Link to={`/users/${session.user_id}`}>{session.username}</Link></dd>
-          </div>
-          <div>
-            <dt>Status</dt>
-            <dd><StatusBadge value={session.status} /></dd>
-          </div>
-          <div>
-            <dt>Browser</dt>
-            <dd>{session.browser}</dd>
-          </div>
-          <div>
-            <dt>Sandbox backend</dt>
-            <dd>{session.sandbox_backend}</dd>
-          </div>
-          <div>
-            <dt>Display backend</dt>
-            <dd>{session.display_backend}</dd>
-          </div>
-          <div>
-            <dt>Created</dt>
-            <dd>{formatDateTime(session.created_at)}</dd>
-          </div>
-          <div>
-            <dt>Started</dt>
-            <dd>{formatDateTime(session.started_at)}</dd>
-          </div>
-          <div>
-            <dt>Ended</dt>
-            <dd>{formatDateTime(session.ended_at)}</dd>
-          </div>
-          <div>
-            <dt>Resource limits</dt>
-            <dd>
-              {session.cpu_limit} CPU · {session.ram_limit_mb} MB RAM · {session.pid_limit} PIDs · {session.disk_limit_mb} MB disk
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      <div className="card">
-        <h2 style={{ margin: "0 0 8px", fontSize: "1.1rem" }}>Recent security events</h2>
+        <div className="section-header">
+          <h2>Recent security events</h2>
+        </div>
         {events.length === 0 ? (
-          <p className="text-muted">No events recorded for this session.</p>
+          <EmptyState title="No events recorded">Security events involving this session will appear here.</EmptyState>
         ) : (
           <table className="data-table">
             <thead>

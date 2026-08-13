@@ -33,11 +33,16 @@ Shows your current MFA status, how many files you have on record, and your most 
 
 ## Secure Browser
 
-Click **Start Secure Browser**. You'll see the session progress through its real states — "Waiting for capacity…", "Preparing sandbox…", "Connecting display…" — before the remote browser actually appears. This is a genuine isolated Firefox instance running server-side; only pixels reach your browser over noVNC, and your session can reach the public internet but never the organization's internal network.
+Click **Start Secure Browser**. You'll see the session progress through its real states — "Waiting for capacity…", "Preparing sandbox…", "Connecting display…" — before the remote browser actually appears. This is a genuine isolated Firefox instance running server-side; only pixels reach your browser over noVNC, and your session can reach the public internet but never the organization's internal network. The viewer uses all the space your window gives it — resize your browser and it recalculates to fill it, with no dead black borders.
+
+A toolbar sits above the remote screen while a session is running:
+
+- **Fit** / **100%** — scale the remote desktop to fill the viewer, or show it at its actual pixel size (useful for reading fine text; the viewer scrolls instead of shrinking further).
+- **Clipboard** — sends whatever is on your local clipboard into the session. Text copied *inside* the remote session is picked up automatically and placed on your local clipboard the other way.
+- **Fullscreen** — expands just the remote screen to fill your display, not the whole browser tab.
+- **End session** — terminates the sandbox immediately; nothing about it (browsing history, cookies, downloads left in the sandbox) persists afterward.
 
 If an administrator isolates your session, the portal tells you plainly: *"This session has been isolated by an administrator. Network access, uploads, and downloads are disabled."* — not a vague connection error. End that session and start a new one to continue.
-
-**End session** terminates the sandbox immediately — nothing about it (browsing history, cookies, downloads left in the sandbox) persists afterward.
 
 You can upload a file into your active session from the same page — every upload is hashed, its real type detected, scanned, and policy-checked before it ever reaches the sandbox; you'll see a clear "blocked by policy" or "too large" message if it doesn't make it through, not a raw error.
 

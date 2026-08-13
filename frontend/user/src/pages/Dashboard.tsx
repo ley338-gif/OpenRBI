@@ -2,12 +2,37 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@shared/auth/AuthContext";
 import { StatusBadge } from "@shared/components/StatusBadge";
-import { LoadingBlock, ErrorState } from "@shared/components/States";
+import { StatCard } from "@shared/components/StatCard";
+import { PageHeader } from "@shared/components/PageHeader";
+import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
+import { Icons } from "@shared/components/Icons";
 import { formatDateTime } from "@shared/format";
 import type { QuarantineFileDto, SessionResponseDto } from "@shared/api/types";
 import { userApi } from "../api/userApi";
 
 const LIVE_STATUSES = new Set(["QUEUED", "STARTING", "ACTIVE", "DISCONNECTED", "ISOLATING", "ISOLATED"]);
+
+function secureBrowserCta(liveSession: SessionResponseDto | undefined): { title: string; body: string; button: string } {
+  if (!liveSession) {
+    return {
+      title: "Secure Browser",
+      body: "Start an isolated browser session to browse the web safely — nothing you see there ever reaches this device.",
+      button: "Start Secure Browser",
+    };
+  }
+  if (liveSession.status === "ISOLATED") {
+    return {
+      title: "Session isolated",
+      body: "An administrator isolated this session. End it and start a new one to keep browsing.",
+      button: "Open Secure Browser",
+    };
+  }
+  return {
+    title: "Secure Browser session running",
+    body: "Your isolated browser session is ready — pick up where you left off.",
+    button: "Open Secure Browser",
+  };
+}
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -15,90 +40,106 @@ export function Dashboard() {
   const [files, setFiles] = useState<QuarantineFileDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
+    setError(null);
     Promise.all([userApi.mySessions(), userApi.myFiles()])
       .then(([s, f]) => {
         setSessions(s);
         setFiles(f);
       })
       .catch(() => setError("Could not load your dashboard. The backend may be unavailable."));
-  }, []);
+  }
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  useEffect(load, []);
+
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!sessions || !files) return <LoadingBlock label="Loading dashboard…" />;
 
   const liveSession = sessions.find((s) => LIVE_STATUSES.has(s.status));
   const recentFiles = files.slice(0, 5);
+  const cta = secureBrowserCta(liveSession);
 
   return (
     <div className="page">
-      <h1>Dashboard</h1>
+      <PageHeader title="Dashboard" subtitle="Current overview of your secure browsing environment." />
 
       <div className="stat-grid">
-        <div className="stat-card">
-          <div className="label">MFA</div>
-          <div className="value" style={{ fontSize: "1.1rem" }}>
-            <StatusBadge value={user?.mfa_enabled ? "ENABLED" : "NOT ENABLED"} />
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="label">Downloads on file</div>
-          <div className="value">{files.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="label">Last session</div>
-          <div className="value" style={{ fontSize: "1.1rem" }}>
-            {sessions[0] ? formatDateTime(sessions[0].created_at) : "—"}
-          </div>
-        </div>
+        <StatCard label="MFA" value={<StatusBadge value={user?.mfa_enabled ? "ENABLED" : "NOT ENABLED"} />} />
+        <StatCard label="Downloads" value={files.length} hint="On file" />
+        <StatCard
+          label="Last session"
+          value={sessions[0] ? formatDateTime(sessions[0].created_at) : "—"}
+        />
       </div>
 
-      <div className="card cta-card">
+      <div className="card cta-card surface-emphasis">
         <div className="flex-between" style={{ marginBottom: 0 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Secure Browser</h2>
-            {liveSession ? (
-              <p className="text-muted" style={{ margin: "4px 0 0" }}>
-                Current session: <StatusBadge value={liveSession.status} />
+          <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+            <div className="compact-row-icon" style={{ width: 44, height: 44, background: "var(--color-white)" }}>
+              <Icons.Browser width={22} height={22} color="var(--color-accent-strong)" />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "1.1rem" }}>{cta.title}</h2>
+              <p className="text-muted" style={{ margin: "4px 0 0", maxWidth: "440px" }}>
+                {cta.body}
               </p>
-            ) : (
-              <p className="text-muted" style={{ margin: "4px 0 0" }}>No active session.</p>
-            )}
+              {liveSession && (
+                <p style={{ margin: "6px 0 0" }}>
+                  <StatusBadge value={liveSession.status} />
+                </p>
+              )}
+            </div>
           </div>
           <Link to="/browser" className="btn btn-primary">
-            {liveSession ? "Open Secure Browser" : "Start Secure Browser"}
+            {cta.button}
           </Link>
         </div>
       </div>
 
       <div className="card">
-        <div className="flex-between" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Recent downloads</h2>
+        <div className="section-header">
+          <h2>Recent downloads</h2>
           <Link to="/downloads" className="btn btn-secondary btn-sm">
             View all
           </Link>
         </div>
         {recentFiles.length === 0 ? (
-          <p className="text-muted">No downloads yet.</p>
+          <EmptyState
+            icon={<Icons.Download width={20} height={20} />}
+            title="No downloads yet"
+            action={
+              <Link to="/downloads" className="btn btn-secondary btn-sm">
+                Go to Downloads
+              </Link>
+            }
+          >
+            Files you download in a Secure Browser session and that get released appear here.
+          </EmptyState>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Status</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentFiles.map((f) => (
-                <tr key={f.id}>
-                  <td>{f.original_name}</td>
-                  <td><StatusBadge value={f.status} /></td>
-                  <td>{formatDateTime(f.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="compact-list">
+            {recentFiles.map((f) => (
+              <div className="compact-row" key={f.id}>
+                <div className="compact-row-icon">
+                  <Icons.File width={16} height={16} />
+                </div>
+                <div className="compact-row-main">
+                  <div className="compact-row-title">{f.original_name}</div>
+                  <div className="compact-row-meta">
+                    <StatusBadge value={f.status} />
+                  </div>
+                </div>
+                <div className="compact-row-time">{formatDateTime(f.created_at)}</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

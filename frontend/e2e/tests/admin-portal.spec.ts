@@ -68,7 +68,9 @@ test.describe("Admin Portal", () => {
     // No fabricated data — every stat card must at least render without
     // throwing, backed by the real list/health endpoints.
     await expect(page.getByText(/active sessions/i)).toBeVisible();
-    await expect(page.getByText(/system health/i)).toBeVisible();
+    // Scoped to the StatCard specifically — the PageHeader subtitle also
+    // mentions "system health" in its own sentence.
+    await expect(page.locator(".stat-card", { hasText: /system health/i })).toBeVisible();
   });
 
   test("Dashboard's operations view (B1.10.2) shows real worker load and a working range selector", async ({ page }) => {
@@ -236,10 +238,65 @@ test.describe("Admin Portal", () => {
     await page.getByRole("link", { name: "Quarantine" }).click();
     await expect(page.locator("iframe")).toHaveCount(0);
     // Either a real empty state or a real table — never a placeholder row.
-    const hasTable = await page.locator(".data-table").isVisible().catch(() => false);
+    // Wait for the page to actually finish loading (not a non-retrying
+    // isVisible() snapshot, which can race the initial fetch and mistake
+    // "still loading" for "empty") before deciding which case applies.
+    await expect(page.locator(".table-wrap, .empty-state")).toBeVisible();
+    const hasTable = (await page.locator(".data-table").count()) > 0;
     if (!hasTable) {
       await expect(page.getByText(/no.*quarantine/i)).toBeVisible();
     }
+  });
+
+  test("Dashboard's Needs Attention section reflects real data — calm when clear, never a fabricated alert", async ({ page }) => {
+    await loginAsAdmin(page);
+    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
+    // Either a real attention item (a genuine open incident/isolated
+    // session/quarantine file/degraded component) or the calm all-clear
+    // empty state — never both, and never invented alert copy.
+    const hasAttentionItem = await page.locator(".attention-item").first().isVisible().catch(() => false);
+    if (!hasAttentionItem) {
+      await expect(page.getByText(/nothing needs attention/i)).toBeVisible();
+    }
+  });
+
+  test("the Help menu opens and links to a real, reachable guide (not a fake or broken link)", async ({ page, request }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("button", { name: "Help" }).click();
+    const link = page.getByRole("menuitem", { name: /admin guide/i });
+    await expect(link).toBeVisible();
+    const href = await link.getAttribute("href");
+    expect(href).toBeTruthy();
+    const res = await request.get(href!);
+    expect(res.status()).toBe(200);
+  });
+
+  test("the Notifications button is honest about having no data, not filled with invented demo entries", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("button", { name: "Notifications" }).click();
+    await expect(page.getByText(/no notifications yet/i)).toBeVisible();
+  });
+
+  test("Groups delete uses a specific confirmation dialog, not a bare browser confirm() prompt", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Groups" }).click();
+    await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible();
+
+    const groupName = `e2e-polish-${Date.now()}`;
+    await page.getByRole("button", { name: "Create Group" }).click();
+    await page.getByLabel("Name").fill(groupName);
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page.getByRole("cell", { name: groupName })).toBeVisible();
+
+    const row = page.locator("tr", { hasText: groupName });
+    await row.getByRole("button", { name: "Delete" }).click();
+
+    // A real, specific confirmation dialog naming this exact group — not
+    // window.confirm() (which Playwright would auto-dismiss/never see as
+    // a page element at all) and not a generic "Are you sure?".
+    await expect(page.getByText(`Delete group "${groupName}"?`)).toBeVisible();
+    await page.getByRole("button", { name: "Delete", exact: true }).last().click();
+    await expect(page.getByRole("cell", { name: groupName })).toHaveCount(0);
   });
 
   test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {

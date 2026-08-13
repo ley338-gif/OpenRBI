@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
 import { LoadingBlock, ErrorState } from "@shared/components/States";
 import { FormField } from "@shared/components/FormField";
+import { PageHeader } from "@shared/components/PageHeader";
+import { DefinitionList } from "@shared/components/DefinitionList";
 import { useToast } from "@shared/components/Toast";
 import { formatBytes, formatDateTime } from "@shared/format";
 import type { QuarantineFileDto } from "@shared/api/types";
@@ -17,7 +19,6 @@ import { adminApi } from "../api/adminApi";
  */
 export function QuarantineDetail() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const { notify } = useToast();
   const [file, setFile] = useState<QuarantineFileDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,48 +54,83 @@ export function QuarantineDetail() {
   return (
     <div className="page">
       <p><Link to="/quarantine">← Quarantine</Link></p>
-      <h1>{file.original_name}</h1>
-
-      <div className="card">
-        <dl className="detail-grid">
-          <div><dt>User</dt><dd><Link to={`/users/${file.user_id}`}>{file.user_id.slice(0, 8)}</Link></dd></div>
-          <div><dt>Session</dt><dd><Link to={`/sessions/${file.session_id}`} className="mono">{file.session_id.slice(0, 8)}</Link></dd></div>
-          <div><dt>Declared MIME</dt><dd>{file.declared_mime ?? "—"}</dd></div>
-          <div><dt>Detected MIME</dt><dd>{file.detected_mime ?? "—"}</dd></div>
-          <div><dt>Extension</dt><dd>{file.extension ?? "—"}</dd></div>
-          <div><dt>Size</dt><dd>{formatBytes(file.size_bytes)}</dd></div>
-          <div><dt>SHA-256</dt><dd className="mono" style={{ fontSize: "0.78rem" }}>{file.sha256}</dd></div>
-          <div><dt>Initial URL</dt><dd style={{ wordBreak: "break-all" }}>{file.initial_url ?? "—"}</dd></div>
-          <div><dt>Final URL</dt><dd style={{ wordBreak: "break-all" }}>{file.final_url ?? "—"}</dd></div>
-          <div><dt>Source host</dt><dd>{file.source_host ?? "—"}</dd></div>
-          <div><dt>TLS used</dt><dd>{file.tls_used === null ? "—" : file.tls_used ? "Yes" : "No"}</dd></div>
-          <div><dt>Scanner status</dt><dd><StatusBadge value={file.scanner_status} /></dd></div>
-          <div><dt>Scanner result</dt><dd>{file.scanner_result ?? "—"}</dd></div>
-          <div><dt>Policy decision</dt><dd>{file.policy_action ? <StatusBadge value={file.policy_action} /> : "—"}</dd></div>
-          <div><dt>Status</dt><dd><StatusBadge value={file.status} /></dd></div>
-          <div><dt>Created</dt><dd>{formatDateTime(file.created_at)}</dd></div>
-          {file.reviewed_at && (
+      <PageHeader
+        title={file.original_name}
+        meta={<StatusBadge value={file.status} />}
+        actions={
+          reviewable && (
             <>
-              <div><dt>Reviewed</dt><dd>{formatDateTime(file.reviewed_at)}</dd></div>
-              <div><dt>Review comment</dt><dd>{file.review_comment ?? "—"}</dd></div>
-            </>
-          )}
-        </dl>
-
-        {reviewable && (
-          <>
-            <FormField label="Review comment (optional)">
-              <input value={comment} onChange={(e) => setComment(e.target.value)} />
-            </FormField>
-            <div style={{ display: "flex", gap: "8px" }}>
               <button type="button" className="btn btn-primary" onClick={() => setPending("release")}>
                 Release
               </button>
               <button type="button" className="btn btn-danger" onClick={() => setPending("reject")}>
                 Reject
               </button>
-            </div>
-          </>
+            </>
+          )
+        }
+      />
+
+      <div className="card">
+        <div className="section-header"><h2>File information</h2></div>
+        <DefinitionList
+          items={[
+            { label: "Declared MIME", value: file.declared_mime ?? "—" },
+            { label: "Detected MIME", value: file.detected_mime ?? "—" },
+            { label: "Extension", value: file.extension ?? "—" },
+            { label: "Size", value: formatBytes(file.size_bytes) },
+            { label: "SHA-256", value: <span className="mono" style={{ fontSize: "0.78rem" }}>{file.sha256}</span> },
+            { label: "Created", value: formatDateTime(file.created_at) },
+          ]}
+        />
+      </div>
+
+      <div className="card">
+        <div className="section-header"><h2>Source</h2></div>
+        <DefinitionList
+          items={[
+            { label: "User", value: <Link to={`/users/${file.user_id}`}>{file.user_id.slice(0, 8)}</Link> },
+            { label: "Session", value: <Link to={`/sessions/${file.session_id}`} className="mono">{file.session_id.slice(0, 8)}</Link> },
+            { label: "Initial URL", value: <span style={{ wordBreak: "break-all" }}>{file.initial_url ?? "—"}</span> },
+            { label: "Final URL", value: <span style={{ wordBreak: "break-all" }}>{file.final_url ?? "—"}</span> },
+            { label: "Source host", value: file.source_host ?? "—" },
+            { label: "TLS used", value: file.tls_used === null ? "—" : file.tls_used ? "Yes" : "No" },
+          ]}
+        />
+      </div>
+
+      <div className="card">
+        <div className="section-header"><h2>Security scan</h2></div>
+        <DefinitionList
+          items={[
+            { label: "Scanner status", value: <StatusBadge value={file.scanner_status} /> },
+            { label: "Scanner result", value: file.scanner_result ?? "—" },
+          ]}
+        />
+      </div>
+
+      <div className="card">
+        <div className="section-header"><h2>Policy decision</h2></div>
+        <DefinitionList
+          items={[{ label: "Decision", value: file.policy_action ? <StatusBadge value={file.policy_action} /> : "—" }]}
+        />
+      </div>
+
+      <div className="card">
+        <div className="section-header"><h2>Review</h2></div>
+        {file.reviewed_at ? (
+          <DefinitionList
+            items={[
+              { label: "Reviewed", value: formatDateTime(file.reviewed_at) },
+              { label: "Review comment", value: file.review_comment ?? "—" },
+            ]}
+          />
+        ) : reviewable ? (
+          <FormField label="Review comment (optional)">
+            <input value={comment} onChange={(e) => setComment(e.target.value)} />
+          </FormField>
+        ) : (
+          <p className="text-muted">This file has not been reviewed.</p>
         )}
       </div>
 
@@ -113,10 +149,6 @@ export function QuarantineDetail() {
           onCancel={() => setPending(null)}
         />
       )}
-
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => navigate(-1)} style={{ marginTop: "16px" }}>
-        Back
-      </button>
     </div>
   );
 }

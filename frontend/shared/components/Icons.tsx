@@ -176,4 +176,74 @@ export const Icons = {
       </>,
       p,
     ),
+  Help: (p: IconProps) =>
+    base(
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.5 9.3a2.5 2.5 0 1 1 3.7 2.6c-.6.4-1.2.9-1.2 1.9v.3" />
+        <path d="M12 17.2v.1" />
+      </>,
+      p,
+    ),
+  ExternalLink: (p: IconProps) =>
+    base(
+      <>
+        <path d="M14 4h6v6" />
+        <path d="M20 4L10 14" />
+        <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+      </>,
+      p,
+    ),
+  Bell: (p: IconProps) =>
+    base(
+      <>
+        <path d="M6 9a6 6 0 1 1 12 0c0 3.2 1 5 2 6H4c1-1 2-2.8 2-6z" />
+        <path d="M9.5 19a2.5 2.5 0 0 0 5 0" />
+      </>,
+      p,
+    ),
+  Maximize: (p: IconProps) =>
+    base(
+      <>
+        <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+        <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+        <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+        <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+      </>,
+      p,
+    ),
+  Minimize: (p: IconProps) =>
+    base(
+      <>
+        <path d="M3 9h4a2 2 0 0 0 2-2V3" />
+        <path d="M21 9h-4a2 2 0 0 1-2-2V3" />
+        <path d="M3 15h4a2 2 0 0 1 2 2v4" />
+        <path d="M21 15h-4a2 2 0 0 0-2 2v4" />
+      </>,
+      p,
+    ),
+  Clipboard: (p: IconProps) =>
+    base(
+      <>
+        <rect x="6" y="4" width="12" height="17" rx="1.5" />
+        <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
+      </>,
+      p,
+    ),
+  RefreshCw: (p: IconProps) =>
+    base(
+      <>
+        <path d="M20 11a8 8 0 0 0-14.6-4.6M4 5v5h5" />
+        <path d="M4 13a8 8 0 0 0 14.6 4.6M20 19v-5h-5" />
+      </>,
+      p,
+    ),
+  File: (p: IconProps) =>
+    base(
+      <>
+        <path d="M6 3h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+        <path d="M14 3v4h4" />
+      </>,
+      p,
+    ),
 };

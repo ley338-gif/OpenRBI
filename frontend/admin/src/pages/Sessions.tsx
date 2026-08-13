@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, EmptyState, ErrorState } from "@shared/components/States";
+import { PageHeader } from "@shared/components/PageHeader";
+import { TableToolbar } from "@shared/components/TableToolbar";
 import { formatDateTime, formatDuration } from "@shared/format";
 import type { AdminSessionDto, SessionStatus } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
@@ -30,9 +32,12 @@ export function Sessions() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [userFilter, setUserFilter] = useState("");
 
-  useEffect(() => {
+  function load() {
+    setError(null);
     adminApi.listSessions().then(setSessions).catch(() => setError("Could not load sessions."));
-  }, []);
+  }
+
+  useEffect(load, []);
 
   const filtered = useMemo(() => {
     if (!sessions) return [];
@@ -43,30 +48,40 @@ export function Sessions() {
     );
   }, [sessions, statusFilter, userFilter]);
 
-  if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
+  if (error) {
+    return (
+      <div className="page">
+        <ErrorState action={<button type="button" className="btn btn-secondary btn-sm" onClick={load}>Try again</button>}>
+          {error}
+        </ErrorState>
+      </div>
+    );
+  }
   if (!sessions) return <LoadingBlock label="Loading sessions…" />;
 
   return (
     <div className="page">
-      <h1>Sessions</h1>
+      <PageHeader title="Sessions" subtitle="Active, isolated, and completed browser sessions across all users." />
 
-      <div className="filter-bar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <input placeholder="Filter by username" value={userFilter} onChange={(e) => setUserFilter(e.target.value)} />
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => adminApi.listSessions().then(setSessions)}>
-          Refresh
-        </button>
-      </div>
+      <TableToolbar
+        search={userFilter}
+        onSearchChange={setUserFilter}
+        searchPlaceholder="Filter by username…"
+        filters={
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        }
+        onRefresh={load}
+      />
 
       {filtered.length === 0 ? (
-        <EmptyState>No sessions match.</EmptyState>
+        <EmptyState title="No sessions match">Try a different filter, or check back once a session is running.</EmptyState>
       ) : (
         <div className="table-wrap">
           <table className="data-table">
