@@ -39,11 +39,38 @@ class SessionResponse(BaseModel):
 class AdminSessionResponse(SessionResponse):
     user_id: uuid.UUID
     username: str
+    node_id: uuid.UUID | None = None
+    worker_hostname: str | None = None
 
     @classmethod
-    def from_model_with_user(cls, session, username: str) -> "AdminSessionResponse":
+    def from_model_with_user(
+        cls, session, username: str, worker_hostname: str | None = None
+    ) -> "AdminSessionResponse":
         base = SessionResponse.from_model(session)
-        return cls(**base.model_dump(), user_id=session.user_id, username=username)
+        return cls(
+            **base.model_dump(),
+            user_id=session.user_id,
+            username=username,
+            node_id=session.node_id,
+            worker_hostname=worker_hostname,
+        )
+
+
+class SessionOperationsStats(BaseModel):
+    active: int
+    sessions_today: int
+    average_duration_seconds_24h: float | None
+    failed_24h: int
+    terminated_24h: int
+
+
+class SessionListResponse(BaseModel):
+    items: list[AdminSessionResponse]
+    total: int
+    offset: int
+    limit: int
+    stats: SessionOperationsStats
+    statuses: list[str]
 
 
 class RevokeSessionsResponse(BaseModel):
