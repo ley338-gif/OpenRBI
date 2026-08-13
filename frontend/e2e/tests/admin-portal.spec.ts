@@ -24,7 +24,7 @@ const ADMIN_TOTP_SECRET = process.env.E2E_ADMIN_TOTP_SECRET || "";
 async function loginAsAdmin(page: Page) {
   await page.goto("/admin/");
   await page.getByLabel("Username").fill(ADMIN_USERNAME);
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByLabel(/authentication code/i)).toBeVisible();
   await page.getByLabel(/authentication code/i).fill(totpNow(ADMIN_TOTP_SECRET));
@@ -38,7 +38,7 @@ test.describe("Admin Portal", () => {
   test("mandatory MFA enrollment on first login shows recovery codes before the dashboard, not instead of it", async ({ page }) => {
     await page.goto("/admin/");
     await page.getByLabel("Username").fill(ADMIN_ENROLL_USERNAME);
-    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
 
     const enrollResponse = page.waitForResponse((r) => r.url().includes("/mfa/setup/enroll") && r.ok());
     await page.getByRole("button", { name: "Log in" }).click();
@@ -102,13 +102,26 @@ test.describe("Admin Portal", () => {
       await expect(page.getByText(/no.*quarantine/i)).toBeVisible();
     }
   });
+
+  test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {
+    // Roadmap B1.8 — no fabricated defaults: the form must reflect
+    // whatever GET /admin/ldap/config actually returns, and the password
+    // field must never be pre-filled with anything, ever.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "LDAP" }).click();
+    await expect(page.getByRole("heading", { name: "Settings — Authentication — LDAP" })).toBeVisible();
+    await expect(page.getByLabel("Server URI")).toBeVisible();
+    await expect(page.getByLabel("Bind password")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Test connection" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save configuration" })).toBeVisible();
+  });
 });
 
 test.describe("Listener/portal security boundary", () => {
   test("the User Portal's own session cannot act on the admin API", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Username").fill(USER_USERNAME);
-    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
