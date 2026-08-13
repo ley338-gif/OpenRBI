@@ -25,7 +25,7 @@ from app.db.session import get_db
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
-from app.services.ldap_config_service import get_effective_ldap_config
+from app.services.ldap_config_service import get_effective_group_role_mapping, get_effective_ldap_config
 from app.services.ldap_provisioning import resolve_or_provision_ldap_user
 from app.services.mfa import verify_login_factor
 from app.services.security_events import record_security_event
@@ -84,7 +84,10 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
                 db, payload.username, payload.password
             )
             if ldap_result.success:
-                user = await resolve_or_provision_ldap_user(db, payload.username, ldap_result.ldap_group_dns or [])
+                group_role_mapping = await get_effective_group_role_mapping(db)
+                user = await resolve_or_provision_ldap_user(
+                    db, payload.username, ldap_result.ldap_group_dns or [], group_role_mapping
+                )
 
     if user is None:
         await record_login_failure(payload.username)

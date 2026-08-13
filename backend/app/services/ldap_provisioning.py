@@ -2,6 +2,14 @@
 OpenRBI role, and reconciles/just-in-time-provisions the local User row a
 successful LDAP bind authenticates as. See docs/adr/0015 for the
 identity-resolution and role-authority decisions this implements.
+
+Roadmap B1.8: the group->role mapping itself is passed in by the caller
+(resolved via app/services/ldap_config_service.py's
+get_effective_group_role_mapping — the admin-portal-configured database
+row if one exists, otherwise the original OPENRBI_LDAP_GROUP_ROLE_MAPPING
+env var) rather than read from app.config.get_settings() internally, so an
+admin-edited mapping actually takes effect at login instead of being
+silently ignored in favor of the env-only value.
 """
 
 import uuid
@@ -9,7 +17,6 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
@@ -18,9 +25,9 @@ from app.services.security_events import record_security_event
 _ROLE_PRECEDENCE = ("ADMIN", "SECURITY_REVIEWER", "USER")
 
 
-def resolve_role_from_ldap_groups(group_dns: list[str]) -> str:
+def resolve_role_from_ldap_groups(group_dns: list[str], group_role_mapping: dict[str, str]) -> str:
     """DN comparison is exact-string, case-sensitive — matching the DN
-    exactly as configured in OPENRBI_LDAP_GROUP_ROLE_MAPPING. A real DN
+    exactly as configured in the effective group->role mapping. A real DN
     case-insensitivity implementation would need to parse and normalize
     each RDN component per its attribute type's matching rule; not done
     here, documented as a known limitation (docs/admin-guide.md) rather
@@ -29,15 +36,16 @@ def resolve_role_from_ldap_groups(group_dns: list[str]) -> str:
     No matching group -> USER, the least-privileged role, never an
     implicit elevated default.
     """
-    settings = get_settings()
-    mapped_roles = {settings.ldap_group_role_mapping[dn] for dn in group_dns if dn in settings.ldap_group_role_mapping}
+    mapped_roles = {group_role_mapping[dn] for dn in group_dns if dn in group_role_mapping}
     for role_name in _ROLE_PRECEDENCE:
         if role_name in mapped_roles:
             return role_name
     return "USER"
 
 
-async def resolve_or_provision_ldap_user(db: AsyncSession, username: str, ldap_group_dns: list[str]) -> User:
+async def resolve_or_provision_ldap_user(
+    db: AsyncSession, username: str, ldap_group_dns: list[str], group_role_mapping: dict[str, str]
+) -> User:
     """Called only after LdapAuthProvider has already verified the
     password via a real bind — this function never re-checks credentials,
     only resolves *which* local User row this successful login belongs to
@@ -58,7 +66,7 @@ async def resolve_or_provision_ldap_user(db: AsyncSession, username: str, ldap_g
         downgraded by an incidental LDAP group mismatch — confirmed
         explicitly as the intended behavior, not inferred.
     """
-    resolved_role_name = resolve_role_from_ldap_groups(ldap_group_dns)
+    resolved_role_name = resolve_role_from_ldap_groups(ldap_group_dns, group_role_mapping)
 
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()

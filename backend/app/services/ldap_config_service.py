@@ -63,3 +63,17 @@ async def get_effective_ldap_config(db: AsyncSession) -> LdapConnectionConfig | 
     if not settings.ldap_enabled:
         return None
     return config_from_settings(settings)
+
+
+async def get_effective_group_role_mapping(db: AsyncSession) -> dict[str, str]:
+    """Same DB-authoritative-once-it-exists priority as
+    get_effective_ldap_config, but a separate lookup rather than a field on
+    LdapConnectionConfig: the mapping is consulted at a different point in
+    the login flow — after a successful bind, by app/services/
+    ldap_provisioning.py's resolve_role_from_ldap_groups, not by
+    LdapAuthProvider itself, which has no reason to know about roles at all.
+    """
+    row = await get_ldap_config_row(db)
+    if row is not None:
+        return row.group_role_mapping or {}
+    return get_settings().ldap_group_role_mapping
