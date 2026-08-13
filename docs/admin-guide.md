@@ -120,9 +120,16 @@ A read-only "why can't this user log in?" page: enter a username and it reports 
 `GET /admin/login-diagnostics?username=...` (`app/api/admin_login_diagnostics.py`).
 </details>
 
-## Nodes (System page)
+## Workers
 
-Lists every `BrowserNode` (single node in MVP 1, but modeled as a real list) with a **Drain**/**Undrain** action. Draining stops new sessions from being scheduled onto that node without disturbing sessions already running on it.
+The Workers page is the operational inventory for every registered `BrowserNode`. It refreshes every 30 seconds and supports server-side hostname search, computed-health and scheduling-state filters, sorting, and pagination. The KPI row is calculated from the complete worker set and reports total/healthy/attention-needed workers, live sessions and capacity, plus average reported CPU and RAM. No worker, environment, IP address, or trend is fabricated when the platform has not recorded it.
+
+Health is the shared server-side classification based on heartbeat freshness, telemetry, and operator state. **Needs attention** is deliberately limited to degraded or offline workers; draining and maintenance are intentional states and remain visible without being counted as faults. Select **Details** for exact telemetry, historical samples, and the real Drain/Undrain and Maintenance actions. Draining stops new sessions from being scheduled without disturbing sessions already running. Workers register automatically through the Session Agent, so there is no misleading manual “Add worker” action.
+
+<details><summary>Underlying API</summary>
+
+`GET /admin/nodes/overview` accepts `search`, `health`, `node_status`, `sort_by` (`hostname`, `health`, `cpu`, `ram`, `sessions`, `heartbeat`), `sort_dir`, `offset`, and `limit` (maximum 100). It returns the selected page and global statistics. Existing `GET /admin/nodes`, `GET /admin/nodes/{id}`, `GET /admin/nodes/{id}/metrics`, and ADMIN-only drain/maintenance mutations remain unchanged.
+</details>
 
 ## Policies
 

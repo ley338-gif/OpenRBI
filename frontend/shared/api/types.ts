@@ -380,6 +380,14 @@ export interface BrowserNodeDto {
   uptime_seconds: number | null;
 }
 
+export interface WorkerOverviewDto {
+  items: BrowserNodeDto[];
+  total: number;
+  offset: number;
+  limit: number;
+  stats: { total: number; healthy: number; needs_attention: number; active_sessions: number; total_capacity: number; average_cpu_percent: number | null; average_ram_percent: number | null; latest_heartbeat: string | null };
+}
+
 // Roadmap B1.10.3 — per-worker bucketed metric history (Worker Detail view)
 export interface NodeHistoryPointDto {
   t: string;
