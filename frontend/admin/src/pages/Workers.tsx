@@ -4,6 +4,7 @@ import type { BrowserNodeDto, WorkerOverviewDto } from "@shared/api/types";
 import { EmptyState, ErrorState, LoadingBlock } from "@shared/components/States";
 import { Icons } from "@shared/components/Icons";
 import { PageHeader } from "@shared/components/PageHeader";
+import { StatCard } from "@shared/components/StatCard";
 import { StatusBadge } from "@shared/components/StatusBadge";
 import { formatDateTime } from "@shared/format";
 import { adminApi } from "../api/adminApi";
@@ -26,13 +27,13 @@ export function Workers() {
   const pages = Math.max(1, Math.ceil(data.total / pageSize)); const hasFilters = !!(search || health || status);
   return <div className="page workers-page">
     <PageHeader title="Workers" subtitle="Monitor and manage workers running isolated Secure Browser sessions." actions={<button className="btn btn-secondary" onClick={() => load(true)} disabled={refreshing}><Icons.RefreshCw /> {refreshing ? "Refreshing…" : "Refresh"}</button>} />
-    <div className="worker-kpis">
-      <article className="kpi-card"><span className="kpi-icon"><Icons.Worker /></span><div><small>Total workers</small><strong>{data.stats.total}</strong><p>{data.stats.healthy} healthy</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon green"><Icons.Shield /></span><div><small>Healthy</small><strong>{data.stats.healthy}</strong><p>{data.stats.total ? Math.round(data.stats.healthy / data.stats.total * 100) : 0}% available</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon amber"><Icons.Quarantine /></span><div><small>Needs attention</small><strong>{data.stats.needs_attention}</strong><p>Degraded or offline</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon blue"><Icons.Sessions /></span><div><small>Active sessions</small><strong>{data.stats.active_sessions}</strong><p>{data.stats.total_capacity} total capacity</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon"><Icons.System /></span><div><small>Average CPU</small><strong>{data.stats.average_cpu_percent === null ? "—" : `${data.stats.average_cpu_percent.toFixed(0)}%`}</strong><p>Reported workers</p></div></article>
-      <article className="kpi-card"><span className="kpi-icon"><Icons.System /></span><div><small>Average RAM</small><strong>{data.stats.average_ram_percent === null ? "—" : `${data.stats.average_ram_percent.toFixed(0)}%`}</strong><p>Reported workers</p></div></article>
+    <div className="stat-grid worker-kpis">
+      <StatCard compact icon={<Icons.Worker />} label="Total workers" value={data.stats.total} hint={`${data.stats.healthy} healthy`} />
+      <StatCard compact tone="success" icon={<Icons.Shield />} label="Healthy" value={data.stats.healthy} hint={`${data.stats.total ? Math.round(data.stats.healthy / data.stats.total * 100) : 0}% available`} />
+      <StatCard compact tone={data.stats.needs_attention ? "warning" : "success"} icon={<Icons.Quarantine />} label="Needs attention" value={data.stats.needs_attention} hint="Degraded or offline" />
+      <StatCard compact tone="info" icon={<Icons.Sessions />} label="Active sessions" value={data.stats.active_sessions} hint={`${data.stats.total_capacity} total capacity`} />
+      <StatCard compact icon={<Icons.System />} label="Average CPU" value={data.stats.average_cpu_percent === null ? "—" : `${data.stats.average_cpu_percent.toFixed(0)}%`} hint="Reported workers" />
+      <StatCard compact icon={<Icons.System />} label="Average RAM" value={data.stats.average_ram_percent === null ? "—" : `${data.stats.average_ram_percent.toFixed(0)}%`} hint="Reported workers" />
     </div>
     {data.stats.needs_attention > 0 && <div className="inline-alert warning"><Icons.Quarantine /><div><strong>{data.stats.needs_attention} worker{data.stats.needs_attention === 1 ? " needs" : "s need"} attention</strong><p>Review degraded or offline workers before scheduling additional sessions.</p></div></div>}
     <section className="card worker-console"><div className="worker-filters"><label className="search-input"><Icons.Search /><input value={search} placeholder="Search workers by hostname…" onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></label><select value={health} onChange={(e) => { setHealth(e.target.value); setPage(1); }}><option value="">All health states</option>{["HEALTHY","DEGRADED","DRAINING","MAINTENANCE","OFFLINE"].map(v => <option key={v}>{v}</option>)}</select><select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All scheduling states</option>{["ONLINE","DRAINING","DEGRADED","MAINTENANCE","OFFLINE"].map(v => <option key={v}>{v}</option>)}</select><select value={sortBy} onChange={(e) => setSortBy(e.target.value)}><option value="hostname">Hostname</option><option value="health">Health</option><option value="cpu">CPU</option><option value="ram">RAM</option><option value="sessions">Sessions</option><option value="heartbeat">Last heartbeat</option></select><select value={sortDir} onChange={(e) => setSortDir(e.target.value)}><option value="asc">Ascending</option><option value="desc">Descending</option></select><button className="btn btn-secondary btn-sm" disabled={!hasFilters} onClick={clear}>Clear filters</button></div>

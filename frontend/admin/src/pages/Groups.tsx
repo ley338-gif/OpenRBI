@@ -62,8 +62,8 @@ export function Groups() {
     <PageHeader title="Groups" subtitle="Group users together to apply the same security policies." actions={<button className="btn btn-primary" onClick={() => setShowCreate(true)}><Icons.Groups /> Create Group</button>} />
     <div className="stat-grid groups-kpis">
       <StatCard icon={<Icons.Groups />} label="Total groups" value={data?.stats.total ?? "—"} />
-      <StatCard icon={<Icons.Users />} label="Total memberships" value={data?.stats.memberships ?? "—"} hint="Membership links, not unique users" />
-      <StatCard icon={<Icons.Shield />} label="Groups with policies" value={data?.stats.with_policies ?? "—"} />
+      <StatCard tone="info" icon={<Icons.Users />} label="Total memberships" value={data?.stats.memberships ?? "—"} hint="Membership links, not unique users" />
+      <StatCard tone="success" icon={<Icons.Shield />} label="Groups with policies" value={data?.stats.with_policies ?? "—"} />
     </div>
 
     {showCreate && <section className="card create-user-card"><div className="section-header"><div><h2>Create group</h2><p className="text-muted">Create a local OpenRBI security group. Policies can be assigned afterwards.</p></div></div><form className="group-create-form" onSubmit={submit}><FormField label="Name"><input value={name} onChange={(e) => setName(e.target.value)} required autoFocus /></FormField><FormField label="Description (optional)"><input value={description} onChange={(e) => setDescription(e.target.value)} /></FormField><div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy && <span className="spinner" />} Create group</button></div></form></section>}
