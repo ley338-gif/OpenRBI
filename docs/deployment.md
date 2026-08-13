@@ -36,6 +36,20 @@ sudo ./scripts/setup-network-isolation.sh
 
 At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
 
+## First-run setup (Roadmap B1.9)
+
+A fresh installation has no user accounts at all yet — there is no default `admin`/`admin` or any other built-in credential, and **no manual database access or SQL is ever required** to create the first one. Open the Admin Portal (`/admin/`); since no administrator exists yet, it shows **Initial System Setup** instead of the normal login form.
+
+Retrieve the one-time setup token from the backend container's own console output:
+
+```bash
+docker compose logs backend | grep -A3 "initial setup token"
+```
+
+Enter that token together with a username and password for the first administrator, then complete the mandatory TOTP enrollment exactly like any other first-time `ADMIN` login (QR code, confirm, save the one-time recovery codes). Once that finishes, the installation is **permanently initialized** — the setup token and setup endpoints stop working immediately, and deleting every user later does not reopen them (see [ADR 0017](adr/0017-first-run-bootstrap.md) for why `COUNT(users) == 0` was deliberately rejected as the check). If the token is lost or expires before setup completes, restart the backend (`docker compose restart backend`) — a fresh token is generated and logged on every startup for as long as the system remains uninitialized.
+
+**Keep at least one local `ADMIN` account with a real password at all times** — see `docs/admin-guide.md`'s break-glass note. There is currently no separate account-recovery process if every local administrator is lost.
+
 ## TLS
 
 `docker-compose.prod.yml` is an overlay that switches the reverse proxy to `docker/nginx/nginx.tls.conf`: TLS termination on 443, HSTS, and a 301 redirect from plain 80. It expects a certificate at `./certs/fullchain.pem` and `./certs/privkey.pem` on the host (standard certbot/Let's Encrypt output layout — a certbot renewal hook can drop renewed files straight into `./certs/` with no config change here). nginx refuses to start without them, which is the correct fail-closed behavior for a reverse proxy whose entire job is terminating TLS.
