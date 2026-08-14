@@ -139,11 +139,10 @@ async def clear_login_failures(username: str) -> None:
 
 
 async def get_login_lockout_status(username: str) -> dict:
-    """Roadmap B1.10.5/B1.10.6 — read-only view of the same brute-force
-    counter `is_login_locked`/`record_login_failure` maintain, so an admin
-    can see *why* a login is currently blocked (Login Diagnostics,
-    B1.10.6) instead of the lockout being an opaque black box only visible
-    from inside /auth/login's own logic.
+    """Roadmap B1.10.5 — read-only view of the same brute-force counter
+    `is_login_locked`/`record_login_failure` maintain, so an admin can see
+    this account's lockout state on User Detail instead of it being an
+    opaque black box only visible from inside /auth/login's own logic.
     """
     redis_client = get_redis()
     key = f"{_LOGIN_FAILURE_PREFIX}{username}"

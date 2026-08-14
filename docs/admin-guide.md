@@ -115,15 +115,6 @@ The current state model uses `ACTIVE` and `DISCONNECTED` as mutually exclusive s
 `GET /admin/sessions` accepts `search`, `session_status`, `worker_id`, `since`, `sort_by`, `sort_dir`, `offset`, and `limit` and returns the page plus global operational statistics and actual state-machine values. `GET /admin/sessions/{id}`, `GET /admin/users/{id}/sessions`, `POST /admin/sessions/{id}/{disconnect,isolate,restore,kill}` remain available. Disconnect and Isolate are available to both ADMIN and SECURITY_REVIEWER; Kill is ADMIN-only. Isolating a session always opens an Incident in addition to the `SESSION_ISOLATED` security event.
 </details>
 
-## Login Diagnostics (Roadmap B1.10.6)
-
-A read-only "why can't this user log in?" page: enter a username and it reports whether the account exists, is active, has MFA enrolled (and whether their role requires it), which auth source applies (local password vs. LDAP), whether LDAP is enabled system-wide, the current login-lockout status, and recent failed-login events for that username in the last hour — then a plain-language list of possible reasons. It never tests a password and never logs in as the user; if it finds no structural blocker, it says so rather than implying the password was checked. Available to ADMIN and SECURITY_REVIEWER.
-
-<details><summary>Underlying API</summary>
-
-`GET /admin/login-diagnostics?username=...` (`app/api/admin_login_diagnostics.py`).
-</details>
-
 ## Workers
 
 The Workers page is the operational inventory for every registered `BrowserNode`. It refreshes every 30 seconds and supports server-side hostname search, computed-health and scheduling-state filters, sorting, and pagination. The KPI row is calculated from the complete worker set and reports total/healthy/attention-needed workers, live sessions and capacity, plus average reported CPU and RAM. No worker, environment, IP address, or trend is fabricated when the platform has not recorded it.
