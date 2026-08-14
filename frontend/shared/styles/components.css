@@ -1159,6 +1159,69 @@ table.data-table a:hover { text-decoration: underline; }
 
 .table-toolbar select { min-height: 40px; min-width: 150px; padding: 0 var(--space-3); background: var(--color-white); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); font-family: var(--font-ui); }
 
+/* Shared table-filter controls. Keep native semantics while replacing the
+   browser-dependent presentation used by the operations pages. */
+.table-toolbar input,
+.table-toolbar select,
+.users-filter-grid select,
+.groups-filter-bar select,
+.sessions-filter-bar select,
+.policy-filters input,
+.policy-filters select,
+.worker-filters input,
+.worker-filters select,
+.download-filter-fields input {
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-white);
+  color: var(--color-text);
+  font: 500 .84rem/1 var(--font-ui);
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.table-toolbar select,
+.users-filter-grid select,
+.groups-filter-bar select,
+.sessions-filter-bar select,
+.policy-filters select,
+.worker-filters select {
+  appearance: none;
+  padding: 0 36px 0 12px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--color-text-muted) 50%), linear-gradient(135deg, var(--color-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.table-toolbar input:hover,
+.table-toolbar select:hover,
+.users-filter-grid select:hover,
+.groups-filter-bar select:hover,
+.sessions-filter-bar select:hover,
+.policy-filters input:hover,
+.policy-filters select:hover,
+.worker-filters input:hover,
+.worker-filters select:hover,
+.download-filter-fields input:hover { border-color: var(--color-border-strong); }
+.table-toolbar input:focus-visible,
+.table-toolbar select:focus-visible,
+.users-filter-grid select:focus-visible,
+.groups-filter-bar select:focus-visible,
+.sessions-filter-bar select:focus-visible,
+.policy-filters input:focus-visible,
+.policy-filters select:focus-visible,
+.worker-filters input:focus-visible,
+.worker-filters select:focus-visible,
+.download-filter-fields input:focus-visible,
+.users-search:focus-within,
+.search-input:focus-within {
+  outline: none;
+  border-color: var(--color-accent-strong);
+  box-shadow: 0 0 0 3px var(--surface-emphasis-bg);
+}
+.filter-active { border-color: color-mix(in srgb, var(--color-accent-strong) 55%, var(--color-border)) !important; background-color: var(--surface-emphasis-bg) !important; color: var(--color-accent-strong) !important; }
+.filter-reset { min-height: 40px; white-space: nowrap; }
+
 .tabs {
   display: flex;
   gap: var(--space-1);
@@ -1631,7 +1694,7 @@ table.data-table a:hover { text-decoration: underline; }
 /* Admin user management */
 .users-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .users-management-card { padding: var(--space-4); }
-.users-filter-grid { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
+.users-filter-grid { display: grid; grid-template-columns: minmax(240px, 1.5fr) repeat(5, minmax(125px, .55fr)) auto; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
 .users-filter-grid select { min-width: 135px; }
 .users-search { display: flex; align-items: center; gap: var(--space-2); min-width: 240px; flex: 1; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text-muted); }
 .users-search input { border: 0; padding-left: 0; box-shadow: none; }
@@ -1646,6 +1709,7 @@ table.data-table a:hover { text-decoration: underline; }
 .users-pagination > div { display: flex; align-items: center; gap: var(--space-2); }
 .users-pagination select { width: auto; }
 .create-user-card { margin-bottom: var(--space-5); }
+@media (max-width: 1350px) { .users-filter-grid { grid-template-columns: repeat(3, 1fr); }.users-search { grid-column: 1 / -1; } }
 @media (max-width: 1150px) { .users-kpis { grid-template-columns: repeat(3, 1fr); } .users-secondary { display: none; } }
 @media (max-width: 700px) { .users-kpis { grid-template-columns: 1fr; } .users-filter-grid > * { width: 100%; } .users-pagination { align-items: flex-start; flex-direction: column; } .users-pagination > div { flex-wrap: wrap; } }
 

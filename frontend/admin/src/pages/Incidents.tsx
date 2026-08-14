@@ -45,13 +45,13 @@ export function Incidents() {
       <TableToolbar
         filters={
           <>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+            <select className={statusFilter ? "filter-active" : ""} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
               <option value="">All statuses</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <select value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} aria-label="Filter by severity">
+            <select className={severityFilter ? "filter-active" : ""} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)} aria-label="Filter by severity">
               <option value="">All severities</option>
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>{s}</option>
@@ -60,6 +60,7 @@ export function Incidents() {
           </>
         }
         onRefresh={load}
+        actions={<button className="btn btn-secondary btn-sm filter-reset" disabled={!statusFilter && !severityFilter} onClick={() => { setStatusFilter(""); setSeverityFilter(""); }}>Clear filters</button>}
       />
 
       {incidents.length === 0 ? (
