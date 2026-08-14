@@ -1,17 +1,30 @@
 """Orphan-container reconciliation — periodically compares the Session
 Agent's real, running openrbi.managed containers against BrowserSession
-rows and terminates containers that have no corresponding active row,
-after seeing the same orphan on two consecutive poll cycles (docs/adr/
-0021). Same in-process-task pattern as app/core/node_poller.py/
-download_poller.py (single backend process for MVP 1).
+rows, in both directions (docs/adr/0021):
 
-Root cause this exists for (see docs/adr/0021 for the full writeup):
-integration tests that create a real session via
-app/services/sessions.create_session() (a real Docker container through
-the Session Agent) without ever calling terminate_session(), combined
-with tests/conftest.py's session-scoped cleanup fixture issuing a raw
-`DELETE FROM browser_sessions` instead of going through the real
-terminate path — the container is left running with no DB row at all.
+* Container -> missing/wrong row: a running container with no matching
+  active BrowserSession row is terminated.
+* Row -> missing container (the reverse): a BrowserSession row still in
+  an active-looking status (ACTIVE/DISCONNECTED/ISOLATING/ISOLATED) whose
+  container isn't among the Session Agent's live list is marked FAILED.
+  Typically a Docker/host restart that took every sandbox container down
+  without anything telling the DB — there's no persistence or restart
+  policy on these containers (session-agent/app/providers/docker_provider.py),
+  so a restart is a hard stop, not a resume.
+
+Both directions share the same poll cycle, grace-period logic, and
+audit-event principle — only the direction differs. Same in-process-task
+pattern as app/core/node_poller.py/download_poller.py (single backend
+process for MVP 1).
+
+Root cause the first (container -> row) direction exists for (see
+docs/adr/0021 for the full writeup): integration tests that create a real
+session via app/services/sessions.create_session() (a real Docker
+container through the Session Agent) without ever calling
+terminate_session(), combined with tests/conftest.py's session-scoped
+cleanup fixture issuing a raw `DELETE FROM browser_sessions` instead of
+going through the real terminate path — the container is left running
+with no DB row at all.
 """
 
 import asyncio
@@ -21,6 +34,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from app.api.display import discard_stale_connection
 from app.config import get_settings
 from app.core import session_agent_client
 from app.core.session_agent_client import SessionAgentError
@@ -45,6 +59,19 @@ _NOT_ORPHAN_STATUSES = (
     SessionStatus.TERMINATING,
 )
 
+# Statuses that plausibly should have a live container right now. QUEUED/
+# STARTING are excluded on purpose: a session between db.flush() and the
+# container actually existing is the normal, expected state during
+# creation, not evidence of anything lost (same race the grace period in
+# the other direction exists for — see docs/adr/0021 point 3). TERMINATING
+# is excluded too: it's already mid-teardown via the real path.
+_LOST_CANDIDATE_STATUSES = (
+    SessionStatus.ACTIVE,
+    SessionStatus.DISCONNECTED,
+    SessionStatus.ISOLATING,
+    SessionStatus.ISOLATED,
+)
+
 _task = None
 
 # session_id (str) -> number of consecutive cycles seen as an orphan.
@@ -53,6 +80,13 @@ _task = None
 # rule (worst case: one extra grace period before a real orphan is acted
 # on again, never a false positive from stale state).
 _candidates: dict[str, int] = {}
+
+# Same shape and same in-process-reset reasoning as _candidates above, but
+# tracked separately (not tagged into one dict) so the two directions can
+# never be confused with each other while debugging — a session id could
+# in theory only ever be a candidate in one direction at a time, but
+# keeping them apart makes that invariant visible rather than assumed.
+_lost_candidates: dict[str, int] = {}
 
 
 async def _reconcile_once() -> None:
@@ -134,7 +168,53 @@ async def _reconcile_once() -> None:
             )
             logger.warning("terminated orphaned container for session %s (%s)", session_id, reason)
 
-        if to_terminate:
+        # Reverse direction: BrowserSession rows that should have a live
+        # container right now but don't. Loaded independently of
+        # running_uuids above (that query is scoped to running containers
+        # only) — this one has to see every plausibly-active row regardless
+        # of what's running.
+        lost_result = await db.execute(
+            select(BrowserSession).where(BrowserSession.status.in_(_LOST_CANDIDATE_STATUSES))
+        )
+        lost_rows_by_id = {str(s.id): s for s in lost_result.scalars()}
+
+        lost_ids = {session_id for session_id in lost_rows_by_id if session_id not in running_ids_set}
+
+        for session_id in list(_lost_candidates):
+            if session_id not in lost_ids:
+                del _lost_candidates[session_id]
+
+        to_fail: list[str] = []
+        for session_id in lost_ids:
+            count = _lost_candidates.get(session_id, 0) + 1
+            _lost_candidates[session_id] = count
+            if count >= settings.orphan_reconcile_grace_cycles:
+                to_fail.append(session_id)
+
+        for session_id in to_fail:
+            del _lost_candidates[session_id]
+            session = lost_rows_by_id[session_id]
+            last_status = session.status
+            session.status = SessionStatus.FAILED
+            session.ended_at = datetime.now(UTC)
+            discard_stale_connection(session.id)
+
+            await record_security_event(
+                db,
+                SecurityEventType.SESSION_LOST_RECONCILED,
+                user_id=session.user_id,
+                session_id=session.id,
+                metadata={
+                    "session_id": session_id,
+                    "last_status": last_status.value,
+                    "reconciled_at": datetime.now(UTC).isoformat(),
+                },
+            )
+            logger.warning(
+                "session %s marked FAILED: no matching container found (was %s)", session_id, last_status.value
+            )
+
+        if to_terminate or to_fail:
             await db.commit()
 
 

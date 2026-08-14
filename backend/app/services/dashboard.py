@@ -283,6 +283,23 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
             )
         )
 
+    lost_count = await db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type == SecurityEventType.SESSION_LOST_RECONCILED,
+            SecurityEvent.created_at >= since_orphans,
+        )
+    ) or 0
+    if lost_count:
+        warnings.append(
+            Warning(
+                kind="lost_sessions",
+                message=(
+                    f"{lost_count} session(s) auto-reconciled as lost (container missing) in the last "
+                    f"{int(_ORPHAN_RECONCILED_WARNING_WINDOW.total_seconds() / 3600)}h"
+                ),
+            )
+        )
+
     history = await metrics_history.session_history(db, range_key=range_key, now=now)
 
     return Dashboard(

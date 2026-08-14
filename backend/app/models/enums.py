@@ -217,6 +217,14 @@ class SecurityEventType(str, enum.Enum):
     # consecutive poll cycles before being terminated automatically.
     ORPHAN_SESSION_RECONCILED = "ORPHAN_SESSION_RECONCILED"
 
+    # Reverse direction of the above (app/core/orphan_reconciler.py): a
+    # BrowserSession row still in ACTIVE/DISCONNECTED/ISOLATING/ISOLATED —
+    # i.e. one that should have a running openrbi.managed container — whose
+    # container isn't among the Session Agent's live list, confirmed across
+    # two consecutive poll cycles. Typically a Docker/host restart that took
+    # every sandbox container down without anything telling the DB.
+    SESSION_LOST_RECONCILED = "SESSION_LOST_RECONCILED"
+
     # Quarantine/downloads retention (app/core/quarantine_retention.py):
     # automatic deletion of a QuarantineFile's staged bytes (and scrubbing
     # of its descriptive metadata) once its retention window has passed —

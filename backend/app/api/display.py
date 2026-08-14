@@ -44,6 +44,16 @@ async def force_disconnect(session_id: uuid.UUID) -> bool:
     return True
 
 
+def discard_stale_connection(session_id: uuid.UUID) -> None:
+    """Drops a registry entry without trying to gracefully close it first —
+    for app/core/orphan_reconciler.py's lost-session direction, where the
+    entry (if any) belongs to a container that's already gone, so there is
+    no live peer left to send a close frame to. force_disconnect() assumes
+    a reachable peer and isn't a fit here.
+    """
+    _active_connections.pop(session_id, None)
+
+
 @router.websocket("/{session_id}/ws")
 async def display_ws(
     websocket: WebSocket,
