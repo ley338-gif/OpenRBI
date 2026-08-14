@@ -17,6 +17,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ldap_dn import normalize_dn
 from app.models.enums import SecurityEventType
 from app.models.role import Role
 from app.models.user import User
@@ -26,17 +27,23 @@ _ROLE_PRECEDENCE = ("ADMIN", "SECURITY_REVIEWER", "USER")
 
 
 def resolve_role_from_ldap_groups(group_dns: list[str], group_role_mapping: dict[str, str]) -> str:
-    """DN comparison is exact-string, case-sensitive — matching the DN
-    exactly as configured in the effective group->role mapping. A real DN
-    case-insensitivity implementation would need to parse and normalize
-    each RDN component per its attribute type's matching rule; not done
-    here, documented as a known limitation (docs/admin-guide.md) rather
-    than silently assumed correct.
+    """DN comparison is case-insensitive (app/core/ldap_dn.py), matching
+    RFC 4514/4517: RDN attribute type names and the caseIgnoreMatch-typed
+    attribute values found in real-world DNs (cn, ou, dc, o, uid, ...) are
+    not case-sensitive, so a group configured as
+    "CN=OpenRBI-Admins,OU=Groups,DC=Example,DC=ORG" correctly matches a
+    directory returning "cn=openrbi-admins,ou=groups,dc=example,dc=org"
+    for the identical group — AD in particular is known to normalize case
+    on its own, so an exact-string comparison here could silently never
+    fire despite an admin having configured what looks like the right DN.
 
     No matching group -> USER, the least-privileged role, never an
     implicit elevated default.
     """
-    mapped_roles = {group_role_mapping[dn] for dn in group_dns if dn in group_role_mapping}
+    normalized_mapping = {normalize_dn(dn): role for dn, role in group_role_mapping.items()}
+    mapped_roles = {
+        normalized_mapping[normalize_dn(dn)] for dn in group_dns if normalize_dn(dn) in normalized_mapping
+    }
     for role_name in _ROLE_PRECEDENCE:
         if role_name in mapped_roles:
             return role_name
