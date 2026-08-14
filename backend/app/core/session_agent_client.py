@@ -75,6 +75,17 @@ async def get_node_status() -> NodeStatus:
     )
 
 
+async def list_active_sandboxes() -> list[str]:
+    """Session IDs of every currently running openrbi.managed container on
+    the node — used by app/core/orphan_reconciler.py to reconcile against
+    BrowserSession rows. Fails closed like every other call here: a
+    SessionAgentError propagates rather than being treated as "no
+    containers".
+    """
+    response = await _request("GET", "/v1/sandboxes")
+    return response.json()
+
+
 async def create_sandbox(
     session_id: str,
     *,

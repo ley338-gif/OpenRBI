@@ -189,3 +189,9 @@ class SecurityEventType(str, enum.Enum):
     # unchanged and distinct.
     ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
     ACCOUNT_UNLOCKED = "ACCOUNT_UNLOCKED"
+
+    # Orphan-container reconciliation (app/core/orphan_reconciler.py): a
+    # running openrbi.managed container whose BrowserSession row is either
+    # missing or already TERMINATED/FAILED, confirmed across two
+    # consecutive poll cycles before being terminated automatically.
+    ORPHAN_SESSION_RECONCILED = "ORPHAN_SESSION_RECONCILED"

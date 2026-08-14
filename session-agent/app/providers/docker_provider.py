@@ -339,6 +339,23 @@ class DockerSandboxProvider:
         containers = self._client.containers.list(filters={"label": f"{_MANAGED_LABEL}=true"})
         return len(containers)
 
+    async def list_active_session_ids(self) -> list[str]:
+        return await asyncio.to_thread(self._list_active_session_ids_sync)
+
+    def _list_active_session_ids_sync(self) -> list[str]:
+        """The session-id half of count_active_sessions() (kept as a
+        separate call, not a change to that method's return shape, so
+        /v1/nodes/self's existing int contract is untouched) — used by the
+        control plane's orphan reconciliation job to compare running
+        containers against BrowserSession rows.
+        """
+        containers = self._client.containers.list(filters={"label": f"{_MANAGED_LABEL}=true"})
+        return [
+            c.labels[_SESSION_LABEL]
+            for c in containers
+            if _SESSION_LABEL in c.labels
+        ]
+
     async def runtime_version(self) -> str:
         return await asyncio.to_thread(lambda: self._client.version().get("Version", "unknown"))
 
