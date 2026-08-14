@@ -27,6 +27,8 @@ async def create_sandbox(session_id: str, payload: CreateSandboxRequest) -> dict
         pid_limit=payload.pid_limit or settings.default_pid_limit,
         disk_limit_mb=payload.disk_limit_mb or settings.default_disk_limit_mb,
         network_name=settings.sandbox_network_name,
+        screen_width=payload.screen_width or settings.default_screen_width,
+        screen_height=payload.screen_height or settings.default_screen_height,
         command=settings.sandbox_command,
     )
     try:

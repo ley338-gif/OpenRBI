@@ -19,6 +19,7 @@ from app.models.enums import (
 )
 from app.models.incident import Incident
 from app.models.user import User
+from app.services.policy_engine import resolve_session_resolution
 from app.services.security_events import record_security_event
 
 
@@ -149,8 +150,15 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
         )
 
     node = await select_node(db)  # raises NoCapacityError, propagates as 503
+    resolution = await resolve_session_resolution(db, user.id)
 
-    session = BrowserSession(user_id=user.id, node_id=node.id, status=SessionStatus.QUEUED)
+    session = BrowserSession(
+        user_id=user.id,
+        node_id=node.id,
+        status=SessionStatus.QUEUED,
+        screen_width=resolution.width,
+        screen_height=resolution.height,
+    )
     db.add(session)
     await db.flush()  # assigns session.id
 
@@ -164,6 +172,8 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
             ram_limit_mb=session.ram_limit_mb,
             pid_limit=session.pid_limit,
             disk_limit_mb=session.disk_limit_mb,
+            screen_width=session.screen_width,
+            screen_height=session.screen_height,
         )
         await session_agent_client.start_sandbox(str(session.id))
         await _wait_for_display_ready(str(session.id))

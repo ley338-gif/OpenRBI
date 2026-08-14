@@ -14,13 +14,15 @@ import { ApiError } from "@shared/api/client";
 const TERMINAL = new Set<SessionStatus>(["TERMINATED", "FAILED"]);
 const CONNECTABLE = new Set<SessionStatus>(["ACTIVE", "DISCONNECTED"]);
 
-// Matches the sandbox's actual Xvfb resolution (1280x800,
-// docker/browser/entrypoint.sh) exactly.
-const SANDBOX_WIDTH = 1280;
-const SANDBOX_HEIGHT = 800;
-const SANDBOX_ASPECT = SANDBOX_WIDTH / SANDBOX_HEIGHT;
+// Fallback only for the brief window before a session response has
+// arrived — the real resolution comes from the session itself
+// (session.screen_width/height), which reflects whatever the user's
+// SESSION policy resolved to server-side (docs/policies.md), not a fixed
+// sandbox constant anymore.
+const DEFAULT_SANDBOX_WIDTH = 1280;
+const DEFAULT_SANDBOX_HEIGHT = 800;
 
-/** Largest box of SANDBOX_ASPECT that fits inside (availW, availH) without
+/** Largest box of `aspect` that fits inside (availW, availH) without
  * overflowing either dimension — a plain "contain fit", computed in JS
  * instead of via CSS aspect-ratio because that property only derives ONE
  * dimension from the other; combined with a max-height clamp it produced
@@ -28,12 +30,12 @@ const SANDBOX_ASPECT = SANDBOX_WIDTH / SANDBOX_HEIGHT;
  * padded with black bars on the sides instead of actually filling it (a
  * real issue reported from a live session, not a hypothetical).
  */
-function containFit(availW: number, availH: number): { width: number; height: number } {
+function containFit(availW: number, availH: number, aspect: number): { width: number; height: number } {
   if (availW <= 0 || availH <= 0) return { width: 0, height: 0 };
-  if (availW / availH > SANDBOX_ASPECT) {
-    return { width: Math.floor(availH * SANDBOX_ASPECT), height: Math.floor(availH) };
+  if (availW / availH > aspect) {
+    return { width: Math.floor(availH * aspect), height: Math.floor(availH) };
   }
-  return { width: Math.floor(availW), height: Math.floor(availW / SANDBOX_ASPECT) };
+  return { width: Math.floor(availW), height: Math.floor(availW / aspect) };
 }
 
 function UploadPanel({ sessionId }: { sessionId: string }) {
@@ -98,6 +100,9 @@ export function SecureBrowser() {
   const pollRef = useRef<number | null>(null);
   const liveRef = useRef<number | null>(null);
   const [boxSize, setBoxSize] = useState({ width: 960, height: 600 });
+  const sandboxWidth = session?.screen_width ?? DEFAULT_SANDBOX_WIDTH;
+  const sandboxHeight = session?.screen_height ?? DEFAULT_SANDBOX_HEIGHT;
+  const sandboxAspect = sandboxWidth / sandboxHeight;
 
   // Recompute the viewer's exact pixel size whenever the card around it
   // resizes, so "Fit" always matches the sandbox's aspect ratio exactly
@@ -113,14 +118,14 @@ export function SecureBrowser() {
       const entry = entries[0];
       if (!entry) return;
       if (fitMode === "native") {
-        setBoxSize({ width: SANDBOX_WIDTH, height: SANDBOX_HEIGHT });
+        setBoxSize({ width: sandboxWidth, height: sandboxHeight });
       } else {
-        setBoxSize(containFit(entry.contentRect.width, entry.contentRect.height));
+        setBoxSize(containFit(entry.contentRect.width, entry.contentRect.height, sandboxAspect));
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [session, fitMode]);
+  }, [session, fitMode, sandboxWidth, sandboxHeight, sandboxAspect]);
 
   useEffect(() => {
     if (rfbRef.current) rfbRef.current.scaleViewport = fitMode === "fit";
@@ -206,9 +211,12 @@ export function SecureBrowser() {
       // rendering it at the sandbox's native resolution in a corner of a
       // much larger container — real feedback: without this, most of the
       // card was empty black space around a small fixed-size canvas. Not
-      // resizeSession: the sandbox's Xvfb resolution is fixed server-side,
-      // so asking the server to resize would just fail silently; scaling
-      // the client-side canvas is the only real option here.
+      // resizeSession: the sandbox's Xvfb resolution is fixed for the
+      // lifetime of a session (set once at creation from the user's
+      // SESSION policy, docs/policies.md) — there's no live resize path,
+      // so asking the server to resize mid-session would just fail
+      // silently; scaling the client-side canvas is the only real option
+      // here.
       rfb.scaleViewport = fitMode === "fit";
       rfb.addEventListener("connect", () => {
         setRfbConnected(true);

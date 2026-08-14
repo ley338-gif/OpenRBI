@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     default_ram_limit_mb: int = 2048
     default_pid_limit: int = 512
     default_disk_limit_mb: int = 2048
+    default_screen_width: int = 1280
+    default_screen_height: int = 800
 
     @field_validator("api_token")
     @classmethod

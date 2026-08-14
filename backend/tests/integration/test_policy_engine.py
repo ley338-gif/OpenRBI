@@ -19,7 +19,13 @@ from app.services.policies import (
     publish_version,
     rollback,
 )
-from app.services.policy_engine import FileDecisionInput, evaluate_file_action
+from app.services.policy_engine import (
+    DEFAULT_SCREEN_HEIGHT,
+    DEFAULT_SCREEN_WIDTH,
+    FileDecisionInput,
+    evaluate_file_action,
+    resolve_session_resolution,
+)
 
 from tests.conftest import PREFIX, make_user
 
@@ -41,6 +47,14 @@ async def _make_published_mime_policy(db, *, actor_id, action: str, pattern: str
         file_rules=[{"rule_type": "MIME", "match_pattern": pattern, "action": action}],
         actor_id=actor_id,
     )
+    await publish_version(db, policy, version, actor_id=actor_id)
+    await db.commit()
+    return policy
+
+
+async def _make_published_session_policy(db, *, actor_id, content: dict):
+    policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="SESSION", actor_id=actor_id)
+    version = await create_draft_version(db, policy, content=content, file_rules=[], actor_id=actor_id)
     await publish_version(db, policy, version, actor_id=actor_id)
     await db.commit()
     return policy
@@ -147,3 +161,104 @@ async def test_publish_and_rollback_generate_audit_events(db):
         )
     )
     assert result.scalars().first() is not None
+
+
+@pytest.mark.asyncio
+async def test_session_resolution_falls_back_to_default_with_no_policy(db):
+    user, _ = await make_user(db, role_name="USER")
+    resolution = await resolve_session_resolution(db, user.id)
+    assert resolution.width == DEFAULT_SCREEN_WIDTH
+    assert resolution.height == DEFAULT_SCREEN_HEIGHT
+
+
+@pytest.mark.asyncio
+async def test_session_resolution_reads_published_session_policy(db):
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_session_policy(
+        db, actor_id=user.id, content={"screen_width": 1920, "screen_height": 1080}
+    )
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    resolution = await resolve_session_resolution(db, user.id)
+    assert resolution.width == 1920
+    assert resolution.height == 1080
+
+
+@pytest.mark.asyncio
+async def test_session_resolution_ignores_malformed_content(db):
+    """A policy published with no resolution set (content={}), or with a
+    non-numeric value someone hand-edited in, must never break session
+    creation — it's silently skipped, falling back to the default exactly
+    as if the policy didn't exist.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_session_policy(db, actor_id=user.id, content={"screen_width": "not-a-number"})
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    resolution = await resolve_session_resolution(db, user.id)
+    assert resolution.width == DEFAULT_SCREEN_WIDTH
+    assert resolution.height == DEFAULT_SCREEN_HEIGHT
+
+
+@pytest.mark.asyncio
+async def test_session_resolution_conflict_picks_smallest_area(db):
+    """Two groups on the same user disagree on resolution — the smaller
+    pixel area wins (docs/policies.md's conflict model for SESSION
+    policies), regardless of which group's policy is evaluated first.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    large_group = await _make_group(db)
+    small_group = await _make_group(db)
+    db.add_all([
+        UserGroup(user_id=user.id, group_id=large_group.id),
+        UserGroup(user_id=user.id, group_id=small_group.id),
+    ])
+    await db.commit()
+
+    large_policy = await _make_published_session_policy(
+        db, actor_id=user.id, content={"screen_width": 1920, "screen_height": 1080}
+    )
+    small_policy = await _make_published_session_policy(
+        db, actor_id=user.id, content={"screen_width": 1024, "screen_height": 768}
+    )
+    await attach_policy_to_group(db, group_id=large_group.id, policy_id=large_policy.id)
+    await attach_policy_to_group(db, group_id=small_group.id, policy_id=small_policy.id)
+
+    resolution = await resolve_session_resolution(db, user.id)
+    assert resolution.width == 1024
+    assert resolution.height == 768
+
+
+@pytest.mark.asyncio
+async def test_create_session_applies_resolved_policy_resolution(db):
+    """End-to-end through the real create_session orchestration (against the
+    real, already-running Session Agent — never mocked, matching this
+    suite's convention): the BrowserSession row created for a user in a
+    group with a published SESSION policy carries that policy's resolution,
+    not the sandbox default.
+    """
+    from app.services.sessions import create_session as create_session_service
+
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_session_policy(
+        db, actor_id=user.id, content={"screen_width": 1024, "screen_height": 768}
+    )
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    session = await create_session_service(db, user)
+    await db.commit()
+
+    assert session.screen_width == 1024
+    assert session.screen_height == 768

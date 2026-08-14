@@ -76,7 +76,14 @@ async def get_node_status() -> NodeStatus:
 
 
 async def create_sandbox(
-    session_id: str, *, cpu_limit: float, ram_limit_mb: int, pid_limit: int, disk_limit_mb: int
+    session_id: str,
+    *,
+    cpu_limit: float,
+    ram_limit_mb: int,
+    pid_limit: int,
+    disk_limit_mb: int,
+    screen_width: int,
+    screen_height: int,
 ) -> None:
     await _request(
         "POST",
@@ -87,6 +94,8 @@ async def create_sandbox(
             "ram_limit_mb": ram_limit_mb,
             "pid_limit": pid_limit,
             "disk_limit_mb": disk_limit_mb,
+            "screen_width": screen_width,
+            "screen_height": screen_height,
         },
     )
 

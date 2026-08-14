@@ -14,6 +14,8 @@ class SessionResponse(BaseModel):
     ram_limit_mb: int
     pid_limit: int
     disk_limit_mb: int
+    screen_width: int
+    screen_height: int
     created_at: datetime
     started_at: datetime | None
     ended_at: datetime | None
@@ -30,6 +32,8 @@ class SessionResponse(BaseModel):
             ram_limit_mb=session.ram_limit_mb,
             pid_limit=session.pid_limit,
             disk_limit_mb=session.disk_limit_mb,
+            screen_width=session.screen_width,
+            screen_height=session.screen_height,
             created_at=session.created_at,
             started_at=session.started_at,
             ended_at=session.ended_at,

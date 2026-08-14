@@ -16,6 +16,12 @@ interface RuleRow {
   priority: number;
 }
 
+// Matches docker/browser/entrypoint.sh's own fallback defaults — the
+// values a session gets when no SESSION policy (or none with valid
+// resolution content) applies to a user.
+const DEFAULT_SCREEN_WIDTH = 1280;
+const DEFAULT_SCREEN_HEIGHT = 800;
+
 /**
  * The primary UX for the existing policy engine (section 28) — a
  * structured rule builder, not a JSON textbox. Only MIME/SOURCE rules are
@@ -30,6 +36,8 @@ export function PolicyDetail() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<RuleRow[]>([]);
+  const [screenWidth, setScreenWidth] = useState(DEFAULT_SCREEN_WIDTH);
+  const [screenHeight, setScreenHeight] = useState(DEFAULT_SCREEN_HEIGHT);
   const [busy, setBusy] = useState(false);
   const [pendingRollback, setPendingRollback] = useState<{ id: string; versionNumber: number } | null>(null);
 
@@ -44,6 +52,7 @@ export function PolicyDetail() {
 
   const draft = policy.versions.find((v) => v.status === "DRAFT");
   const sorted = [...policy.versions].sort((a, b) => b.version_number - a.version_number);
+  const isSessionPolicy = policy.policy_type === "SESSION";
 
   function startEditing() {
     setRows(
@@ -51,17 +60,24 @@ export function PolicyDetail() {
         ? draft.file_rules.map((r) => ({ rule_type: r.rule_type, match_pattern: r.match_pattern, action: r.action, priority: r.priority }))
         : [{ rule_type: "MIME", match_pattern: "", action: "QUARANTINE", priority: 100 }],
     );
+    const content = draft?.content ?? {};
+    setScreenWidth(typeof content.screen_width === "number" ? content.screen_width : DEFAULT_SCREEN_WIDTH);
+    setScreenHeight(typeof content.screen_height === "number" ? content.screen_height : DEFAULT_SCREEN_HEIGHT);
     setEditing(true);
   }
 
   async function saveDraft() {
     if (!id) return;
     setBusy(true);
+    // Every other policy_type's `content` stays {} — resolution is the
+    // only field the engine reads today (app/services/policy_engine.py's
+    // resolve_session_resolution), and only for SESSION-type policies.
+    const content = isSessionPolicy ? { screen_width: screenWidth, screen_height: screenHeight } : {};
     try {
       if (draft) {
-        await adminApi.updateVersion(id, draft.id, { content: {}, file_rules: rows });
+        await adminApi.updateVersion(id, draft.id, { content, file_rules: rows });
       } else {
-        await adminApi.createVersion(id, { content: {}, file_rules: rows });
+        await adminApi.createVersion(id, { content, file_rules: rows });
       }
       notify("Draft saved");
       setEditing(false);
@@ -127,6 +143,14 @@ export function PolicyDetail() {
 
         {editing && (
           <div style={{ marginTop: "16px" }}>
+            {isSessionPolicy && (
+              <ResolutionEditor
+                width={screenWidth}
+                height={screenHeight}
+                setWidth={setScreenWidth}
+                setHeight={setScreenHeight}
+              />
+            )}
             <RuleEditor rows={rows} setRows={setRows} />
             <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
               <button type="button" className="btn btn-primary" onClick={() => void saveDraft()} disabled={busy}>
@@ -167,6 +191,16 @@ export function PolicyDetail() {
               )}
             </div>
           </div>
+          {isSessionPolicy && (
+            <p className="text-muted" style={{ fontSize: "0.85rem", marginBottom: "8px" }}>
+              Screen resolution:{" "}
+              {typeof v.content.screen_width === "number" && typeof v.content.screen_height === "number" ? (
+                <span className="mono">{v.content.screen_width} × {v.content.screen_height}</span>
+              ) : (
+                <span>not set — sessions fall back to the sandbox default ({DEFAULT_SCREEN_WIDTH} × {DEFAULT_SCREEN_HEIGHT})</span>
+              )}
+            </p>
+          )}
           {v.file_rules.length === 0 ? (
             <EmptyState title="No file rules in this version" />
           ) : (
@@ -204,6 +238,56 @@ export function PolicyDetail() {
           onCancel={() => setPendingRollback(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Only rendered for SESSION-type policies. Sets the Xvfb/noVNC resolution
+ * new sessions get when this policy's group applies to a user
+ * (app/services/policy_engine.py's resolve_session_resolution) — the only
+ * runtime effect a SESSION policy has today.
+ */
+function ResolutionEditor({
+  width,
+  height,
+  setWidth,
+  setHeight,
+}: {
+  width: number;
+  height: number;
+  setWidth: (v: number) => void;
+  setHeight: (v: number) => void;
+}) {
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <label className="form-field-label" style={{ display: "block", marginBottom: "4px" }}>Screen resolution</label>
+      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <input
+          type="number"
+          min={640}
+          max={3840}
+          value={width}
+          onChange={(e) => setWidth(Number(e.target.value))}
+          style={{ width: "90px" }}
+          aria-label="Screen width"
+        />
+        <span>×</span>
+        <input
+          type="number"
+          min={480}
+          max={2160}
+          value={height}
+          onChange={(e) => setHeight(Number(e.target.value))}
+          style={{ width: "90px" }}
+          aria-label="Screen height"
+        />
+        <span className="text-muted" style={{ fontSize: "0.85rem" }}>pixels</span>
+      </div>
+      <p className="hint">
+        Applied to every new session started by a user in a group this policy is attached to. Doesn't affect
+        sessions already running.
+      </p>
     </div>
   );
 }

@@ -304,6 +304,38 @@ test.describe("Admin Portal", () => {
     await expect(page.getByRole("cell", { name: groupName })).toHaveCount(0);
   });
 
+  test("SESSION policy resolution: create, set, publish, and see it reflected in the policy list", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+    await expect(page.getByRole("heading", { name: "Policies" })).toBeVisible();
+
+    const policyName = `e2e-resolution-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const modal = page.locator(".create-policy-modal");
+    await modal.getByLabel("Name").fill(policyName);
+    await modal.getByLabel("Type").selectOption("SESSION");
+    await expect(page.getByText(/sets the screen resolution/i)).toBeVisible();
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+
+    await page.getByRole("link", { name: policyName }).click();
+    await expect(page.getByRole("heading", { name: policyName })).toBeVisible();
+
+    await page.getByRole("button", { name: "New draft version" }).click();
+    await page.getByLabel("Screen width").fill("1920");
+    await page.getByLabel("Screen height").fill("1080");
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("1920 × 1080")).toBeVisible();
+
+    await page.getByRole("button", { name: "Publish" }).click();
+    await expect(page.locator(".badge", { hasText: "PUBLISHED" }).first()).toBeVisible();
+
+    // Back on the list, the row-level hint must reflect that SESSION is now
+    // an enforced type, not the old "stored label only" placeholder text.
+    await page.getByRole("link", { name: "← Policies" }).click();
+    const row = page.getByRole("row", { name: new RegExp(policyName) });
+    await expect(row.getByText("Enforced screen resolution")).toBeVisible();
+  });
+
   test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {
     // Roadmap B1.8 — no fabricated defaults: the form must reflect
     // whatever GET /admin/ldap/config actually returns, and the password

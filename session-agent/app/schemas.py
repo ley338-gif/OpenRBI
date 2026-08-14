@@ -8,6 +8,8 @@ class CreateSandboxRequest(BaseModel):
     pid_limit: int | None = None
     disk_limit_mb: int | None = None
     image: str | None = None
+    screen_width: int | None = None
+    screen_height: int | None = None
 
 
 class StatusResponse(BaseModel):

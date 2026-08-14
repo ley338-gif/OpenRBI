@@ -159,6 +159,21 @@ async def _cleanup_test_data():
                  "(SELECT id FROM users WHERE username LIKE :prefix)"),
             {"prefix": f"{PREFIX}%"},
         )
+        # group_policies has no ON DELETE CASCADE on either FK (deliberately
+        # — see app/models/policy.py) — was missing here entirely, so any
+        # test attaching a policy to a group (e.g. test_policy_engine.py)
+        # left a dangling row that made the DELETE FROM groups/policies
+        # below fail with a FK violation at session end. Matches on either
+        # side's prefix since a group and its attached policy don't
+        # necessarily share exactly the same test-generated name.
+        await db.execute(
+            text(
+                "DELETE FROM group_policies WHERE "
+                "group_id IN (SELECT id FROM groups WHERE name LIKE :prefix) "
+                "OR policy_id IN (SELECT id FROM policies WHERE name LIKE :prefix)"
+            ),
+            {"prefix": f"{PREFIX}%"},
+        )
         await db.execute(text("DELETE FROM groups WHERE name LIKE :prefix"), {"prefix": f"{PREFIX}%"})
         await db.execute(
             text("DELETE FROM file_policy_rules WHERE policy_version_id IN "
