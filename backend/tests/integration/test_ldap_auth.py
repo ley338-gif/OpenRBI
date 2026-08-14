@@ -56,9 +56,7 @@ def _config_from_env(**overrides) -> LdapConnectionConfig:
 async def test_correct_credentials_succeed():
     provider = LdapAuthProvider(_config_from_env())
     result = await provider.authenticate(None, TEST_USERNAME, TEST_PASSWORD)
-    # MUTATION for the CI red/green proof (docs/development.md's CI
-    # section) — deliberately inverted, temporary.
-    assert result.success is False
+    assert result.success is True
     assert result.username == TEST_USERNAME
 
 
