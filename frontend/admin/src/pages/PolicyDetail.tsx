@@ -59,6 +59,14 @@ export function PolicyDetail() {
   const currentPublished = policy.versions.find((v) => v.id === policy.current_version_id);
   const sorted = [...policy.versions].sort((a, b) => b.version_number - a.version_number);
   const isSessionPolicy = policy.policy_type === "SESSION";
+  // Only these two rule_type values are ever read by
+  // app/services/policy_engine.py's evaluate_file_action, but the query
+  // that reads them does not filter by the parent Policy's policy_type —
+  // so the editor itself must be the thing that keeps a NETWORK/CLIPBOARD/
+  // BROWSER/DOWNLOADS/UPLOADS-typed policy from silently acquiring
+  // enforced file rules a rule-type badge wouldn't warn about.
+  const isFileRulePolicy = policy.policy_type === "MIME" || policy.policy_type === "SOURCE";
+  const isNotEnforcedPolicy = !isSessionPolicy && !isFileRulePolicy;
 
   function startEditing() {
     // A brand-new draft starts from whatever is currently published (not
@@ -217,11 +225,19 @@ export function PolicyDetail() {
         <PageHeader
           title={policy.name}
           subtitle={
-            <>
-              Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
-              multiple matching rules apply across a user's groups.
-              {policy.description && <> · {policy.description}</>}
-            </>
+            isNotEnforcedPolicy ? (
+              <>
+                Type: {policy.policy_type} <StatusBadge value="NOT ENFORCED" /> · stored for future enforcement, no
+                effect on any running or new session today.
+                {policy.description && <> · {policy.description}</>}
+              </>
+            ) : (
+              <>
+                Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
+                multiple matching rules apply across a user's groups.
+                {policy.description && <> · {policy.description}</>}
+              </>
+            )
           }
           actions={
             <button type="button" className="btn btn-secondary btn-sm" onClick={startEditingDetails}>
@@ -270,7 +286,26 @@ export function PolicyDetail() {
                 setHeight={setScreenHeight}
               />
             )}
-            <RuleEditor rows={rows} setRows={setRows} />
+            {isFileRulePolicy && (
+              <p className="hint" style={{ marginBottom: "12px" }}>
+                A user can belong to multiple groups. If another group's published policy also matches the same
+                file with a more restrictive action, that action wins — DENY beats QUARANTINE beats AUTO_RELEASE —
+                regardless of which rule is more specific. See{" "}
+                <a href="/docs/policies.md#conflict-model-deterministic">the conflict model</a> before relying on an
+                AUTO_RELEASE rule for a user who may be in other groups too.
+              </p>
+            )}
+            {isFileRulePolicy && <RuleEditor rows={rows} setRows={setRows} />}
+            {isNotEnforcedPolicy && (
+              <EmptyState title="Nothing to configure yet">
+                <p>
+                  {policy.policy_type} policies are stored but currently have no runtime effect — nothing reads them
+                  when a session or file decision is made (docs/policies.md). This version can still be versioned
+                  and published for record-keeping, but there is no rule editor here because there is nothing yet
+                  for a rule to control.
+                </p>
+              </EmptyState>
+            )}
             <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
               <button type="button" className="btn btn-primary" onClick={() => void saveDraft()} disabled={busy}>
                 Save draft
