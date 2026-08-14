@@ -29,6 +29,7 @@ const WARNING = new Set([
   "PENDING REVIEW",
   "WAITING",
   "WARNING",
+  "NOT ENFORCED",
 ]);
 const INFO = new Set(["QUEUED", "STARTING", "NEW", "PENDING", "DRAFT"]);
 
