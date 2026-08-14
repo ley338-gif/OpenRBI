@@ -182,7 +182,7 @@ export interface UserSummaryDto {
   role: Role;
   is_active: boolean;
   mfa_enabled: boolean;
-  groups: string[];
+  groups: GroupRefDto[];
   created_at: string;
   auth_source: "LOCAL" | "LDAP";
   last_login_at: string | null;
@@ -232,9 +232,15 @@ export interface PolicyRefDto {
   policy_type: PolicyType;
 }
 
+export interface UserRefDto {
+  id: string;
+  username: string;
+}
+
 export interface GroupDetailDto extends GroupSummaryDto {
   created_at: string;
   policies: PolicyRefDto[];
+  members: UserRefDto[];
 }
 
 export interface PolicySummaryDto {

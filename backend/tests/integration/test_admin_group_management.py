@@ -80,7 +80,7 @@ async def test_group_detail_returns_404_for_unknown_group(db, client):
 
 @pytest.mark.asyncio
 async def test_group_detail_shows_real_members_and_policies(db, client):
-    """The Group Detail page (previously nonexistent — there was no
+    """The group assignment modal (previously nonexistent — there was no
     /admin/groups/{id} endpoint at all, and no UI anywhere to attach a
     policy to a group or see its members) must reflect real data: an
     actual member count from a real membership, and actual attached
@@ -147,3 +147,75 @@ async def test_group_management_endpoints_are_admin_only(db, client):
     login = await client.post("/auth/login", json={"username": user.username, "password": password})
     cookie = login.cookies.get("openrbi_session")
     assert (await client.get(f"/admin/groups/{uuid4()}", cookies={"openrbi_session": cookie})).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_add_and_remove_group_member_single_relationship_endpoints(db, client):
+    """The granular member add/remove endpoints (as opposed to PUT
+    /admin/users/{id}/groups, which wholesale-replaces a user's entire
+    group set) are what the group assignment modal and User Detail's own
+    Groups panel both call — added specifically because neither existed
+    before and PUT's replace-everything semantics can't safely back a
+    single "add this one user" action without first knowing every other
+    group that user is already in.
+    """
+    admin, password = await make_user(db, role_name="ADMIN")
+    member, _ = await make_user(db, role_name="USER")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+
+    group_resp = await client.post(
+        "/admin/groups",
+        json={"name": f"{PREFIX}group_{uuid4().hex[:8]}", "description": None},
+        cookies={"openrbi_session": cookie},
+    )
+    group_id = group_resp.json()["id"]
+
+    add = await client.post(
+        f"/admin/groups/{group_id}/members/{member.id}", cookies={"openrbi_session": cookie}
+    )
+    assert add.status_code == 204, add.text
+
+    detail = await client.get(f"/admin/groups/{group_id}", cookies={"openrbi_session": cookie})
+    assert detail.json()["member_count"] == 1
+    assert detail.json()["members"] == [{"id": str(member.id), "username": member.username}]
+
+    # Idempotent: adding the same member again is a clean no-op, not a 409.
+    add_again = await client.post(
+        f"/admin/groups/{group_id}/members/{member.id}", cookies={"openrbi_session": cookie}
+    )
+    assert add_again.status_code == 204
+    assert (await client.get(f"/admin/groups/{group_id}", cookies={"openrbi_session": cookie})).json()["member_count"] == 1
+
+    remove = await client.delete(
+        f"/admin/groups/{group_id}/members/{member.id}", cookies={"openrbi_session": cookie}
+    )
+    assert remove.status_code == 204
+    detail_after = await client.get(f"/admin/groups/{group_id}", cookies={"openrbi_session": cookie})
+    assert detail_after.json()["members"] == []
+
+    # Removing a membership that doesn't exist is also a clean no-op.
+    remove_again = await client.delete(
+        f"/admin/groups/{group_id}/members/{member.id}", cookies={"openrbi_session": cookie}
+    )
+    assert remove_again.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_add_group_member_requires_admin(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    member, _ = await make_user(db, role_name="USER")
+    reviewer, reviewer_password = await make_user(db, role_name="SECURITY_REVIEWER")
+    admin_cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    reviewer_cookie = await login_with_mfa_enrollment(client, reviewer.username, reviewer_password)
+
+    group_resp = await client.post(
+        "/admin/groups",
+        json={"name": f"{PREFIX}group_{uuid4().hex[:8]}", "description": None},
+        cookies={"openrbi_session": admin_cookie},
+    )
+    group_id = group_resp.json()["id"]
+
+    response = await client.post(
+        f"/admin/groups/{group_id}/members/{member.id}", cookies={"openrbi_session": reviewer_cookie}
+    )
+    assert response.status_code == 403

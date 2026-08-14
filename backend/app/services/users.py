@@ -146,8 +146,11 @@ async def set_groups(db: AsyncSession, user: User, *, group_ids: list[uuid.UUID]
     await db.flush()
 
 
-async def get_group_names(db: AsyncSession, user_id: uuid.UUID) -> list[str]:
+async def get_groups(db: AsyncSession, user_id: uuid.UUID) -> list[tuple[uuid.UUID, str]]:
     result = await db.execute(
-        select(Group.name).join(UserGroup, UserGroup.group_id == Group.id).where(UserGroup.user_id == user_id)
+        select(Group.id, Group.name)
+        .join(UserGroup, UserGroup.group_id == Group.id)
+        .where(UserGroup.user_id == user_id)
+        .order_by(Group.name)
     )
-    return [row[0] for row in result.all()]
+    return list(result.all())

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.api.schemas.policies import PolicyRef
+from app.api.schemas.policies import GroupRef, PolicyRef
 
 
 class CreateUserRequest(BaseModel):
@@ -31,7 +31,7 @@ class UserSummary(BaseModel):
     role: str
     is_active: bool
     mfa_enabled: bool
-    groups: list[str]
+    groups: list[GroupRef]
     created_at: datetime
     auth_source: str
     last_login_at: datetime | None
@@ -104,9 +104,15 @@ class GroupOverviewItem(GroupSummary):
     created_at: datetime
 
 
+class UserRef(BaseModel):
+    id: uuid.UUID
+    username: str
+
+
 class GroupDetail(GroupSummary):
     created_at: datetime
     policies: list[PolicyRef]
+    members: list[UserRef]
 
 
 class GroupOverviewStats(BaseModel):

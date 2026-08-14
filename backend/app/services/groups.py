@@ -63,3 +63,36 @@ async def get_group_with_member_count(db: AsyncSession, group_id: uuid.UUID) -> 
         .group_by(Group.id)
     )
     return result.first()
+
+
+async def add_member(db: AsyncSession, *, group_id: uuid.UUID, user_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+    """The single-relationship counterpart to users.set_groups() (which
+    wholesale-replaces a user's entire group set) — mirrors
+    policies.attach_policy_to_group's idempotent-insert pattern exactly, so
+    a group's member list and its policy list can be edited the same way
+    from either side (group-centric or user-centric).
+    """
+    result = await db.execute(
+        select(UserGroup).where(UserGroup.group_id == group_id, UserGroup.user_id == user_id)
+    )
+    if result.scalar_one_or_none() is not None:
+        return  # idempotent
+    db.add(UserGroup(group_id=group_id, user_id=user_id))
+    await record_security_event(
+        db,
+        SecurityEventType.USER_GROUPS_CHANGED,
+        user_id=user_id,
+        metadata={"actor": str(actor_id), "action": "added", "group_id": str(group_id)},
+    )
+    await db.flush()
+
+
+async def remove_member(db: AsyncSession, *, group_id: uuid.UUID, user_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+    await db.execute(delete(UserGroup).where(UserGroup.group_id == group_id, UserGroup.user_id == user_id))
+    await record_security_event(
+        db,
+        SecurityEventType.USER_GROUPS_CHANGED,
+        user_id=user_id,
+        metadata={"actor": str(actor_id), "action": "removed", "group_id": str(group_id)},
+    )
+    await db.flush()

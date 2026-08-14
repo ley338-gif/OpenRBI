@@ -1772,7 +1772,12 @@ table.data-table a:hover { text-decoration: underline; }
 
 .group-details-modal {
   width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
 }
+
+.attach-list-section { margin-top: var(--space-5); }
+.attach-list-section h3 { margin: 0 0 var(--space-3); font-size: 0.95rem; }
 
 .group-details-grid {
   display: grid;

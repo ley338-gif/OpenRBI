@@ -81,6 +81,8 @@ export const adminApi = {
     api.post<GroupSummaryDto>("/admin/groups", { name, description }),
   deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),
   getGroup: (id: string) => api.get<GroupDetailDto>(`/admin/groups/${id}`),
+  addGroupMember: (groupId: string, userId: string) => api.post<void>(`/admin/groups/${groupId}/members/${userId}`),
+  removeGroupMember: (groupId: string, userId: string) => api.delete<void>(`/admin/groups/${groupId}/members/${userId}`),
 
   // Sessions
   listSessions: (params?: { search?: string; session_status?: string; worker_id?: string; since?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>
