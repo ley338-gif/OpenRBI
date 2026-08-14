@@ -140,6 +140,30 @@ export const Icons = {
       </>,
       p,
     ),
+  Pencil: (p: IconProps) =>
+    base(
+      <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
+      </>,
+      p,
+    ),
+  Trash: (p: IconProps) =>
+    base(
+      <>
+        <path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6" />
+        <path d="M10 11v6M14 11v6" />
+      </>,
+      p,
+    ),
+  Power: (p: IconProps) =>
+    base(
+      <>
+        <path d="M12 2v10" />
+        <path d="M6.3 5.3a8 8 0 1 0 11.4 0" />
+      </>,
+      p,
+    ),
   Logout: (p: IconProps) =>
     base(
       <>
