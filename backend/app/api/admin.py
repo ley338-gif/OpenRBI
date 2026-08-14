@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.admin import (
     CreateGroupRequest,
     CreateUserRequest,
+    GroupDetail,
     GroupOverviewItem,
     GroupOverviewResponse,
     GroupOverviewStats,
@@ -17,8 +18,10 @@ from app.api.schemas.admin import (
     UpdateUserRoleRequest,
     UserListResponse,
     UserManagementStats,
+    UserRef,
     UserSummary,
 )
+from app.api.schemas.policies import GroupRef, PolicyRef
 from app.api.display import force_disconnect
 from app.api.schemas.sessions import AdminSessionResponse, RevokeSessionsResponse
 from app.core.deps import get_current_user, require_role
@@ -30,13 +33,21 @@ from app.models.policy import GroupPolicy, Policy
 from app.models.role import Role
 from app.models.security_event import SecurityEvent
 from app.models.user import User
-from app.services.groups import GroupServiceError, create_group, delete_group, list_groups_with_member_counts
+from app.services.groups import (
+    GroupServiceError,
+    add_member,
+    create_group,
+    delete_group,
+    get_group_with_member_count,
+    list_groups_with_member_counts,
+    remove_member,
+)
 from app.services.sessions import revoke_user_sessions
 from app.services.users import (
     UserServiceError,
     change_role,
     create_user,
-    get_group_names,
+    get_groups,
     get_lockout_status,
     lock_account,
     reset_password,
@@ -50,14 +61,14 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 
 async def _to_summary(db: AsyncSession, user: User) -> UserSummary:
     role = await db.get(Role, user.role_id)
-    groups = await get_group_names(db, user.id)
+    groups = await get_groups(db, user.id)
     return UserSummary(
         id=user.id,
         username=user.username,
         role=role.name,
         is_active=user.is_active,
         mfa_enabled=user.mfa_enabled,
-        groups=groups,
+        groups=[GroupRef(id=gid, name=gname) for gid, gname in groups],
         created_at=user.created_at,
         auth_source="LOCAL" if user.password_hash is not None else "LDAP",
         last_login_at=None,
@@ -120,17 +131,17 @@ async def list_users(
     rows = (await db.execute(base.order_by(ordering).offset(offset).limit(limit))).all()
     user_ids = [user.id for user, _ in rows]
 
-    group_names: dict[uuid.UUID, list[str]] = {user_id: [] for user_id in user_ids}
+    group_refs: dict[uuid.UUID, list[GroupRef]] = {user_id: [] for user_id in user_ids}
     last_logins: dict[uuid.UUID, object] = {}
     if user_ids:
         group_rows = await db.execute(
-            select(UserGroup.user_id, Group.name)
+            select(UserGroup.user_id, Group.id, Group.name)
             .join(Group, Group.id == UserGroup.group_id)
             .where(UserGroup.user_id.in_(user_ids))
             .order_by(Group.name)
         )
-        for user_id, group_name in group_rows.all():
-            group_names[user_id].append(group_name)
+        for user_id, group_id, group_name in group_rows.all():
+            group_refs[user_id].append(GroupRef(id=group_id, name=group_name))
         login_rows = await db.execute(
             select(SecurityEvent.user_id, func.max(SecurityEvent.created_at))
             .where(
@@ -162,7 +173,7 @@ async def list_users(
             role=role_name,
             is_active=user.is_active,
             mfa_enabled=user.mfa_enabled,
-            groups=group_names[user.id],
+            groups=group_refs[user.id],
             created_at=user.created_at,
             auth_source="LOCAL" if user.password_hash is not None else "LDAP",
             last_login_at=last_logins.get(user.id),
@@ -351,6 +362,65 @@ async def list_groups(db: AsyncSession = Depends(get_db)) -> list[GroupSummary]:
         GroupSummary(id=group.id, name=group.name, description=group.description, member_count=count)
         for group, count in rows
     ]
+
+
+@router.get("/groups/{group_id}", response_model=GroupDetail)
+async def get_group(group_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> GroupDetail:
+    row = await get_group_with_member_count(db, group_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    group, member_count = row
+    policies = (
+        await db.execute(
+            select(Policy.id, Policy.name, Policy.policy_type)
+            .join(GroupPolicy, GroupPolicy.policy_id == Policy.id)
+            .where(GroupPolicy.group_id == group_id)
+            .order_by(Policy.name)
+        )
+    ).all()
+    members = (
+        await db.execute(
+            select(User.id, User.username)
+            .join(UserGroup, UserGroup.user_id == User.id)
+            .where(UserGroup.group_id == group_id)
+            .order_by(User.username)
+        )
+    ).all()
+    return GroupDetail(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        member_count=member_count,
+        created_at=group.created_at,
+        policies=[PolicyRef(id=pid, name=pname, policy_type=ptype.value) for pid, pname, ptype in policies],
+        members=[UserRef(id=uid, username=uname) for uid, uname in members],
+    )
+
+
+@router.post("/groups/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def add_group_member(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    if await db.get(Group, group_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    if await db.get(User, user_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    await add_member(db, group_id=group_id, user_id=user_id, actor_id=current_user.id)
+    await db.commit()
+
+
+@router.delete("/groups/{group_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_group_member(
+    group_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await remove_member(db, group_id=group_id, user_id=user_id, actor_id=current_user.id)
+    await db.commit()
 
 
 @router.get("/groups-overview", response_model=GroupOverviewResponse)

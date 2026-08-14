@@ -7,6 +7,7 @@ import { FormField } from "@shared/components/FormField";
 import { PageHeader } from "@shared/components/PageHeader";
 import { DefinitionList } from "@shared/components/DefinitionList";
 import { ActionMenu } from "@shared/components/ActionMenu";
+import { AttachList, type AttachListItem } from "@shared/components/AttachList";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { AdminSessionDto, LockoutStatusDto, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
@@ -33,6 +34,7 @@ export function UserDetail() {
   const [busy, setBusy] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [groupsBusy, setGroupsBusy] = useState(false);
 
   function load() {
     if (!id) return;
@@ -114,6 +116,27 @@ export function UserDetail() {
     }
   }
 
+  async function searchGroupsForUser(query: string): Promise<AttachListItem[]> {
+    const groups = await adminApi.listGroups();
+    const needle = query.toLowerCase();
+    return groups
+      .filter((g) => g.name.toLowerCase().includes(needle))
+      .slice(0, 10)
+      .map((g) => ({ id: g.id, label: g.name, meta: `${g.member_count} member${g.member_count === 1 ? "" : "s"}` }));
+  }
+  async function addUserToGroup(groupId: string) {
+    if (!id) return;
+    setGroupsBusy(true);
+    try { await adminApi.addGroupMember(groupId, id); notify("Added to group"); load(); }
+    catch { notify("Could not add this group", "error"); } finally { setGroupsBusy(false); }
+  }
+  async function removeUserFromGroup(groupId: string) {
+    if (!id) return;
+    setGroupsBusy(true);
+    try { await adminApi.removeGroupMember(groupId, id); notify("Removed from group"); load(); }
+    catch { notify("Could not remove this group", "error"); } finally { setGroupsBusy(false); }
+  }
+
   if (error) return <div className="page"><ErrorState>{error}</ErrorState></div>;
   if (!user || !sessions || !lockout) return <LoadingBlock label="Loading user…" />;
 
@@ -167,7 +190,6 @@ export function UserDetail() {
           items={[
             { label: "Role", value: user.role },
             { label: "Authentication source", value: <StatusBadge value={user.auth_source} /> },
-            { label: "Groups", value: user.groups.join(", ") || "—" },
             { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
             {
               label: "Login lockout",
@@ -201,6 +223,21 @@ export function UserDetail() {
             </div>
           </form>
         )}
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h2>Groups</h2>
+        </div>
+        <AttachList
+          entityLabel="group"
+          attached={user.groups.map((g) => ({ id: g.id, label: g.name }))}
+          onSearch={searchGroupsForUser}
+          onAdd={addUserToGroup}
+          onRemove={removeUserFromGroup}
+          busy={groupsBusy}
+          emptyLabel="This user isn't in any groups yet."
+        />
       </div>
 
       <div className="card">

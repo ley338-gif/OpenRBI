@@ -98,7 +98,7 @@ export function Users() {
   </div>;
 }
 
-function GroupPills({ groups }: { groups: string[] }) { if (groups.length === 0) return <span className="text-muted">—</span>; return <div className="group-pills" title={groups.join(", ")}>{groups.slice(0, 2).map((name) => <span key={name}>{name}</span>)}{groups.length > 2 && <span>+{groups.length - 2}</span>}</div>; }
+function GroupPills({ groups }: { groups: { id: string; name: string }[] }) { if (groups.length === 0) return <span className="text-muted">—</span>; return <div className="group-pills" title={groups.map((g) => g.name).join(", ")}>{groups.slice(0, 2).map((g) => <span key={g.id}>{g.name}</span>)}{groups.length > 2 && <span>+{groups.length - 2}</span>}</div>; }
 
 function CreateUserForm({ groups, onClose, onCreated }: { groups: GroupSummaryDto[]; onClose: () => void; onCreated: () => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [role, setRole] = useState<Role>("USER"); const [groupIds, setGroupIds] = useState<string[]>([]); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);

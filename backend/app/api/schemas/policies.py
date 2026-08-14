@@ -44,6 +44,11 @@ class PolicyVersionResponse(BaseModel):
     published_at: datetime | None
 
 
+class GroupRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class PolicySummary(BaseModel):
     id: uuid.UUID
     name: str
@@ -53,7 +58,7 @@ class PolicySummary(BaseModel):
     current_version_number: int | None
     has_draft: bool = False
     version_count: int = 0
-    assigned_groups: list[str] = []
+    assigned_groups: list[GroupRef] = []
     created_at: datetime
     updated_at: datetime
     updated_by: str | None = None
@@ -79,3 +84,9 @@ class PolicyListResponse(BaseModel):
 
 class PolicyDetail(PolicySummary):
     versions: list[PolicyVersionResponse]
+
+
+class PolicyRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    policy_type: str

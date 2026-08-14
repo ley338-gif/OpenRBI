@@ -182,7 +182,7 @@ export interface UserSummaryDto {
   role: Role;
   is_active: boolean;
   mfa_enabled: boolean;
-  groups: string[];
+  groups: GroupRefDto[];
   created_at: string;
   auth_source: "LOCAL" | "LDAP";
   last_login_at: string | null;
@@ -221,6 +221,28 @@ export type PolicyType = "NETWORK" | "DOWNLOADS" | "UPLOADS" | "CLIPBOARD" | "BR
 export type PolicyVersionStatus = "DRAFT" | "PUBLISHED" | "SUPERSEDED";
 export type FileRuleType = "MIME" | "SOURCE";
 
+export interface GroupRefDto {
+  id: string;
+  name: string;
+}
+
+export interface PolicyRefDto {
+  id: string;
+  name: string;
+  policy_type: PolicyType;
+}
+
+export interface UserRefDto {
+  id: string;
+  username: string;
+}
+
+export interface GroupDetailDto extends GroupSummaryDto {
+  created_at: string;
+  policies: PolicyRefDto[];
+  members: UserRefDto[];
+}
+
 export interface PolicySummaryDto {
   id: string;
   name: string;
@@ -230,7 +252,7 @@ export interface PolicySummaryDto {
   current_version_number: number | null;
   has_draft: boolean;
   version_count: number;
-  assigned_groups: string[];
+  assigned_groups: GroupRefDto[];
   created_at: string;
   updated_at: string;
   updated_by: string | null;

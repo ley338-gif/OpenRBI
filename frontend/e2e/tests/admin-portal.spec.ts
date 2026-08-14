@@ -336,6 +336,67 @@ test.describe("Admin Portal", () => {
     await expect(row.getByText("Enforced screen resolution")).toBeVisible();
   });
 
+  test("Group assignment is a single modal (AD-style), not a separate page: attach a policy and a member, see both reflected elsewhere, then detach", async ({ page }) => {
+    // Redesigned after user feedback: no dedicated Group Detail page —
+    // clicking a group opens one small modal with both "Members" and
+    // "Policies" search-and-add panels inline. Policy's own quick-assign
+    // modal (from the Policies list) and User Detail's live Groups panel
+    // must all agree with what this modal does.
+    await loginAsAdmin(page);
+
+    await page.getByRole("link", { name: "Policies" }).click();
+    const policyName = `e2e-assign-policy-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const policyModal = page.locator(".create-policy-modal");
+    await policyModal.getByLabel("Name").fill(policyName);
+    await policyModal.getByLabel("Type").selectOption("SESSION");
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+
+    await page.getByRole("link", { name: "Groups" }).click();
+    const groupName = `e2e-assign-group-${Date.now()}`;
+    await page.getByRole("button", { name: "Create Group" }).click();
+    await page.getByLabel("Name").fill(groupName);
+    await page.getByRole("button", { name: "Create group", exact: true }).click();
+    await expect(page.getByRole("button", { name: groupName, exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: `Assign members and policies for ${groupName}` }).click();
+    const groupModal = page.locator(".group-details-modal");
+    await expect(groupModal.getByRole("heading", { name: groupName })).toBeVisible();
+    await expect(groupModal.getByText("No members in this group yet.")).toBeVisible();
+    await expect(groupModal.getByText("No policies attached to this group yet.")).toBeVisible();
+
+    await groupModal.getByLabel("Search users to add").fill(USER_USERNAME);
+    await groupModal.getByRole("button", { name: new RegExp(USER_USERNAME) }).click();
+    await expect(page.getByText("Member added")).toBeVisible();
+    await expect(groupModal.locator(".attach-list-item", { hasText: USER_USERNAME })).toBeVisible();
+
+    await groupModal.getByLabel("Search policies to add").fill(policyName);
+    await groupModal.getByRole("button", { name: new RegExp(policyName) }).click();
+    await expect(page.getByText("Policy attached")).toBeVisible();
+    await expect(groupModal.locator(".attach-list-item", { hasText: policyName })).toBeVisible();
+    await groupModal.locator(".modal-actions").getByRole("button", { name: "Close", exact: true }).click();
+
+    // Policies list's own quick-assign modal must show the same group.
+    await page.getByRole("link", { name: "Policies" }).click();
+    await page.getByRole("button", { name: `Assign ${policyName} to a group` }).click();
+    const assignModal = page.locator(".group-details-modal");
+    await expect(assignModal.locator(".attach-list-item", { hasText: groupName })).toBeVisible();
+    await assignModal.locator(".attach-list-item", { hasText: groupName }).getByRole("button", { name: "Remove" }).click();
+    await expect(page.getByText("Group detached")).toBeVisible();
+    await expect(assignModal.getByText("No groups attached to this policy yet.")).toBeVisible();
+    await assignModal.locator(".modal-actions").getByRole("button", { name: "Close", exact: true }).click();
+
+    // User Detail's live Groups panel must show the same membership, and
+    // support removing it from that side too.
+    await page.getByRole("link", { name: "Users" }).click();
+    await page.getByRole("link", { name: USER_USERNAME, exact: true }).click();
+    const userGroupsCard = page.locator(".card", { has: page.getByRole("heading", { name: "Groups" }) });
+    await expect(userGroupsCard.locator(".attach-list-item", { hasText: groupName })).toBeVisible();
+    await userGroupsCard.locator(".attach-list-item", { hasText: groupName }).getByRole("button", { name: "Remove" }).click();
+    await expect(page.getByText("Removed from group")).toBeVisible();
+    await expect(userGroupsCard.getByText("This user isn't in any groups yet.")).toBeVisible();
+  });
+
   test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {
     // Roadmap B1.8 — no fabricated defaults: the form must reflect
     // whatever GET /admin/ldap/config actually returns, and the password
