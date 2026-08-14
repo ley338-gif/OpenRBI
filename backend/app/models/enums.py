@@ -195,3 +195,11 @@ class SecurityEventType(str, enum.Enum):
     # missing or already TERMINATED/FAILED, confirmed across two
     # consecutive poll cycles before being terminated automatically.
     ORPHAN_SESSION_RECONCILED = "ORPHAN_SESSION_RECONCILED"
+
+    # Quarantine/downloads retention (app/core/quarantine_retention.py):
+    # automatic deletion of a QuarantineFile's staged bytes (and scrubbing
+    # of its descriptive metadata) once its retention window has passed —
+    # the row itself is kept, transitioned to QuarantineStatus.DELETED
+    # (already a documented terminal state, docs/quarantine.md), not
+    # removed outright, so file-history/statistics views keep working.
+    QUARANTINE_FILE_RETENTION_EXPIRED = "QUARANTINE_FILE_RETENTION_EXPIRED"
