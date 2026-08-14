@@ -120,16 +120,22 @@ export function Policies() {
 
     {showCreate && <div className="modal-overlay" onClick={() => setShowCreate(false)}><div className="modal create-policy-modal" onClick={(e) => e.stopPropagation()}><h2>Create Policy</h2><p>Create the stable policy record first, then configure and publish its first version.</p><form onSubmit={create}><FormField label="Name"><input autoFocus value={name} onChange={(e) => setName(e.target.value)} required /></FormField><FormField label="Description" hint="Optional context shown in the policy overview."><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></FormField><FormField label="What does this policy control?">
                 <div className="policy-category-picker">
+                  {/* aria-label (not implicit label-wrapping) on purpose: this
+                      radio picker sits inside FormField's own <label>, and
+                      wrapping each option in a second, nested <label> is
+                      invalid HTML that browsers fail to associate — screen
+                      readers and getByLabel()-style queries would otherwise
+                      see these as unnamed "on"/"on"/"on" radios. */}
                   <label className={policyCategory === "FILE_TRANSFER" ? "policy-category-option active" : "policy-category-option"}>
-                    <input type="radio" name="policy-category" checked={policyCategory === "FILE_TRANSFER"} onChange={() => selectCategory("FILE_TRANSFER")} />
+                    <input type="radio" name="policy-category" aria-label="File transfer rules" checked={policyCategory === "FILE_TRANSFER"} onChange={() => selectCategory("FILE_TRANSFER")} />
                     <div><strong>File transfer rules</strong><span>Controls downloads/uploads by MIME type or source host. Enforced today.</span></div>
                   </label>
                   <label className={policyCategory === "SESSION" ? "policy-category-option active" : "policy-category-option"}>
-                    <input type="radio" name="policy-category" checked={policyCategory === "SESSION"} onChange={() => selectCategory("SESSION")} />
+                    <input type="radio" name="policy-category" aria-label="Session resolution" checked={policyCategory === "SESSION"} onChange={() => selectCategory("SESSION")} />
                     <div><strong>Session resolution</strong><span>Sets the screen resolution for new sessions. Enforced today.</span></div>
                   </label>
                   <label className={policyCategory === "NOT_ENFORCED" ? "policy-category-option active policy-category-planned" : "policy-category-option policy-category-planned"}>
-                    <input type="radio" name="policy-category" checked={policyCategory === "NOT_ENFORCED"} onChange={() => selectCategory("NOT_ENFORCED")} />
+                    <input type="radio" name="policy-category" aria-label="Not yet enforced" checked={policyCategory === "NOT_ENFORCED"} onChange={() => selectCategory("NOT_ENFORCED")} />
                     <div><strong>Not yet enforced <StatusBadge value="NOT ENFORCED" /></strong><span>Network, clipboard, and browser categories are stored but have no runtime effect (docs/policies.md).</span></div>
                   </label>
                 </div>
