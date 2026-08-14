@@ -96,6 +96,36 @@ async def down():
             "DELETE FROM browser_sessions WHERE user_id IN "
             "(SELECT id FROM users WHERE username LIKE :p)"
         ), {"p": f"{PREFIX}%"})
+        # A policy created through the Admin Portal UI during an e2e test
+        # (e.g. admin-portal.spec.ts's SESSION-resolution test) leaves a
+        # policy_versions row with created_by pointing at e2e_admin — must
+        # be cleared/removed before the DELETE FROM users below, same FK
+        # ordering issue backend/tests/conftest.py's own cleanup had for
+        # group_policies (fixed alongside this). LIKE's `_` is a SQL
+        # single-char wildcard, so "e2e_%" already matches
+        # "e2e-resolution-..."-style names the same way it matches
+        # "e2e_admin" — no separate prefix needed.
+        await db.execute(text(
+            "UPDATE policy_versions SET created_by = NULL WHERE created_by IN "
+            "(SELECT id FROM users WHERE username LIKE :p)"
+        ), {"p": f"{PREFIX}%"})
+        await db.execute(text(
+            "DELETE FROM group_policies WHERE policy_id IN "
+            "(SELECT id FROM policies WHERE name LIKE :p)"
+        ), {"p": f"{PREFIX}%"})
+        await db.execute(text(
+            "DELETE FROM file_policy_rules WHERE policy_version_id IN "
+            "(SELECT pv.id FROM policy_versions pv JOIN policies p ON p.id = pv.policy_id "
+            "WHERE p.name LIKE :p)"
+        ), {"p": f"{PREFIX}%"})
+        await db.execute(text(
+            "UPDATE policies SET current_version_id = NULL WHERE name LIKE :p"
+        ), {"p": f"{PREFIX}%"})
+        await db.execute(text(
+            "DELETE FROM policy_versions WHERE policy_id IN "
+            "(SELECT id FROM policies WHERE name LIKE :p)"
+        ), {"p": f"{PREFIX}%"})
+        await db.execute(text("DELETE FROM policies WHERE name LIKE :p"), {"p": f"{PREFIX}%"})
         await db.execute(text("DELETE FROM users WHERE username LIKE :p"), {"p": f"{PREFIX}%"})
         await db.commit()
         print(json.dumps({"cleaned": True}))

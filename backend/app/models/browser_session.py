@@ -37,6 +37,8 @@ class BrowserSession(UUIDPKMixin, TimestampMixin, Base):
     ram_limit_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
     pid_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=512)
     disk_limit_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
+    screen_width: Mapped[int] = mapped_column(Integer, nullable=False, default=1280)
+    screen_height: Mapped[int] = mapped_column(Integer, nullable=False, default=800)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

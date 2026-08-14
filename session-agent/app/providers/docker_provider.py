@@ -70,6 +70,10 @@ class DockerSandboxProvider:
             name=name,
             command=config.command,
             labels=labels,
+            environment={
+                "SCREEN_WIDTH": str(config.screen_width),
+                "SCREEN_HEIGHT": str(config.screen_height),
+            },
             user="10001:10001",
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],

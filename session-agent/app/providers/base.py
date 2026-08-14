@@ -35,6 +35,8 @@ class SandboxConfig:
     pid_limit: int
     disk_limit_mb: int
     network_name: str
+    screen_width: int
+    screen_height: int
     command: list[str] | None = None
     labels: dict[str, str] = field(default_factory=dict)
 

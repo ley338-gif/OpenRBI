@@ -234,6 +234,15 @@ async def publish(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await db.commit()
+    # publish_version updates policy.current_version_id, and Policy.updated_at
+    # has onupdate=func.now() (TimestampMixin) — a server-computed value the
+    # ORM can't know without asking, so it's marked expired after that UPDATE
+    # flush. Without this refresh, _policy_summary's synchronous
+    # `policy.updated_at` access below tries an implicit lazy reload outside
+    # any awaited call, which raises MissingGreenlet in an async session
+    # (a real bug, not hypothetical — this endpoint 500'd on every real
+    # Publish click until this fix).
+    await db.refresh(policy)
     result = await db.execute(
         select(PolicyVersion).where(PolicyVersion.policy_id == policy.id).order_by(PolicyVersion.version_number)
     )
@@ -257,6 +266,9 @@ async def rollback_endpoint(
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await db.commit()
+    # Same reason as the publish endpoint above: rollback_service also
+    # updates policy.current_version_id.
+    await db.refresh(policy)
     return await _policy_summary(policy, db)
 
 

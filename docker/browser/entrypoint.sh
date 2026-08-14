@@ -23,8 +23,11 @@ user_pref("browser.helperApps.neverAsk.saveToDisk", "application/octet-stream,ap
 user_pref("browser.download.manager.showWhenStarting", false);
 EOF
 
-SCREEN_WIDTH=1280
-SCREEN_HEIGHT=800
+# Overridable per-session by the Session Agent (docker_provider.py sets
+# these from the sandbox's resolved SESSION policy, see docs/policies.md);
+# the defaults below only apply when no such policy exists.
+SCREEN_WIDTH="${SCREEN_WIDTH:-1280}"
+SCREEN_HEIGHT="${SCREEN_HEIGHT:-800}"
 Xvfb "$DISPLAY" -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x24" -nolisten tcp &
 XVFB_PID=$!
 

@@ -79,6 +79,8 @@ export interface SessionResponseDto {
   ram_limit_mb: number;
   pid_limit: number;
   disk_limit_mb: number;
+  screen_width: number;
+  screen_height: number;
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
