@@ -114,6 +114,17 @@ class Settings(BaseSettings):
     orphan_reconcile_interval_seconds: float = 300.0
     orphan_reconcile_grace_cycles: int = 2
 
+    # Downloads/quarantine retention (app/core/quarantine_retention.py).
+    # Two separate windows: RELEASED files are cheap to re-request (a fresh
+    # 5-minute release token, app/core/release_tokens.py) and carry no
+    # forensic value once delivered, so they're swept quickly with just
+    # enough grace for a user to request the token again; QUARANTINED/
+    # REJECTED files retain incident-review value and get a much longer
+    # window (docs/adr/0022).
+    quarantine_retention_released_hours: float = 24.0
+    quarantine_retention_quarantined_days: float = 90.0
+    quarantine_retention_interval_seconds: float = 3600.0
+
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
     def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
