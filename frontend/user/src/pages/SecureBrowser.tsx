@@ -14,6 +14,20 @@ import { ApiError } from "@shared/api/client";
 const TERMINAL = new Set<SessionStatus>(["TERMINATED", "FAILED"]);
 const CONNECTABLE = new Set<SessionStatus>(["ACTIVE", "DISCONNECTED"]);
 
+// Comfort/UX only, not the security boundary — the real enforcement is at
+// the relay's protocol level (app/api/display.py,
+// app/core/rfb_clipboard_filter.py), which blocks ClientCutText/
+// ServerCutText messages regardless of what this UI does. Hiding/ignoring
+// these here just avoids offering a button or silently-dropped auto-sync
+// that wouldn't actually do anything — a DevTools console bypassing this
+// check would still hit the same relay-level block.
+function canSendClipboard(mode: SessionResponseDto["clipboard_mode"]): boolean {
+  return mode === "LOCAL_TO_REMOTE" || mode === "BIDIRECTIONAL_TEXT";
+}
+function canReceiveClipboard(mode: SessionResponseDto["clipboard_mode"]): boolean {
+  return mode === "REMOTE_TO_LOCAL" || mode === "BIDIRECTIONAL_TEXT";
+}
+
 // Fallback only for the brief window before a session response has
 // arrived — the real resolution comes from the session itself
 // (session.screen_width/height), which reflects whatever the user's
@@ -148,6 +162,7 @@ export function SecureBrowser() {
   }
 
   async function sendClipboard() {
+    if (!session || !canSendClipboard(session.clipboard_mode)) return;
     try {
       const text = await navigator.clipboard.readText();
       rfbRef.current?.clipboardPasteFrom(text);
@@ -203,7 +218,7 @@ export function SecureBrowser() {
   }, []);
 
   const connectDisplay = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, clipboardMode: SessionResponseDto["clipboard_mode"]) => {
       if (!containerRef.current || rfbRef.current) return;
       setConnectError(null);
       const rfb = new RFB(containerRef.current, displayWebSocketUrl(sessionId));
@@ -237,6 +252,7 @@ export function SecureBrowser() {
       // button above, since silently overwriting the user's own clipboard
       // on every keystroke would be surprising.
       rfb.addEventListener("clipboard", (e: Event) => {
+        if (!canReceiveClipboard(clipboardMode)) return; // comfort-only guard, see canReceiveClipboard above
         const text = (e as CustomEvent<{ text: string }>).detail?.text;
         if (text) navigator.clipboard.writeText(text).catch(() => {});
       });
@@ -349,7 +365,7 @@ export function SecureBrowser() {
   // polling a session nobody can act on anymore.
   useEffect(() => {
     if (session && CONNECTABLE.has(session.status)) {
-      connectDisplay(session.id);
+      connectDisplay(session.id, session.clipboard_mode);
       watchLiveSession(session.id);
     } else {
       stopLiveWatch();
@@ -419,7 +435,11 @@ export function SecureBrowser() {
                 100%
               </button>
               <div className="viewer-toolbar-divider" />
-              <IconButton label="Send clipboard to session" onClick={() => void sendClipboard()}>
+              <IconButton
+                label={canSendClipboard(session.clipboard_mode) ? "Send clipboard to session" : "Clipboard blocked by policy"}
+                onClick={() => void sendClipboard()}
+                disabled={!canSendClipboard(session.clipboard_mode)}
+              >
                 <Icons.Clipboard width={16} height={16} />
               </IconButton>
               <IconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>

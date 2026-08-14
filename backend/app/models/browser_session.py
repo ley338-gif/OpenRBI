@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import SessionStatus
+from app.models.enums import ClipboardMode, SessionStatus
 from app.models.mixins import TimestampMixin, UUIDPKMixin
 
 
@@ -39,6 +39,14 @@ class BrowserSession(UUIDPKMixin, TimestampMixin, Base):
     disk_limit_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
     screen_width: Mapped[int] = mapped_column(Integer, nullable=False, default=1280)
     screen_height: Mapped[int] = mapped_column(Integer, nullable=False, default=800)
+
+    # Resolved once at session creation (resolve_clipboard_policy) and
+    # snapshotted here, same pattern as screen_width/height — a later
+    # policy edit never retroactively changes a running session's
+    # enforcement (docs/policies.md).
+    clipboard_mode: Mapped[ClipboardMode] = mapped_column(
+        Enum(ClipboardMode, name="clipboard_mode"), nullable=False, default=ClipboardMode.BIDIRECTIONAL_TEXT
+    )
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

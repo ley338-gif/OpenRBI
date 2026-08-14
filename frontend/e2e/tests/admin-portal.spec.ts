@@ -315,12 +315,47 @@ test.describe("Admin Portal", () => {
     await expect(row.getByText("Enforced screen resolution")).toBeVisible();
   });
 
+  test("CLIPBOARD policy mode: create, set, publish, and see it reflected in the policy list", async ({ page }) => {
+    // Regression guard for the relay-level clipboard enforcement
+    // (app/core/rfb_clipboard_filter.py): CLIPBOARD moved from "not yet
+    // enforced" to a real, editable policy type, structurally the same as
+    // the SESSION resolution test above.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+    await expect(page.getByRole("heading", { name: "Policies" })).toBeVisible();
+
+    const policyName = `e2e-clipboard-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const modal = page.locator(".create-policy-modal");
+    await modal.getByLabel("Name").fill(policyName);
+    await modal.getByRole("radio", { name: "Clipboard control" }).check();
+    await expect(page.getByText(/controls which direction\(s\) the remote session's clipboard/i)).toBeVisible();
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+
+    await page.getByRole("link", { name: policyName }).click();
+    await expect(page.getByRole("heading", { name: policyName })).toBeVisible();
+
+    await page.getByRole("button", { name: "New draft version" }).click();
+    await page.getByLabel("Clipboard mode").selectOption("NONE");
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Blocked both directions")).toBeVisible();
+
+    await page.getByRole("button", { name: "Publish" }).click();
+    await expect(page.locator(".badge", { hasText: "PUBLISHED" }).first()).toBeVisible();
+
+    await page.getByRole("link", { name: "← Policies" }).click();
+    const row = page.getByRole("row", { name: new RegExp(policyName) });
+    await expect(row.getByText("Enforced clipboard control")).toBeVisible();
+  });
+
   test("a NETWORK policy is clearly marked NOT ENFORCED in both the list and its own detail page", async ({ page }) => {
     // Regression guard for the Policy-Typ-Bereinigung cleanup: NETWORK/
-    // DOWNLOADS/UPLOADS/CLIPBOARD/BROWSER are stored but read by nothing at
-    // runtime (docs/policies.md). An admin who can't tell that apart from
-    // MIME/SOURCE/SESSION at a glance could believe a NETWORK policy is
-    // doing something it isn't.
+    // DOWNLOADS/UPLOADS/BROWSER are stored but read by nothing at runtime
+    // (docs/policies.md) — CLIPBOARD moved out of this group once its
+    // relay-level enforcement (app/core/rfb_clipboard_filter.py) shipped.
+    // An admin who can't tell that apart from MIME/SOURCE/SESSION/
+    // CLIPBOARD at a glance could believe a NETWORK policy is doing
+    // something it isn't.
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Policies" }).click();
 
@@ -385,11 +420,16 @@ test.describe("Admin Portal", () => {
 
     await modal.getByRole("radio", { name: "Not yet enforced" }).check();
     const category = modal.getByLabel("Category");
-    await expect(category.locator("option")).toHaveText(["NETWORK", "DOWNLOADS", "UPLOADS", "CLIPBOARD", "BROWSER"]);
+    await expect(category.locator("option")).toHaveText(["NETWORK", "DOWNLOADS", "UPLOADS", "BROWSER"]);
 
-    // Session resolution has no concrete-type sub-select at all — the
-    // radio choice alone fully determines policy_type.
+    // Session resolution and Clipboard control have no concrete-type
+    // sub-select at all — the radio choice alone fully determines
+    // policy_type.
     await modal.getByRole("radio", { name: "Session resolution" }).check();
+    await expect(modal.getByLabel("Rule basis")).toHaveCount(0);
+    await expect(modal.getByLabel("Category")).toHaveCount(0);
+
+    await modal.getByRole("radio", { name: "Clipboard control" }).check();
     await expect(modal.getByLabel("Rule basis")).toHaveCount(0);
     await expect(modal.getByLabel("Category")).toHaveCount(0);
   });

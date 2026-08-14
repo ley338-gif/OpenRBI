@@ -16,6 +16,7 @@ class SessionResponse(BaseModel):
     disk_limit_mb: int
     screen_width: int
     screen_height: int
+    clipboard_mode: str
     created_at: datetime
     started_at: datetime | None
     ended_at: datetime | None
@@ -34,6 +35,7 @@ class SessionResponse(BaseModel):
             disk_limit_mb=session.disk_limit_mb,
             screen_width=session.screen_width,
             screen_height=session.screen_height,
+            clipboard_mode=session.clipboard_mode.value,
             created_at=session.created_at,
             started_at=session.started_at,
             ended_at=session.ended_at,

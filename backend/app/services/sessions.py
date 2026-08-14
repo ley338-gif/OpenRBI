@@ -19,7 +19,7 @@ from app.models.enums import (
 )
 from app.models.incident import Incident
 from app.models.user import User
-from app.services.policy_engine import resolve_session_resolution
+from app.services.policy_engine import resolve_clipboard_policy, resolve_session_resolution
 from app.services.security_events import record_security_event
 
 
@@ -151,6 +151,7 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
 
     node = await select_node(db)  # raises NoCapacityError, propagates as 503
     resolution = await resolve_session_resolution(db, user.id)
+    clipboard_mode = await resolve_clipboard_policy(db, user.id)
 
     session = BrowserSession(
         user_id=user.id,
@@ -158,6 +159,7 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
         status=SessionStatus.QUEUED,
         screen_width=resolution.width,
         screen_height=resolution.height,
+        clipboard_mode=clipboard_mode,
     )
     db.add(session)
     await db.flush()  # assigns session.id

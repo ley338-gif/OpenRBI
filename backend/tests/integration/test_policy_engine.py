@@ -20,13 +20,14 @@ from app.services.policies import (
     rollback,
 )
 from app.services.policy_engine import (
+    DEFAULT_CLIPBOARD_MODE,
     DEFAULT_SCREEN_HEIGHT,
     DEFAULT_SCREEN_WIDTH,
     FileDecisionInput,
     evaluate_file_action,
+    resolve_clipboard_policy,
     resolve_session_resolution,
 )
-
 from tests.conftest import PREFIX, make_user
 
 
@@ -54,6 +55,14 @@ async def _make_published_mime_policy(db, *, actor_id, action: str, pattern: str
 
 async def _make_published_session_policy(db, *, actor_id, content: dict):
     policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="SESSION", actor_id=actor_id)
+    version = await create_draft_version(db, policy, content=content, file_rules=[], actor_id=actor_id)
+    await publish_version(db, policy, version, actor_id=actor_id)
+    await db.commit()
+    return policy
+
+
+async def _make_published_clipboard_policy(db, *, actor_id, content: dict):
+    policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="CLIPBOARD", actor_id=actor_id)
     version = await create_draft_version(db, policy, content=content, file_rules=[], actor_id=actor_id)
     await publish_version(db, policy, version, actor_id=actor_id)
     await db.commit()
@@ -314,3 +323,122 @@ async def test_create_session_applies_resolved_policy_resolution(db):
 
     assert session.screen_width == 1024
     assert session.screen_height == 768
+
+
+@pytest.mark.asyncio
+async def test_clipboard_policy_falls_back_to_default_with_no_policy(db):
+    user, _ = await make_user(db, role_name="USER")
+    mode = await resolve_clipboard_policy(db, user.id)
+    assert mode == DEFAULT_CLIPBOARD_MODE
+    assert mode.value == "BIDIRECTIONAL_TEXT"
+
+
+@pytest.mark.asyncio
+async def test_clipboard_policy_reads_published_policy(db):
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_clipboard_policy(db, actor_id=user.id, content={"clipboard_mode": "NONE"})
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    mode = await resolve_clipboard_policy(db, user.id)
+    assert mode.value == "NONE"
+
+
+@pytest.mark.asyncio
+async def test_clipboard_policy_ignores_malformed_content(db):
+    """A policy with no clipboard_mode set, or an unrecognized value someone
+    hand-edited in, must never break session creation — silently skipped,
+    falling back to the default exactly as if the policy didn't exist,
+    same convention as resolve_session_resolution's malformed-content test.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_clipboard_policy(db, actor_id=user.id, content={"clipboard_mode": "NOT_A_REAL_MODE"})
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    mode = await resolve_clipboard_policy(db, user.id)
+    assert mode == DEFAULT_CLIPBOARD_MODE
+
+
+@pytest.mark.asyncio
+async def test_clipboard_policy_conflict_none_beats_bidirectional(db):
+    """Two groups on the same user, one BIDIRECTIONAL_TEXT (or unset -> the
+    default) and one NONE — the deterministic conflict model
+    (docs/policies.md) must resolve to NONE, the more restrictive of the
+    two, regardless of evaluation order.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    permissive_group = await _make_group(db)
+    strict_group = await _make_group(db)
+    db.add_all([
+        UserGroup(user_id=user.id, group_id=permissive_group.id),
+        UserGroup(user_id=user.id, group_id=strict_group.id),
+    ])
+    await db.commit()
+
+    permissive_policy = await _make_published_clipboard_policy(
+        db, actor_id=user.id, content={"clipboard_mode": "BIDIRECTIONAL_TEXT"}
+    )
+    strict_policy = await _make_published_clipboard_policy(db, actor_id=user.id, content={"clipboard_mode": "NONE"})
+    await attach_policy_to_group(db, group_id=permissive_group.id, policy_id=permissive_policy.id)
+    await attach_policy_to_group(db, group_id=strict_group.id, policy_id=strict_policy.id)
+
+    mode = await resolve_clipboard_policy(db, user.id)
+    assert mode.value == "NONE"
+
+
+@pytest.mark.asyncio
+async def test_clipboard_policy_conflict_single_directions_combine_to_none(db):
+    """One group allows only LOCAL_TO_REMOTE, another only REMOTE_TO_LOCAL —
+    neither direction is allowed by *every* applicable policy, so the
+    resolved mode is NONE, not an arbitrary pick of one direction
+    (docs/policies.md's clipboard conflict model).
+    """
+    user, _ = await make_user(db, role_name="USER")
+    local_group = await _make_group(db)
+    remote_group = await _make_group(db)
+    db.add_all([
+        UserGroup(user_id=user.id, group_id=local_group.id),
+        UserGroup(user_id=user.id, group_id=remote_group.id),
+    ])
+    await db.commit()
+
+    local_policy = await _make_published_clipboard_policy(
+        db, actor_id=user.id, content={"clipboard_mode": "LOCAL_TO_REMOTE"}
+    )
+    remote_policy = await _make_published_clipboard_policy(
+        db, actor_id=user.id, content={"clipboard_mode": "REMOTE_TO_LOCAL"}
+    )
+    await attach_policy_to_group(db, group_id=local_group.id, policy_id=local_policy.id)
+    await attach_policy_to_group(db, group_id=remote_group.id, policy_id=remote_policy.id)
+
+    mode = await resolve_clipboard_policy(db, user.id)
+    assert mode.value == "NONE"
+
+
+@pytest.mark.asyncio
+async def test_create_session_applies_resolved_clipboard_policy(db):
+    """End-to-end through the real create_session orchestration: the
+    BrowserSession row created for a user in a group with a published
+    CLIPBOARD policy carries that policy's resolved mode, not the default.
+    """
+    from app.services.sessions import create_session as create_session_service
+
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_clipboard_policy(db, actor_id=user.id, content={"clipboard_mode": "REMOTE_TO_LOCAL"})
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    session = await create_session_service(db, user)
+    await db.commit()
+
+    assert session.clipboard_mode.value == "REMOTE_TO_LOCAL"

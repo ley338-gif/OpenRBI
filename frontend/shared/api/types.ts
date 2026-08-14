@@ -81,6 +81,7 @@ export interface SessionResponseDto {
   disk_limit_mb: number;
   screen_width: number;
   screen_height: number;
+  clipboard_mode: "NONE" | "LOCAL_TO_REMOTE" | "REMOTE_TO_LOCAL" | "BIDIRECTIONAL_TEXT";
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
