@@ -161,6 +161,68 @@ async def test_admin_editable_group_role_mapping_is_used_at_real_login(db, clien
 
 
 @pytest.mark.asyncio
+async def test_group_role_mapping_is_case_insensitive_on_dn(db, client):
+    """Regression test for the case-sensitive DN comparison bug
+    (app/core/ldap_dn.py, app/services/ldap_provisioning.py): the group is
+    seeded in this test LDAP server as
+    "cn=openrbi-admins,ou=groups,dc=example,dc=org" (lowercase, see
+    scripts/run-ldap-integration-tests.sh's ldapadd block), but the
+    group->role mapping saved through the admin API here deliberately uses
+    a completely different, uppercase-and-mixed-case spelling of the exact
+    same DN. A directory that normalizes case differently than however an
+    admin happened to type a mapping (Active Directory is known to do
+    this) must not silently leave that mapping dead — the real LDAP
+    bind's real memberOf attribute is what's compared here, not a
+    synthetic string.
+    """
+    admin, admin_password = await make_user(db, role_name="ADMIN")
+    admin_cookie = await login_with_mfa_enrollment(client, admin.username, admin_password)
+
+    mismatched_case_dn = "CN=OpenRBI-Admins,OU=Groups,DC=Example,DC=ORG"
+    payload = {
+        "enabled": True,
+        "server_uri": os.environ["OPENRBI_LDAP_SERVER_URI"],
+        # False, not read from OPENRBI_LDAP_USE_STARTTLS: that env var is
+        # "true" for this throwaway server's own startup config, but the
+        # admin API's own validator correctly rejects StartTLS combined
+        # with an already-TLS ldaps:// URI (StartTLS is only meaningful
+        # for upgrading a plain ldap:// connection) — a real, pre-existing,
+        # unrelated inconsistency between backend startup config and this
+        # endpoint's validation, flagged separately, not this test's
+        # concern to work around by reproducing it.
+        "use_starttls": False,
+        "bind_dn": os.environ["OPENRBI_LDAP_BIND_DN"],
+        "bind_password": os.environ["OPENRBI_LDAP_BIND_PASSWORD"],
+        "base_dn": os.environ["OPENRBI_LDAP_BASE_DN"],
+        "user_search_filter": os.environ.get("OPENRBI_LDAP_USER_SEARCH_FILTER", "(uid={username})"),
+        "group_attribute": os.environ.get("OPENRBI_LDAP_GROUP_ATTRIBUTE", "memberOf"),
+        "group_role_mapping": {mismatched_case_dn: "ADMIN"},
+    }
+    try:
+        r = await client.put("/admin/ldap/config", json=payload, cookies={"openrbi_session": admin_cookie})
+        assert r.status_code == 200, r.text
+
+        r = await client.post(
+            "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+        )
+        assert r.status_code == 200
+        # mfa_required, not mfa_enrollment_required: this account already
+        # completed enrollment in an earlier test in this file — but role
+        # resolution and its DB commit happen before that branch in
+        # app/api/auth.py's login(), so the role is already updated.
+        assert r.json()["status"] == "mfa_required"
+
+        result = await db.execute(
+            text("SELECT r.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = :u"),
+            {"u": LDAP_ADMIN_USERNAME},
+        )
+        assert result.scalar_one() == "ADMIN"
+    finally:
+        await db.execute(text("DELETE FROM ldap_configs"))
+        await db.commit()
+
+
+@pytest.mark.asyncio
 async def test_ldap_server_unreachable_denies_login_no_fallback(client):
     """Deliberately does NOT stop/start the LDAP container itself — the
     backend has no Docker socket access at all (ADR 0005), so it cannot
