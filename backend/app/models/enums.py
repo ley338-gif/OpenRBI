@@ -22,6 +22,19 @@ class PolicyType(str, enum.Enum):
     SOURCE = "SOURCE"
 
 
+class ClipboardMode(str, enum.Enum):
+    """Direction(s) of the RFB CutText messages a session's display relay
+    (app/api/display.py, app/core/rfb_clipboard_filter.py) forwards between
+    the user's browser and the sandbox. Enforced at the protocol level, not
+    just hidden in the UI — see docs/policies.md.
+    """
+
+    NONE = "NONE"
+    LOCAL_TO_REMOTE = "LOCAL_TO_REMOTE"
+    REMOTE_TO_LOCAL = "REMOTE_TO_LOCAL"
+    BIDIRECTIONAL_TEXT = "BIDIRECTIONAL_TEXT"
+
+
 class PolicyVersionStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
@@ -154,6 +167,14 @@ class SecurityEventType(str, enum.Enum):
     LDAP_ENABLED = "LDAP_ENABLED"
     LDAP_DISABLED = "LDAP_DISABLED"
     LDAP_CONNECTION_TESTED = "LDAP_CONNECTION_TESTED"
+
+    # Clipboard-policy enforcement (app/core/rfb_clipboard_filter.py) — a
+    # real ClientCutText/ServerCutText message the relay dropped because
+    # the session's resolved ClipboardMode didn't allow that direction.
+    # Rate-limited to once per session (see record_security_event call
+    # site) so an active clipboard-blocked user doesn't flood the audit
+    # log with one event per keystroke-triggered copy.
+    CLIPBOARD_ACCESS_BLOCKED = "CLIPBOARD_ACCESS_BLOCKED"
 
     # Roadmap Phase B / B1.9 — first-run bootstrap of the initial local
     # administrator. INITIAL_ADMIN_CREATED fires when the bootstrap admin

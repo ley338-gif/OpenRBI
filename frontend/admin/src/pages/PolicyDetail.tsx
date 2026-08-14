@@ -24,12 +24,25 @@ interface RuleRow {
 const DEFAULT_SCREEN_WIDTH = 1280;
 const DEFAULT_SCREEN_HEIGHT = 800;
 
+// Matches app/services/policy_engine.py's DEFAULT_CLIPBOARD_MODE — the
+// mode a session gets when no CLIPBOARD policy (or none with a
+// recognized clipboard_mode value) applies to a user.
+const DEFAULT_CLIPBOARD_MODE = "BIDIRECTIONAL_TEXT";
+type ClipboardMode = "NONE" | "LOCAL_TO_REMOTE" | "REMOTE_TO_LOCAL" | "BIDIRECTIONAL_TEXT";
+const CLIPBOARD_MODE_LABELS: Record<ClipboardMode, string> = {
+  NONE: "Blocked both directions",
+  LOCAL_TO_REMOTE: "Local → session only",
+  REMOTE_TO_LOCAL: "Session → local only",
+  BIDIRECTIONAL_TEXT: "Both directions (unrestricted)",
+};
+
 /**
  * The primary UX for the existing policy engine (section 28) — a
- * structured rule builder, not a JSON textbox. Only MIME/SOURCE rules are
- * offered because those are the only ones app/services/policy_engine.py
- * actually evaluates (docs/policies.md) — the editor doesn't pretend
- * NETWORK/CLIPBOARD/etc. rules do anything at runtime.
+ * structured rule builder, not a JSON textbox. Only MIME/SOURCE rules,
+ * SESSION resolution, and CLIPBOARD mode are offered because those are
+ * the only content app/services/policy_engine.py actually evaluates
+ * (docs/policies.md) — the editor doesn't pretend NETWORK/BROWSER/etc.
+ * rules do anything at runtime.
  */
 export function PolicyDetail() {
   const { id } = useParams<{ id: string }>();
@@ -40,6 +53,7 @@ export function PolicyDetail() {
   const [rows, setRows] = useState<RuleRow[]>([]);
   const [screenWidth, setScreenWidth] = useState(DEFAULT_SCREEN_WIDTH);
   const [screenHeight, setScreenHeight] = useState(DEFAULT_SCREEN_HEIGHT);
+  const [clipboardMode, setClipboardMode] = useState<ClipboardMode>(DEFAULT_CLIPBOARD_MODE);
   const [busy, setBusy] = useState(false);
   const [pendingRollback, setPendingRollback] = useState<{ id: string; versionNumber: number } | null>(null);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -59,14 +73,15 @@ export function PolicyDetail() {
   const currentPublished = policy.versions.find((v) => v.id === policy.current_version_id);
   const sorted = [...policy.versions].sort((a, b) => b.version_number - a.version_number);
   const isSessionPolicy = policy.policy_type === "SESSION";
+  const isClipboardPolicy = policy.policy_type === "CLIPBOARD";
   // Only these two rule_type values are ever read by
   // app/services/policy_engine.py's evaluate_file_action, but the query
   // that reads them does not filter by the parent Policy's policy_type —
-  // so the editor itself must be the thing that keeps a NETWORK/CLIPBOARD/
-  // BROWSER/DOWNLOADS/UPLOADS-typed policy from silently acquiring
-  // enforced file rules a rule-type badge wouldn't warn about.
+  // so the editor itself must be the thing that keeps a NETWORK/BROWSER/
+  // DOWNLOADS/UPLOADS-typed policy from silently acquiring enforced file
+  // rules a rule-type badge wouldn't warn about.
   const isFileRulePolicy = policy.policy_type === "MIME" || policy.policy_type === "SOURCE";
-  const isNotEnforcedPolicy = !isSessionPolicy && !isFileRulePolicy;
+  const isNotEnforcedPolicy = !isSessionPolicy && !isFileRulePolicy && !isClipboardPolicy;
 
   function startEditing() {
     // A brand-new draft starts from whatever is currently published (not
@@ -84,6 +99,11 @@ export function PolicyDetail() {
     const content = source?.content ?? {};
     setScreenWidth(typeof content.screen_width === "number" ? content.screen_width : DEFAULT_SCREEN_WIDTH);
     setScreenHeight(typeof content.screen_height === "number" ? content.screen_height : DEFAULT_SCREEN_HEIGHT);
+    setClipboardMode(
+      typeof content.clipboard_mode === "string" && content.clipboard_mode in CLIPBOARD_MODE_LABELS
+        ? (content.clipboard_mode as ClipboardMode)
+        : DEFAULT_CLIPBOARD_MODE,
+    );
     setEditing(true);
   }
 
@@ -112,10 +132,15 @@ export function PolicyDetail() {
   async function saveDraft() {
     if (!id) return;
     setBusy(true);
-    // Every other policy_type's `content` stays {} — resolution is the
-    // only field the engine reads today (app/services/policy_engine.py's
-    // resolve_session_resolution), and only for SESSION-type policies.
-    const content = isSessionPolicy ? { screen_width: screenWidth, screen_height: screenHeight } : {};
+    // Every other policy_type's `content` stays {} — resolution and
+    // clipboard_mode are the only fields the engine reads today
+    // (app/services/policy_engine.py's resolve_session_resolution /
+    // resolve_clipboard_policy), each only for its own policy_type.
+    const content = isSessionPolicy
+      ? { screen_width: screenWidth, screen_height: screenHeight }
+      : isClipboardPolicy
+        ? { clipboard_mode: clipboardMode }
+        : {};
     try {
       if (draft) {
         await adminApi.updateVersion(id, draft.id, { content, file_rules: rows });
@@ -231,6 +256,18 @@ export function PolicyDetail() {
                 effect on any running or new session today.
                 {policy.description && <> · {policy.description}</>}
               </>
+            ) : isSessionPolicy ? (
+              <>
+                Type: {policy.policy_type} · Conflict model: smallest resolution wins when multiple published
+                SESSION policies apply across a user's groups.
+                {policy.description && <> · {policy.description}</>}
+              </>
+            ) : isClipboardPolicy ? (
+              <>
+                Type: {policy.policy_type} · Conflict model: most restrictive direction(s) win when multiple
+                published CLIPBOARD policies apply across a user's groups.
+                {policy.description && <> · {policy.description}</>}
+              </>
             ) : (
               <>
                 Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
@@ -296,6 +333,7 @@ export function PolicyDetail() {
               </p>
             )}
             {isFileRulePolicy && <RuleEditor rows={rows} setRows={setRows} />}
+            {isClipboardPolicy && <ClipboardEditor mode={clipboardMode} setMode={setClipboardMode} />}
             {isNotEnforcedPolicy && (
               <EmptyState title="Nothing to configure yet">
                 <p>
@@ -355,7 +393,17 @@ export function PolicyDetail() {
               )}
             </p>
           )}
-          {v.file_rules.length === 0 ? (
+          {isClipboardPolicy && (
+            <p className="text-muted" style={{ fontSize: "0.85rem", marginBottom: "8px" }}>
+              Clipboard mode:{" "}
+              {typeof v.content.clipboard_mode === "string" && v.content.clipboard_mode in CLIPBOARD_MODE_LABELS ? (
+                <span className="mono">{CLIPBOARD_MODE_LABELS[v.content.clipboard_mode as ClipboardMode]}</span>
+              ) : (
+                <span>not set — sessions fall back to {CLIPBOARD_MODE_LABELS[DEFAULT_CLIPBOARD_MODE]}</span>
+              )}
+            </p>
+          )}
+          {isClipboardPolicy ? null : v.file_rules.length === 0 ? (
             <EmptyState title="No file rules in this version" />
           ) : (
             <table className="data-table">
@@ -440,6 +488,30 @@ function ResolutionEditor({
       </div>
       <p className="hint">
         Applied to every new session started by a user in a group this policy is attached to. Doesn't affect
+        sessions already running.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Only rendered for CLIPBOARD-type policies. Sets the direction(s) the
+ * display relay allows for RFB CutText messages between the user's
+ * browser and the sandbox (app/core/rfb_clipboard_filter.py) — enforced
+ * at the protocol level, not just hidden in the user portal's UI.
+ */
+function ClipboardEditor({ mode, setMode }: { mode: ClipboardMode; setMode: (v: ClipboardMode) => void }) {
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <label className="form-field-label" style={{ display: "block", marginBottom: "4px" }}>Clipboard mode</label>
+      <select value={mode} onChange={(e) => setMode(e.target.value as ClipboardMode)} aria-label="Clipboard mode">
+        {(Object.keys(CLIPBOARD_MODE_LABELS) as ClipboardMode[]).map((value) => (
+          <option key={value} value={value}>{CLIPBOARD_MODE_LABELS[value]}</option>
+        ))}
+      </select>
+      <p className="hint">
+        Applied to every new session started by a user in a group this policy is attached to — enforced by the
+        display relay itself (app/core/rfb_clipboard_filter.py), not just the user portal's UI. Doesn't affect
         sessions already running.
       </p>
     </div>

@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.mime_matching import matches_mime_pattern
 from app.core.source_matching import matches_source_pattern
-from app.models.enums import FileAction, FileRuleType, PolicyType, PolicyVersionStatus
+from app.models.enums import (
+    ClipboardMode,
+    FileAction,
+    FileRuleType,
+    PolicyType,
+    PolicyVersionStatus,
+)
 from app.models.group import UserGroup
 from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 
@@ -14,6 +20,28 @@ from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 # (docs/policies.md's conflict model) — never relies on group iteration
 # order.
 _ACTION_PRECEDENCE = {FileAction.DENY: 3, FileAction.QUARANTINE: 2, FileAction.AUTO_RELEASE: 1}
+
+# Same conservative "any group that wants it locked down wins" precedence
+# as _ACTION_PRECEDENCE above, applied per clipboard *direction* rather
+# than to the four ClipboardMode values directly: a group's policy blocks
+# LOCAL_TO_REMOTE if its mode isn't LOCAL_TO_REMOTE or BIDIRECTIONAL_TEXT,
+# and blocks REMOTE_TO_LOCAL if its mode isn't REMOTE_TO_LOCAL or
+# BIDIRECTIONAL_TEXT. The resolved mode allows a direction only if every
+# applicable policy allows it — one group's NONE beats another group's
+# BIDIRECTIONAL_TEXT, and (the case _ACTION_PRECEDENCE-style single-tier
+# ranking can't express) one group's LOCAL_TO_REMOTE-only and another's
+# REMOTE_TO_LOCAL-only combine to NONE, not to an arbitrary pick of one
+# direction — consistent with the project's fail-closed default: two
+# groups that only agree the *other* direction should be blocked never
+# resolves to "the union of what each individually allowed" in this
+# engine (see _ACTION_PRECEDENCE above, same principle for file actions).
+_ALLOWS_LOCAL_TO_REMOTE = {ClipboardMode.LOCAL_TO_REMOTE, ClipboardMode.BIDIRECTIONAL_TEXT}
+_ALLOWS_REMOTE_TO_LOCAL = {ClipboardMode.REMOTE_TO_LOCAL, ClipboardMode.BIDIRECTIONAL_TEXT}
+
+# Used whenever no applicable CLIPBOARD policy sets a mode — an
+# installation with no CLIPBOARD policies configured behaves exactly as it
+# did before this feature existed (unrestricted, both directions).
+DEFAULT_CLIPBOARD_MODE = ClipboardMode.BIDIRECTIONAL_TEXT
 
 # Used whenever no applicable SESSION policy sets a resolution — matches
 # the sandbox image's own long-standing defaults (docker/browser/
@@ -154,3 +182,54 @@ async def resolve_session_resolution(db: AsyncSession, user_id: uuid.UUID) -> Se
     if best is not None:
         return best
     return SessionResolution(width=DEFAULT_SCREEN_WIDTH, height=DEFAULT_SCREEN_HEIGHT)
+
+
+async def resolve_clipboard_policy(db: AsyncSession, user_id: uuid.UUID) -> ClipboardMode:
+    """Reads the clipboard mode out of the published CLIPBOARD-type
+    policies attached to the user's groups, structurally the same query
+    shape as resolve_session_resolution above. A policy's `content` is
+    expected to carry {"clipboard_mode": "<one of the four enum values>"};
+    a missing/unrecognized value is silently skipped (fail-open per-policy,
+    matching resolve_session_resolution's own handling of malformed
+    content) rather than blocking session creation over a typo.
+
+    See _ALLOWS_LOCAL_TO_REMOTE/_ALLOWS_REMOTE_TO_LOCAL above for the
+    conflict model: a direction is only in the resolved mode if every
+    applicable policy allows it.
+    """
+    result = await db.execute(
+        select(PolicyVersion.content)
+        .join(Policy, PolicyVersion.policy_id == Policy.id)
+        .join(GroupPolicy, GroupPolicy.policy_id == Policy.id)
+        .join(UserGroup, UserGroup.group_id == GroupPolicy.group_id)
+        .where(
+            UserGroup.user_id == user_id,
+            Policy.policy_type == PolicyType.CLIPBOARD,
+            Policy.current_version_id == PolicyVersion.id,
+            PolicyVersion.status == PolicyVersionStatus.PUBLISHED,
+        )
+    )
+
+    modes: list[ClipboardMode] = []
+    for (content,) in result.all():
+        if not isinstance(content, dict):
+            continue
+        raw = content.get("clipboard_mode")
+        try:
+            modes.append(ClipboardMode(raw))
+        except ValueError:
+            continue
+
+    if not modes:
+        return DEFAULT_CLIPBOARD_MODE
+
+    allow_local_to_remote = all(mode in _ALLOWS_LOCAL_TO_REMOTE for mode in modes)
+    allow_remote_to_local = all(mode in _ALLOWS_REMOTE_TO_LOCAL for mode in modes)
+
+    if allow_local_to_remote and allow_remote_to_local:
+        return ClipboardMode.BIDIRECTIONAL_TEXT
+    if allow_local_to_remote:
+        return ClipboardMode.LOCAL_TO_REMOTE
+    if allow_remote_to_local:
+        return ClipboardMode.REMOTE_TO_LOCAL
+    return ClipboardMode.NONE

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
+from app.core.rfb_clipboard_filter import RfbProtocolError, build_filters
 from app.core.session_agent_client import SessionAgentError, get_display_info
 from app.db.session import get_db
 from app.models.browser_session import BrowserSession
@@ -91,12 +92,28 @@ async def display_ws(
 
     _active_connections[session_id] = websocket
 
+    # Real, protocol-level clipboard-policy enforcement (docs/policies.md) —
+    # not a UI-only control. See app/core/rfb_clipboard_filter.py for the
+    # design and its documented trade-offs/residual risk. For the common
+    # unrestricted case (BIDIRECTIONAL_TEXT) both filters are a no-op pure
+    # passthrough with no parsing overhead.
+    client_filter, server_filter = build_filters(session.clipboard_mode)
+
     async def pump_ws_to_tcp() -> None:
         try:
             while True:
                 data = await websocket.receive_bytes()
-                writer.write(data)
-                await writer.drain()
+                try:
+                    forward = client_filter.feed(data)
+                except RfbProtocolError:
+                    # Fail-closed: an unparseable byte sequence could be a
+                    # clipboard message this filter failed to recognize —
+                    # never guess and keep relaying, tear the connection
+                    # down instead.
+                    break
+                if forward:
+                    writer.write(forward)
+                    await writer.drain()
         except (WebSocketDisconnect, OSError):
             pass
 
@@ -106,7 +123,12 @@ async def display_ws(
                 data = await reader.read(_CHUNK_SIZE)
                 if not data:
                     break
-                await websocket.send_bytes(data)
+                try:
+                    forward = server_filter.feed(data)
+                except RfbProtocolError:
+                    break
+                if forward:
+                    await websocket.send_bytes(forward)
         except (WebSocketDisconnect, OSError, RuntimeError):
             pass
 
@@ -128,9 +150,20 @@ async def display_ws(
         # A TERMINATING/TERMINATED/FAILED session must not be bumped back
         # to DISCONNECTED just because its display connection also closed.
         await db.refresh(session)
+        needs_commit = False
         if session.status == SessionStatus.ACTIVE:
             session.status = SessionStatus.DISCONNECTED
             await record_security_event(
                 db, SecurityEventType.SESSION_DISCONNECTED, user_id=current_user.id, session_id=session.id
             )
+            needs_commit = True
+        if client_filter.blocked_once or server_filter.blocked_once:
+            # Once per connection, not once per blocked message — an
+            # actively-clipboard-blocked user could otherwise flood the
+            # audit log with one event per copy/paste attempt.
+            await record_security_event(
+                db, SecurityEventType.CLIPBOARD_ACCESS_BLOCKED, user_id=current_user.id, session_id=session.id
+            )
+            needs_commit = True
+        if needs_commit:
             await db.commit()
