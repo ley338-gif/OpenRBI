@@ -160,3 +160,70 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs --tail=200
+
+  # Roadmap Phase B / B1.2-B1.6, closing a gap noted since A5: the LDAP
+  # test scripts were deliberately never wired into backend-integration-
+  # tests above, because run-ldap-integration-tests.sh restarts the
+  # backend container mid-run with different OPENRBI_LDAP_* env (the
+  # running uvicorn process only reads Settings() once) — too invasive to
+  # do inside a job that other, unrelated checks also depend on staying
+  # up. A separate job on its own fresh runner VM (GitHub Actions gives
+  # every job an isolated environment by default, no shared containers or
+  # filesystem with backend-integration-tests) sidesteps that entirely: a
+  # backend restart here can't affect anything else.
+  ldap-integration-tests:
+    name: LDAP integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Build and start the stack
+        run: |
+          cp .env.example .env
+          DB_PASSWORD=$(openssl rand -hex 32)
+          sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${DB_PASSWORD}#" .env
+          sed -i "s#^OPENRBI_DATABASE_URL=.*#OPENRBI_DATABASE_URL=postgresql+asyncpg://openrbi:${DB_PASSWORD}@postgres:5432/openrbi#" .env
+          AGENT_TOKEN=$(openssl rand -hex 32)
+          sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          docker compose up -d --build
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            if [ "$i" -eq 30 ]; then
+              echo "Backend did not become healthy within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Wait for PostgreSQL to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL did not become ready within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Apply database migrations
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Run LdapAuthProvider tests (real throwaway LDAP server, no backend restart)
+        run: sh scripts/run-ldap-tests.sh
+      - name: Run HTTP-level LDAP login/admin-config tests (restarts backend with real throwaway LDAP)
+        run: sh scripts/run-ldap-integration-tests.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      # Always torn down, success or failure — this job's whole point is
+      # that its own backend restart and throwaway LDAP container never
+      # linger or affect anything else, matching the isolation the
+      # existing LDAP scripts already apply to themselves (their own traps
+      # restore .env / stop their throwaway containers even on failure)
+      # one level up, at the runner/stack level.
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v

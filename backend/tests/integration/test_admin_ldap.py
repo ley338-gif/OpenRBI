@@ -45,7 +45,13 @@ def _valid_payload(**overrides) -> dict:
     payload = {
         "enabled": False,
         "server_uri": LDAP_SERVER_URI,
-        "use_starttls": True,
+        # False, not True: LDAP_SERVER_URI (OPENRBI_LDAP_SERVER_URI) is
+        # ldaps:// as set by scripts/run-ldap-integration-tests.sh, and the
+        # admin API's own validator correctly rejects StartTLS combined
+        # with an already-TLS ldaps:// URI. This default was stale --
+        # found while verifying the new isolated ldap-integration-tests CI
+        # job actually runs this file, which it never had before.
+        "use_starttls": False,
         "bind_dn": LDAP_BIND_DN,
         "bind_password": LDAP_BIND_PASSWORD,
         "base_dn": LDAP_BASE_DN,

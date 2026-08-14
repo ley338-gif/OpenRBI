@@ -112,7 +112,16 @@ async def test_admin_editable_group_role_mapping_is_used_at_real_login(db, clien
     payload = {
         "enabled": True,
         "server_uri": os.environ["OPENRBI_LDAP_SERVER_URI"],
-        "use_starttls": os.environ.get("OPENRBI_LDAP_USE_STARTTLS", "true").lower() == "true",
+        # False, not read from OPENRBI_LDAP_USE_STARTTLS: that env var is
+        # "true" for this throwaway server's own startup config, but the
+        # admin API's own validator correctly rejects StartTLS combined
+        # with an already-TLS ldaps:// URI (StartTLS is only meaningful
+        # for upgrading a plain ldap:// connection) — this test's payload
+        # was simply stale, not a real bug in the validator or the
+        # feature under test. Found while verifying the new isolated
+        # ldap-integration-tests CI job actually runs this test, not
+        # assumed from reading the code.
+        "use_starttls": False,
         "bind_dn": os.environ["OPENRBI_LDAP_BIND_DN"],
         "bind_password": os.environ["OPENRBI_LDAP_BIND_PASSWORD"],
         "base_dn": os.environ["OPENRBI_LDAP_BASE_DN"],
