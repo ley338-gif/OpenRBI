@@ -20,8 +20,14 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks: [control-plane]
 
+  # BSD-3-Clause Redis-protocol-compatible fork, not Redis itself — see
+  # docs/adr/0016-redis-to-valkey.md and DEPENDENCIES.md for why. Service
+  # name/hostname stays "redis" deliberately: OPENRBI_REDIS_URL
+  # (.env.example) and every consumer (app/core/redis.py, health checks,
+  # e2e assertions) address it by that name, and nothing about the
+  # protocol or client library changed, only which image implements it.
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:8-alpine
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
