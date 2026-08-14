@@ -129,6 +129,58 @@ async def test_conflicting_group_policies_resolve_to_most_restrictive(db):
 
 
 @pytest.mark.asyncio
+async def test_pdf_auto_release_alone_is_released(db):
+    """Reported-bug repro, step 1: a user in exactly one group with a
+    published application/pdf -> AUTO_RELEASE rule and nothing else must
+    get AUTO_RELEASE for a PDF. Isolates whether the core MIME-match path
+    itself is broken.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+
+    policy = await _make_published_mime_policy(
+        db, actor_id=user.id, action="AUTO_RELEASE", pattern="application/pdf"
+    )
+    await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+
+    result = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime="application/pdf"))
+    assert result.action.value == "AUTO_RELEASE"
+    assert result.matched_rule_id is not None
+
+
+@pytest.mark.asyncio
+async def test_pdf_auto_release_overridden_by_broader_quarantine_rule_in_second_group(db):
+    """Reported-bug repro, step 2: same user additionally belongs to a
+    second, realistic group with a broader application/* -> QUARANTINE
+    rule. Per the documented conflict model (docs/policies.md), QUARANTINE
+    beats AUTO_RELEASE regardless of which rule is more specific — this is
+    the deliberately conservative precedence, not a bug.
+    """
+    user, _ = await make_user(db, role_name="USER")
+    pdf_group = await _make_group(db)
+    default_group = await _make_group(db)
+    db.add_all([
+        UserGroup(user_id=user.id, group_id=pdf_group.id),
+        UserGroup(user_id=user.id, group_id=default_group.id),
+    ])
+    await db.commit()
+
+    pdf_policy = await _make_published_mime_policy(
+        db, actor_id=user.id, action="AUTO_RELEASE", pattern="application/pdf"
+    )
+    default_policy = await _make_published_mime_policy(
+        db, actor_id=user.id, action="QUARANTINE", pattern="application/*"
+    )
+    await attach_policy_to_group(db, group_id=pdf_group.id, policy_id=pdf_policy.id)
+    await attach_policy_to_group(db, group_id=default_group.id, policy_id=default_policy.id)
+
+    result = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime="application/pdf"))
+    assert result.action.value == "QUARANTINE"
+
+
+@pytest.mark.asyncio
 async def test_publish_and_rollback_generate_audit_events(db):
     actor, _ = await make_user(db, role_name="USER")
     actor_id = actor.id
