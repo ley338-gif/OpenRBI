@@ -10,6 +10,10 @@ Roles (`USER`, `SECURITY_REVIEWER`, `ADMIN`) grant **capabilities** in the produ
 
 Policies are versioned. A published `PolicyVersion` is immutable — editing means creating a new draft version. Workflow: create draft → edit → publish → (further edits create a new version) → prior versions remain visible in history → rollback re-activates a prior published version as current. Every policy *decision* (a session's network permission, a file's action) records which `PolicyVersion` produced it.
 
+A policy's `name` and `description` are metadata, not versioned content — `PUT /admin/policies/{id}` renames a policy or changes its description in place at any time (name must stay unique), independent of its versions. The `policy_type` itself is not editable after creation, since it determines which enforcement path (if any) a policy's content is read by.
+
+When starting a new draft on a policy that already has a published version and no draft yet, the Admin Portal seeds the new draft's rows/content from that published version rather than starting blank — the published version itself stays immutable, but this makes "edit the live rules" a one-click action instead of requiring every existing rule to be retyped from scratch.
+
 ## Conflict model (deterministic)
 
 When multiple applicable group policies disagree on a file rule, the outcome is decided by this fixed precedence — never by group ordering:

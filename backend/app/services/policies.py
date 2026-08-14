@@ -58,6 +58,20 @@ async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_
     return policy
 
 
+async def rename_policy(db: AsyncSession, policy: Policy, *, name: str, description: str | None = None) -> Policy:
+    stripped = name.strip()
+    if not stripped:
+        raise PolicyServiceError("policy name cannot be empty")
+    result = await db.execute(select(Policy).where(Policy.name == stripped, Policy.id != policy.id))
+    if result.scalar_one_or_none() is not None:
+        raise PolicyServiceError(f"policy name already taken: {stripped}")
+    policy.name = stripped
+    policy.description = description.strip() if description else None
+    db.add(policy)
+    await db.flush()
+    return policy
+
+
 async def create_draft_version(
     db: AsyncSession,
     policy: Policy,

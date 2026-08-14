@@ -4,6 +4,7 @@ import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
 import { PageHeader } from "@shared/components/PageHeader";
+import { FormField } from "@shared/components/FormField";
 import { AttachList, type AttachListItem } from "@shared/components/AttachList";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
@@ -41,6 +42,9 @@ export function PolicyDetail() {
   const [screenHeight, setScreenHeight] = useState(DEFAULT_SCREEN_HEIGHT);
   const [busy, setBusy] = useState(false);
   const [pendingRollback, setPendingRollback] = useState<{ id: string; versionNumber: number } | null>(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [descriptionDraft, setDescriptionDraft] = useState("");
 
   function load() {
     if (!id) return;
@@ -52,19 +56,49 @@ export function PolicyDetail() {
   if (!policy) return <LoadingBlock label="Loading policy…" />;
 
   const draft = policy.versions.find((v) => v.status === "DRAFT");
+  const currentPublished = policy.versions.find((v) => v.id === policy.current_version_id);
   const sorted = [...policy.versions].sort((a, b) => b.version_number - a.version_number);
   const isSessionPolicy = policy.policy_type === "SESSION";
 
   function startEditing() {
+    // A brand-new draft starts from whatever is currently published (not
+    // blank) so "New draft version" is really "edit the live rules" — the
+    // published version itself stays immutable (app/services/policies.py),
+    // this only seeds the new draft's initial rows.
+    const source = draft ?? currentPublished;
     setRows(
-      draft
-        ? draft.file_rules.map((r) => ({ rule_type: r.rule_type, match_pattern: r.match_pattern, action: r.action, priority: r.priority }))
-        : [{ rule_type: "MIME", match_pattern: "", action: "QUARANTINE", priority: 100 }],
+      source && source.file_rules.length > 0
+        ? source.file_rules.map((r) => ({ rule_type: r.rule_type, match_pattern: r.match_pattern, action: r.action, priority: r.priority }))
+        : source
+          ? []
+          : [{ rule_type: "MIME", match_pattern: "", action: "QUARANTINE", priority: 100 }],
     );
-    const content = draft?.content ?? {};
+    const content = source?.content ?? {};
     setScreenWidth(typeof content.screen_width === "number" ? content.screen_width : DEFAULT_SCREEN_WIDTH);
     setScreenHeight(typeof content.screen_height === "number" ? content.screen_height : DEFAULT_SCREEN_HEIGHT);
     setEditing(true);
+  }
+
+  function startEditingDetails() {
+    if (!policy) return;
+    setNameDraft(policy.name);
+    setDescriptionDraft(policy.description ?? "");
+    setEditingDetails(true);
+  }
+
+  async function saveDetails() {
+    if (!id || !nameDraft.trim()) return;
+    setBusy(true);
+    try {
+      await adminApi.updatePolicy(id, nameDraft.trim(), descriptionDraft.trim());
+      notify("Policy updated");
+      setEditingDetails(false);
+      load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not update this policy", "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveDraft() {
@@ -159,15 +193,43 @@ export function PolicyDetail() {
   return (
     <div className="page">
       <p><Link to="/policies">← Policies</Link></p>
-      <PageHeader
-        title={policy.name}
-        subtitle={
-          <>
-            Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
-            multiple matching rules apply across a user's groups.
-          </>
-        }
-      />
+      {editingDetails ? (
+        <div className="card">
+          <div className="section-header">
+            <h2>Rename policy</h2>
+          </div>
+          <FormField label="Name">
+            <input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} required />
+          </FormField>
+          <FormField label="Description" hint="Optional context shown in the policy overview.">
+            <textarea value={descriptionDraft} onChange={(e) => setDescriptionDraft(e.target.value)} />
+          </FormField>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button type="button" className="btn btn-primary" disabled={busy || !nameDraft.trim()} onClick={() => void saveDetails()}>
+              Save
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingDetails(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <PageHeader
+          title={policy.name}
+          subtitle={
+            <>
+              Type: {policy.policy_type} · Conflict model: <code className="mono">DENY &gt; QUARANTINE &gt; AUTO_RELEASE</code> when
+              multiple matching rules apply across a user's groups.
+              {policy.description && <> · {policy.description}</>}
+            </>
+          }
+          actions={
+            <button type="button" className="btn btn-secondary btn-sm" onClick={startEditingDetails}>
+              Rename / edit description
+            </button>
+          }
+        />
+      )}
 
       <div className="card">
         <div className="section-header">
@@ -193,7 +255,7 @@ export function PolicyDetail() {
           <h2>Versions</h2>
           {!editing && (
             <button type="button" className="btn btn-secondary btn-sm" onClick={startEditing}>
-              {draft ? "Edit draft" : "New draft version"}
+              {draft ? "Edit draft" : currentPublished ? "Edit rules (new draft)" : "New draft version"}
             </button>
           )}
         </div>
