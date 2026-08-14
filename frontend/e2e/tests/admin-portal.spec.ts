@@ -292,8 +292,8 @@ test.describe("Admin Portal", () => {
     await page.getByRole("button", { name: "+ Create Policy" }).click();
     const modal = page.locator(".create-policy-modal");
     await modal.getByLabel("Name").fill(policyName);
-    await modal.getByLabel("Type").selectOption("SESSION");
-    await expect(page.getByText(/sets the screen resolution/i)).toBeVisible();
+    await modal.getByRole("radio", { name: "Session resolution" }).check();
+    await expect(page.getByText(/sets the screen resolution for new sessions/i)).toBeVisible();
     await page.getByRole("button", { name: "Create draft policy" }).click();
 
     await page.getByRole("link", { name: policyName }).click();
@@ -313,6 +313,85 @@ test.describe("Admin Portal", () => {
     await page.getByRole("link", { name: "← Policies" }).click();
     const row = page.getByRole("row", { name: new RegExp(policyName) });
     await expect(row.getByText("Enforced screen resolution")).toBeVisible();
+  });
+
+  test("a NETWORK policy is clearly marked NOT ENFORCED in both the list and its own detail page", async ({ page }) => {
+    // Regression guard for the Policy-Typ-Bereinigung cleanup: NETWORK/
+    // DOWNLOADS/UPLOADS/CLIPBOARD/BROWSER are stored but read by nothing at
+    // runtime (docs/policies.md). An admin who can't tell that apart from
+    // MIME/SOURCE/SESSION at a glance could believe a NETWORK policy is
+    // doing something it isn't.
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+
+    const policyName = `e2e-network-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const modal = page.locator(".create-policy-modal");
+    await modal.getByLabel("Name").fill(policyName);
+    await modal.getByRole("radio", { name: "Not yet enforced" }).check();
+    await modal.getByLabel("Category").selectOption("NETWORK");
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+
+    // List row: the badge's actual text content, not just a CSS class —
+    // a class check wouldn't catch someone quietly changing/weakening the
+    // displayed wording later.
+    const row = page.getByRole("row", { name: new RegExp(policyName) });
+    await expect(row.getByText("NOT ENFORCED", { exact: true })).toBeVisible();
+
+    // Detail page header carries the same badge text.
+    await page.getByRole("link", { name: policyName }).click();
+    await expect(page.getByRole("heading", { name: policyName })).toBeVisible();
+    await expect(page.getByText("NOT ENFORCED", { exact: true })).toBeVisible();
+  });
+
+  test("a NETWORK policy's draft editor shows the not-enforced explanation, never the MIME/SOURCE rule editor", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+
+    const policyName = `e2e-network-editor-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const modal = page.locator(".create-policy-modal");
+    await modal.getByLabel("Name").fill(policyName);
+    await modal.getByRole("radio", { name: "Not yet enforced" }).check();
+    await modal.getByLabel("Category").selectOption("NETWORK");
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+    await page.getByRole("link", { name: policyName }).click();
+
+    await page.getByRole("button", { name: "New draft version" }).click();
+
+    // Positive: the actual, current explanation text (not the rule editor's
+    // "Add rule" flow) is what an admin sees here.
+    await expect(page.getByText("Nothing to configure yet")).toBeVisible();
+    await expect(page.getByText(/policies are stored but currently have no runtime effect/i)).toBeVisible();
+
+    // Negative, checked explicitly rather than assumed from the positive
+    // check above: no MIME/SOURCE rule-editor control exists in the DOM at
+    // all. A future regression could render both the EmptyState and the
+    // RuleEditor at once without the positive assertion alone catching it.
+    await expect(page.getByRole("button", { name: "Add rule" })).toHaveCount(0);
+    await expect(page.getByPlaceholder("e.g. application/pdf")).toHaveCount(0);
+    await expect(page.getByPlaceholder("e.g. *.microsoft.com")).toHaveCount(0);
+  });
+
+  test("Create Policy's category picker offers the right concrete types per category", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const modal = page.locator(".create-policy-modal");
+
+    await modal.getByRole("radio", { name: "File transfer rules" }).check();
+    const ruleBasis = modal.getByLabel("Rule basis");
+    await expect(ruleBasis.locator("option")).toHaveText(["MIME", "SOURCE"]);
+
+    await modal.getByRole("radio", { name: "Not yet enforced" }).check();
+    const category = modal.getByLabel("Category");
+    await expect(category.locator("option")).toHaveText(["NETWORK", "DOWNLOADS", "UPLOADS", "CLIPBOARD", "BROWSER"]);
+
+    // Session resolution has no concrete-type sub-select at all — the
+    // radio choice alone fully determines policy_type.
+    await modal.getByRole("radio", { name: "Session resolution" }).check();
+    await expect(modal.getByLabel("Rule basis")).toHaveCount(0);
+    await expect(modal.getByLabel("Category")).toHaveCount(0);
   });
 
   test("Policy can be renamed after creation, and editing an existing rule pre-fills it instead of starting blank", async ({ page }) => {
@@ -371,7 +450,7 @@ test.describe("Admin Portal", () => {
     await page.getByRole("button", { name: "+ Create Policy" }).click();
     const policyModal = page.locator(".create-policy-modal");
     await policyModal.getByLabel("Name").fill(policyName);
-    await policyModal.getByLabel("Type").selectOption("SESSION");
+    await policyModal.getByRole("radio", { name: "Session resolution" }).check();
     await page.getByRole("button", { name: "Create draft policy" }).click();
 
     await page.getByRole("link", { name: "Groups" }).click();
