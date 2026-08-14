@@ -182,27 +182,32 @@ test.describe("Admin Portal", () => {
     await expect(page.getByText(/last updated \d{1,2}:\d{2}:\d{2}/i)).toBeVisible();
   });
 
-  test("Audit page (B1.10.7) filters by event type/user and links to the real user", async ({ page }) => {
+  test("Audit page filters events and opens structured details", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.getByRole("link", { name: "Audit", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
+    await page.getByRole("navigation").getByRole("link", { name: "Audit log", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Audit Log" })).toBeVisible();
 
-    // Filtering by a real event type narrows the table to only that type.
-    const eventResponse = page.waitForResponse(
-      (r) => r.url().includes("/admin/security-events") && r.url().includes("event_type=USER_CREATED") && r.ok(),
-    );
-    await page.getByPlaceholder("Filter by event type").fill("USER_CREATED");
-    await eventResponse;
+    // A readable select drives the event-type filter; internal event names
+    // remain available as secondary forensic context in the table.
+    await page.getByLabel("Filter by time range").selectOption("all");
+    await page.getByLabel("Filter by event type").selectOption("USER_CREATED");
     const rows = page.locator(".data-table tbody tr").filter({ hasText: "USER_CREATED" });
     await expect(rows.first()).toBeVisible();
     await expect(page.locator(".data-table tbody tr", { hasText: /SESSION_STARTED|MFA_ENROLLED/ })).toHaveCount(0);
 
     // The user column is a real link to that user's detail page, not just text.
-    const userLink = page.locator(".data-table tbody tr").first().locator("a").first();
+    const userLink = page.locator(".data-table tbody tr").first().locator('a[href*="/users/"]').first();
     await expect(userLink).toHaveAttribute("href", /\/users\/[0-9a-f-]{36}/);
 
+    await page.locator(".data-table tbody tr").first().press("Enter");
+    await expect(page.getByRole("dialog", { name: "User created" })).toBeVisible();
+    await expect(page.getByText("Event metadata")).toBeVisible();
+    await page.getByRole("button", { name: "Show raw event" }).click();
+    await expect(page.locator(".audit-raw-section pre")).toContainText("USER_CREATED");
+    await page.getByRole("button", { name: "Close event details" }).click();
+
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await expect(page.getByPlaceholder("Filter by event type")).toHaveValue("");
+    await expect(page.getByLabel("Filter by event type")).toHaveValue("");
   });
 
   test("Workers page (B1.10.3) lists real workers and drilling into one shows drain/maintenance controls and history charts", async ({ page }) => {
