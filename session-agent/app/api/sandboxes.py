@@ -17,6 +17,18 @@ router = APIRouter(
 )
 
 
+@router.get("", response_model=list[str])
+async def list_active_sandboxes() -> list[str]:
+    """Session IDs of every currently running openrbi.managed container —
+    the minimal addition the control plane's orphan reconciliation job
+    (app/core/orphan_reconciler.py) needs to compare live containers
+    against BrowserSession rows. Deliberately separate from
+    count_active_sessions() (used by /v1/nodes/self), not a change to that
+    method's existing int return contract.
+    """
+    return await get_provider().list_active_session_ids()
+
+
 @router.post("/{session_id}", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(session_id: str, payload: CreateSandboxRequest) -> dict[str, str]:
     settings = get_settings()

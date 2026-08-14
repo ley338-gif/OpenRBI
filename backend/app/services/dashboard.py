@@ -38,6 +38,12 @@ _SUSTAINED_HIGH_LOAD_WINDOW = timedelta(minutes=10)
 _FAILED_LOGIN_WARNING_WINDOW = timedelta(minutes=15)
 _FAILED_LOGIN_WARNING_THRESHOLD = 3
 
+# Orphan-container reconciliation (app/core/orphan_reconciler.py) is
+# silent by design otherwise — an admin should see "orphans were found
+# and cleaned up recently" without having to go dig through the audit
+# log first.
+_ORPHAN_RECONCILED_WARNING_WINDOW = timedelta(hours=24)
+
 
 @dataclass
 class WorkerSummary:
@@ -258,6 +264,24 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
             warnings.append(
                 Warning(kind="failed_logins", username=username, message=f"{count} failed login attempts for user {username}")
             )
+
+    since_orphans = now - _ORPHAN_RECONCILED_WARNING_WINDOW
+    orphan_count = await db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type == SecurityEventType.ORPHAN_SESSION_RECONCILED,
+            SecurityEvent.created_at >= since_orphans,
+        )
+    ) or 0
+    if orphan_count:
+        warnings.append(
+            Warning(
+                kind="orphan_sessions",
+                message=(
+                    f"{orphan_count} orphaned session container(s) auto-reconciled in the last "
+                    f"{int(_ORPHAN_RECONCILED_WARNING_WINDOW.total_seconds() / 3600)}h"
+                ),
+            )
+        )
 
     history = await metrics_history.session_history(db, range_key=range_key, now=now)
 

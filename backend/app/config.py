@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     # Pydantic parses this from a JSON object string in the environment.
     ldap_group_role_mapping: dict[str, str] = {}
 
+    # Orphan-container reconciliation (app/core/orphan_reconciler.py):
+    # a running openrbi.managed container whose BrowserSession row is
+    # missing or already TERMINATED/FAILED is only acted on after being
+    # seen as an orphan on this many *consecutive* poll cycles — avoids
+    # tearing down a session that's mid-create_session() and hasn't
+    # committed its DB row yet (docs/adr/0021).
+    orphan_reconcile_interval_seconds: float = 300.0
+    orphan_reconcile_grace_cycles: int = 2
+
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
     def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
