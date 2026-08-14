@@ -4,6 +4,7 @@ import { StatusBadge } from "@shared/components/StatusBadge";
 import { LoadingBlock, ErrorState, EmptyState } from "@shared/components/States";
 import { ConfirmDialog } from "@shared/components/ConfirmDialog";
 import { PageHeader } from "@shared/components/PageHeader";
+import { AttachList, type AttachListItem } from "@shared/components/AttachList";
 import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { FileAction, FileRuleType, PolicyDetailDto } from "@shared/api/types";
@@ -118,6 +119,43 @@ export function PolicyDetail() {
     }
   }
 
+  async function searchGroups(query: string): Promise<AttachListItem[]> {
+    const groups = await adminApi.listGroups();
+    const needle = query.toLowerCase();
+    return groups
+      .filter((g) => g.name.toLowerCase().includes(needle))
+      .slice(0, 10)
+      .map((g) => ({ id: g.id, label: g.name, meta: `${g.member_count} member${g.member_count === 1 ? "" : "s"}` }));
+  }
+
+  async function addGroup(groupId: string) {
+    if (!id) return;
+    setBusy(true);
+    try {
+      await adminApi.attachToGroup(id, groupId);
+      notify("Group attached");
+      load();
+    } catch {
+      notify("Could not attach this group", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeGroup(groupId: string) {
+    if (!id) return;
+    setBusy(true);
+    try {
+      await adminApi.detachFromGroup(id, groupId);
+      notify("Group detached");
+      load();
+    } catch {
+      notify("Could not detach this group", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="page">
       <p><Link to="/policies">← Policies</Link></p>
@@ -130,6 +168,25 @@ export function PolicyDetail() {
           </>
         }
       />
+
+      <div className="card">
+        <div className="section-header">
+          <h2>Assigned groups</h2>
+        </div>
+        <p className="text-muted" style={{ marginTop: "-8px", marginBottom: "16px" }}>
+          Every member of an attached group is subject to this policy. Search by name to attach a group; removing
+          one here only unlinks it, it doesn't delete the group.
+        </p>
+        <AttachList
+          entityLabel="group"
+          attached={policy.assigned_groups.map((g) => ({ id: g.id, label: g.name }))}
+          onSearch={searchGroups}
+          onAdd={addGroup}
+          onRemove={removeGroup}
+          busy={busy}
+          emptyLabel="No groups attached to this policy yet."
+        />
+      </div>
 
       <div className="card">
         <div className="section-header">

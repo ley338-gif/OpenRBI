@@ -8,6 +8,7 @@ from app.api.schemas.policies import (
     CreatePolicyRequest,
     CreateVersionRequest,
     FileRuleResponse,
+    GroupRef,
     PolicyDetail,
     PolicyListResponse,
     PolicyStats,
@@ -78,7 +79,14 @@ async def _policy_summary(policy: Policy, db: AsyncSession) -> PolicySummary:
         current = await db.get(PolicyVersion, policy.current_version_id)
         current_version_number = current.version_number if current else None
     versions = (await db.execute(select(PolicyVersion).where(PolicyVersion.policy_id == policy.id))).scalars().all()
-    groups = (await db.execute(select(Group.name).join(GroupPolicy, GroupPolicy.group_id == Group.id).where(GroupPolicy.policy_id == policy.id).order_by(Group.name))).scalars().all()
+    groups = (
+        await db.execute(
+            select(Group.id, Group.name)
+            .join(GroupPolicy, GroupPolicy.group_id == Group.id)
+            .where(GroupPolicy.policy_id == policy.id)
+            .order_by(Group.name)
+        )
+    ).all()
     latest = max(versions, key=lambda version: version.created_at, default=None)
     updated_by = None
     if latest and latest.created_by:
@@ -94,7 +102,7 @@ async def _policy_summary(policy: Policy, db: AsyncSession) -> PolicySummary:
         current_version_number=current_version_number,
         has_draft=any(version.status.value == "DRAFT" for version in versions),
         version_count=len(versions),
-        assigned_groups=list(groups),
+        assigned_groups=[GroupRef(id=group_id, name=group_name) for group_id, group_name in groups],
         created_at=policy.created_at,
         updated_at=updated_at,
         updated_by=updated_by,

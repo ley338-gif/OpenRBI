@@ -23,6 +23,7 @@ import type {
   FirstRunStatusResponse,
   GroupSummaryDto,
   GroupOverviewResponseDto,
+  GroupDetailDto,
   IncidentDto,
   LdapConfigDto,
   LdapConfigUpdateRequest,
@@ -79,6 +80,7 @@ export const adminApi = {
   createGroup: (name: string, description: string | null) =>
     api.post<GroupSummaryDto>("/admin/groups", { name, description }),
   deleteGroup: (id: string) => api.delete<void>(`/admin/groups/${id}`),
+  getGroup: (id: string) => api.get<GroupDetailDto>(`/admin/groups/${id}`),
 
   // Sessions
   listSessions: (params?: { search?: string; session_status?: string; worker_id?: string; since?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) =>

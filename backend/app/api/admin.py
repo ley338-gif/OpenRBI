@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.admin import (
     CreateGroupRequest,
     CreateUserRequest,
+    GroupDetail,
     GroupOverviewItem,
     GroupOverviewResponse,
     GroupOverviewStats,
@@ -19,6 +20,7 @@ from app.api.schemas.admin import (
     UserManagementStats,
     UserSummary,
 )
+from app.api.schemas.policies import PolicyRef
 from app.api.display import force_disconnect
 from app.api.schemas.sessions import AdminSessionResponse, RevokeSessionsResponse
 from app.core.deps import get_current_user, require_role
@@ -30,7 +32,13 @@ from app.models.policy import GroupPolicy, Policy
 from app.models.role import Role
 from app.models.security_event import SecurityEvent
 from app.models.user import User
-from app.services.groups import GroupServiceError, create_group, delete_group, list_groups_with_member_counts
+from app.services.groups import (
+    GroupServiceError,
+    create_group,
+    delete_group,
+    get_group_with_member_count,
+    list_groups_with_member_counts,
+)
 from app.services.sessions import revoke_user_sessions
 from app.services.users import (
     UserServiceError,
@@ -351,6 +359,30 @@ async def list_groups(db: AsyncSession = Depends(get_db)) -> list[GroupSummary]:
         GroupSummary(id=group.id, name=group.name, description=group.description, member_count=count)
         for group, count in rows
     ]
+
+
+@router.get("/groups/{group_id}", response_model=GroupDetail)
+async def get_group(group_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> GroupDetail:
+    row = await get_group_with_member_count(db, group_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    group, member_count = row
+    policies = (
+        await db.execute(
+            select(Policy.id, Policy.name, Policy.policy_type)
+            .join(GroupPolicy, GroupPolicy.policy_id == Policy.id)
+            .where(GroupPolicy.group_id == group_id)
+            .order_by(Policy.name)
+        )
+    ).all()
+    return GroupDetail(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        member_count=member_count,
+        created_at=group.created_at,
+        policies=[PolicyRef(id=pid, name=pname, policy_type=ptype.value) for pid, pname, ptype in policies],
+    )
 
 
 @router.get("/groups-overview", response_model=GroupOverviewResponse)

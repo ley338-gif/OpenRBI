@@ -53,3 +53,13 @@ async def list_groups_with_member_counts(db: AsyncSession) -> list[tuple[Group, 
         .order_by(Group.name)
     )
     return list(result.all())
+
+
+async def get_group_with_member_count(db: AsyncSession, group_id: uuid.UUID) -> tuple[Group, int] | None:
+    result = await db.execute(
+        select(Group, func.count(UserGroup.id))
+        .outerjoin(UserGroup, UserGroup.group_id == Group.id)
+        .where(Group.id == group_id)
+        .group_by(Group.id)
+    )
+    return result.first()

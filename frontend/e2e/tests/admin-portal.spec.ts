@@ -336,6 +336,50 @@ test.describe("Admin Portal", () => {
     await expect(row.getByText("Enforced screen resolution")).toBeVisible();
   });
 
+  test("Group<->Policy assignment: attach a policy from Group Detail, see it reflected on Policy Detail, then detach", async ({ page }) => {
+    // Previously there was no UI anywhere to attach a policy to a group
+    // (or vice versa) even though the backend endpoints already worked —
+    // this exercises the search-and-add widget added on both sides.
+    await loginAsAdmin(page);
+
+    await page.getByRole("link", { name: "Policies" }).click();
+    const policyName = `e2e-assign-policy-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const policyModal = page.locator(".create-policy-modal");
+    await policyModal.getByLabel("Name").fill(policyName);
+    await policyModal.getByLabel("Type").selectOption("SESSION");
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+
+    await page.getByRole("link", { name: "Groups" }).click();
+    const groupName = `e2e-assign-group-${Date.now()}`;
+    await page.getByRole("button", { name: "Create Group" }).click();
+    await page.getByLabel("Name").fill(groupName);
+    await page.getByRole("button", { name: "Create group", exact: true }).click();
+    await expect(page.getByRole("button", { name: groupName, exact: true })).toBeVisible();
+
+    await page.getByRole("link", { name: `Manage policies for ${groupName}` }).click();
+    await expect(page.getByRole("heading", { name: groupName })).toBeVisible();
+    await expect(page.getByText("No policies attached to this group yet.")).toBeVisible();
+
+    await page.getByLabel("Search policies to add").fill(policyName);
+    await page.getByRole("button", { name: new RegExp(policyName) }).click();
+    await expect(page.getByText("Policy attached")).toBeVisible();
+    const attachedRow = page.locator(".attach-list-item", { hasText: policyName });
+    await expect(attachedRow).toBeVisible();
+
+    // The reverse direction — Policy Detail's own group picker — must show
+    // the same link, since both sides read the same underlying attachment.
+    await page.goto(page.url().replace(/\/groups\/.+/, "/policies"));
+    await page.getByRole("link", { name: policyName }).click();
+    await expect(page.getByRole("heading", { name: policyName })).toBeVisible();
+    await expect(page.locator(".attach-list-item", { hasText: groupName })).toBeVisible();
+
+    // Detach from this side and confirm it's gone from both directions.
+    await page.locator(".attach-list-item", { hasText: groupName }).getByRole("button", { name: "Remove" }).click();
+    await expect(page.getByText("Group detached")).toBeVisible();
+    await expect(page.getByText("No groups attached to this policy yet.")).toBeVisible();
+  });
+
   test("LDAP settings page loads real config from the API and never shows a bind password", async ({ page }) => {
     // Roadmap B1.8 — no fabricated defaults: the form must reflect
     // whatever GET /admin/ldap/config actually returns, and the password

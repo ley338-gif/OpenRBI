@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.api.schemas.policies import PolicyRef
+
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -100,6 +102,11 @@ class GroupSummary(BaseModel):
 class GroupOverviewItem(GroupSummary):
     policies: list[str]
     created_at: datetime
+
+
+class GroupDetail(GroupSummary):
+    created_at: datetime
+    policies: list[PolicyRef]
 
 
 class GroupOverviewStats(BaseModel):

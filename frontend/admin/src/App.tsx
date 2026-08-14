@@ -13,6 +13,7 @@ import { Profile } from "./pages/Profile";
 import { Users } from "./pages/Users";
 import { UserDetail } from "./pages/UserDetail";
 import { Groups } from "./pages/Groups";
+import { GroupDetail } from "./pages/GroupDetail";
 import { Sessions } from "./pages/Sessions";
 import { SessionDetail } from "./pages/SessionDetail";
 import { Policies } from "./pages/Policies";
@@ -93,6 +94,7 @@ function Routed() {
         <Route path="users" element={<Users />} />
         <Route path="users/:id" element={<UserDetail />} />
         <Route path="groups" element={<Groups />} />
+        <Route path="groups/:id" element={<GroupDetail />} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="sessions/:id" element={<SessionDetail />} />
         <Route path="policies" element={<Policies />} />
