@@ -15,6 +15,7 @@ from app.api.schemas.policies import (
     PolicySummary,
     PolicyVersionResponse,
     RollbackRequest,
+    UpdatePolicyRequest,
 )
 from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
@@ -28,6 +29,7 @@ from app.services.policies import (
     create_policy,
     detach_policy_from_group,
     publish_version,
+    rename_policy,
     update_draft_version,
 )
 from app.services.policies import rollback as rollback_service
@@ -186,6 +188,23 @@ async def get_policy(policy_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
     versions = [await _version_response(db, v) for v in result.scalars()]
     summary = await _policy_summary(policy, db)
     return PolicyDetail(**summary.model_dump(), versions=versions)
+
+
+@router.put("/{policy_id}", response_model=PolicySummary)
+async def update_policy(
+    policy_id: uuid.UUID,
+    payload: UpdatePolicyRequest,
+    db: AsyncSession = Depends(get_db),
+) -> PolicySummary:
+    policy = await _get_policy_or_404(db, policy_id)
+    try:
+        policy = await rename_policy(db, policy, name=payload.name, description=payload.description)
+    except PolicyServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(policy)
+    return await _policy_summary(policy, db)
 
 
 @router.post("/{policy_id}/versions", response_model=PolicyVersionResponse, status_code=status.HTTP_201_CREATED)

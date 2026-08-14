@@ -10,6 +10,11 @@ class CreatePolicyRequest(BaseModel):
     description: str | None = None
 
 
+class UpdatePolicyRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
 class FileRuleInput(BaseModel):
     rule_type: str  # "MIME" | "SOURCE"
     match_pattern: str

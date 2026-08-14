@@ -97,6 +97,8 @@ export const adminApi = {
   getPolicy: (id: string) => api.get<PolicyDetailDto>(`/admin/policies/${id}`),
   createPolicy: (name: string, policyType: string, description?: string) =>
     api.post<PolicySummaryDto>("/admin/policies", { name, policy_type: policyType, description: description || null }),
+  updatePolicy: (policyId: string, name: string, description?: string) =>
+    api.put<PolicySummaryDto>(`/admin/policies/${policyId}`, { name, description: description || null }),
   createVersion: (
     policyId: string,
     payload: { content: Record<string, unknown>; file_rules: { rule_type: string; match_pattern: string; action: string; priority: number }[] },

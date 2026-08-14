@@ -315,6 +315,49 @@ test.describe("Admin Portal", () => {
     await expect(row.getByText("Enforced screen resolution")).toBeVisible();
   });
 
+  test("Policy can be renamed after creation, and editing an existing rule pre-fills it instead of starting blank", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Policies" }).click();
+
+    const originalName = `e2e-rename-${Date.now()}`;
+    await page.getByRole("button", { name: "+ Create Policy" }).click();
+    const createModal = page.locator(".create-policy-modal");
+    await createModal.getByLabel("Name").fill(originalName);
+    await page.getByRole("button", { name: "Create draft policy" }).click();
+    await page.getByRole("link", { name: originalName }).click();
+    await expect(page.getByRole("heading", { name: originalName })).toBeVisible();
+
+    // Rename, in place — no new version, just the policy record itself.
+    const renamedName = `${originalName}-renamed`;
+    await page.getByRole("button", { name: "Rename / edit description" }).click();
+    await page.getByLabel("Name").fill(renamedName);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("heading", { name: renamedName })).toBeVisible();
+
+    // Publish a first rule.
+    await page.getByRole("button", { name: "New draft version" }).click();
+    await page.getByPlaceholder("e.g. application/pdf").fill("application/pdf");
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await page.getByRole("button", { name: "Publish" }).click();
+    await expect(page.locator(".badge", { hasText: "PUBLISHED" }).first()).toBeVisible();
+
+    // Editing again (no draft yet) must start from the published rule, not
+    // blank — the button label itself signals this.
+    const editButton = page.getByRole("button", { name: "Edit rules (new draft)" });
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    await expect(page.getByPlaceholder("e.g. application/pdf")).toHaveValue("application/pdf");
+
+    // Change the pre-filled rule's action and save — the published version
+    // itself must remain untouched (still QUARANTINE) until this new draft
+    // is published.
+    await page.locator("select").nth(1).selectOption("DENY");
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.locator(".badge", { hasText: "DRAFT" })).toBeVisible();
+    const publishedRow = page.locator(".card", { hasText: "PUBLISHED" }).first();
+    await expect(publishedRow.getByText("QUARANTINE")).toBeVisible();
+  });
+
   test("Group assignment is a single modal (AD-style), not a separate page: attach a policy and a member, see both reflected elsewhere, then detach", async ({ page }) => {
     // Redesigned after user feedback: no dedicated Group Detail page —
     // clicking a group opens one small modal with both "Members" and
