@@ -43,7 +43,7 @@ export function Quarantine() {
 
       <TableToolbar
         filters={
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+          <select className={statusFilter ? "filter-active" : ""} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -53,6 +53,7 @@ export function Quarantine() {
           </select>
         }
         onRefresh={() => load(statusFilter)}
+        actions={<button className="btn btn-secondary btn-sm filter-reset" disabled={!statusFilter} onClick={() => setStatusFilter("")}>Clear filter</button>}
       />
 
       {files.length === 0 ? (

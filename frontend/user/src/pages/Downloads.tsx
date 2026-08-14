@@ -79,9 +79,10 @@ export function Downloads() {
           ))}
         </div>
         <div className="download-filter-fields">
-          <label><span>From</span><input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} /></label>
-          <label><span>To</span><input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} /></label>
+          <label><span>From</span><input className={dateFrom ? "filter-active" : ""} type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} /></label>
+          <label><span>To</span><input className={dateTo ? "filter-active" : ""} type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} /></label>
           <input className="table-toolbar-search" type="search" placeholder="Search file name…" aria-label="Search file name" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+          <button className="btn btn-secondary btn-sm filter-reset" disabled={!hasFilters} onClick={() => { setFilter("all"); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}>Clear filters</button>
         </div>
       </div>
 

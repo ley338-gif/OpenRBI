@@ -73,7 +73,7 @@ export function Audit() {
               setOffset(0);
               setUserId(e.target.value);
             }}
-            className="mono"
+            className={`mono${userId ? " filter-active" : ""}`}
             style={{ width: "260px" }}
           />
         }
@@ -81,7 +81,7 @@ export function Audit() {
           (eventType || userId) && (
             <button
               type="button"
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm filter-reset"
               onClick={() => {
                 setOffset(0);
                 setEventType("");
