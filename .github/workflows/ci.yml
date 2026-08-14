@@ -118,6 +118,23 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            if [ "$i" -eq 30 ]; then
+              echo "Backend did not become healthy within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Wait for PostgreSQL to accept connections
+        # /health is intentionally a liveness-only endpoint and therefore
+        # does not prove that PostgreSQL is ready. Alembic must not race a
+        # freshly-created database container during CI startup.
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL did not become ready within 60 seconds" >&2
+              exit 1
+            fi
             sleep 2
           done
       - name: Apply database migrations
