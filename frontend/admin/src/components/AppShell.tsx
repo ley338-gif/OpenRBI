@@ -18,8 +18,7 @@ const NAV = [
   { label: "Overview", items: [{ to: "/", label: "Dashboard", end: true, icon: Icons.Dashboard }] },
   { label: "Users & access", items: [
     { to: "/users", label: "Users", icon: Icons.Users }, { to: "/groups", label: "Groups", icon: Icons.Groups },
-    { to: "/sessions", label: "Sessions", icon: Icons.Sessions }, { to: "/login-diagnostics", label: "Login diagnostics", icon: Icons.Search },
-    { to: "/settings/ldap", label: "LDAP / identity", icon: Icons.Settings },
+    { to: "/sessions", label: "Sessions", icon: Icons.Sessions },
   ] },
   { label: "Browser security", items: [
     { to: "/policies", label: "Policies", icon: Icons.Shield }, { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
@@ -28,7 +27,9 @@ const NAV = [
   { label: "Infrastructure", items: [
     { to: "/workers", label: "Workers", icon: Icons.Worker }, { to: "/system", label: "System health", icon: Icons.System },
   ] },
-  { label: "Administration", items: [{ to: "/audit", label: "Audit log", icon: Icons.Audit }] },
+  { label: "Administration", items: [
+    { to: "/audit", label: "Audit log", icon: Icons.Audit }, { to: "/settings/ldap", label: "LDAP / identity", icon: Icons.Settings },
+  ] },
 ];
 
 const COLLAPSE_KEY = "openrbi_admin_sidebar_collapsed";
