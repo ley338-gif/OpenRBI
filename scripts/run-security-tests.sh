@@ -81,6 +81,7 @@ async def main():
     config = SandboxConfig(
         image='openrbi-browser:latest', cpu_limit=1.0, ram_limit_mb=512,
         pid_limit=128, disk_limit_mb=512, network_name='openrbi_browser-plane',
+        screen_width=1280, screen_height=800,
     )
     await provider.create_session('$TEST_SESSION_ID', config)
     await provider.start_session('$TEST_SESSION_ID')
@@ -150,6 +151,7 @@ async def main():
     config = SandboxConfig(
         image='openrbi-browser:latest', cpu_limit=1.0, ram_limit_mb=512,
         pid_limit=128, disk_limit_mb=512, network_name='openrbi_browser-plane',
+        screen_width=1280, screen_height=800,
     )
     await provider.create_session('$sid', config)
     await provider.start_session('$sid')
