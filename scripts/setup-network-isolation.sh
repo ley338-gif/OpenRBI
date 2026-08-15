@@ -26,6 +26,7 @@
 set -eu
 
 MARKER="openrbi-network-isolation"
+MODE="${1:-apply}"
 BROWSER_PLANE_NETWORK="${OPENRBI_BROWSER_PLANE_NETWORK:-openrbi_browser-plane}"
 # Address(es) on browser-plane allowed to *initiate* connections into it —
 # i.e. whichever process actually terminates /display/*/ws and therefore
@@ -54,12 +55,10 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-BROWSER_SUBNET=$(docker network inspect "$BROWSER_PLANE_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')
-if [ -z "$BROWSER_SUBNET" ]; then
-    echo "could not determine subnet for network $BROWSER_PLANE_NETWORK" >&2
+if [ "$MODE" != "apply" ] && [ "$MODE" != "--remove" ]; then
+    echo "usage: $0 [--remove]" >&2
     exit 1
 fi
-log "browser-plane subnet: $BROWSER_SUBNET"
 
 # --- Remove any rules we previously added (idempotent re-run). Deleting by
 # line number from the bottom up avoids renumbering issues as rules shift. ---
@@ -69,6 +68,18 @@ while true; do
     iptables -D DOCKER-USER "$RULE_NUM"
 done
 log "cleared any previous $MARKER rules"
+
+if [ "$MODE" = "--remove" ]; then
+    log "remove-only mode complete"
+    exit 0
+fi
+
+BROWSER_SUBNET=$(docker network inspect "$BROWSER_PLANE_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')
+if [ -z "$BROWSER_SUBNET" ]; then
+    echo "could not determine subnet for network $BROWSER_PLANE_NETWORK" >&2
+    exit 1
+fi
+log "browser-plane subnet: $BROWSER_SUBNET"
 
 # Each -I inserts at position 1 (top), so whichever we insert LAST ends up
 # evaluated FIRST. LOG must end up on top of its matching DROP — it's a

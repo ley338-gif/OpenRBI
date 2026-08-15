@@ -146,6 +146,19 @@ Run end to end against the live stack on 2026-08-12 (PostgreSQL 16.14, `docker-c
 
 This is the reproducible protocol referenced by the Phase A roadmap's A4 acceptance criterion; re-run it (with fresh counts and a fresh date) before treating an old result as still representative of the current schema.
 
+### Clean-install release acceptance
+
+Before an RC, run the automated 16-step clean-host protocol from a fresh clone:
+
+```bash
+./scripts/run-fresh-install-acceptance.sh
+```
+
+It is destructive only to its dedicated `openrbi-acceptance` Compose project
+and refuses to overwrite an existing `.env`. Requirements, exact assertions,
+and cleanup behavior are documented in
+[`release/fresh-install-acceptance.md`](release/fresh-install-acceptance.md).
+
 ## Update procedure
 
 ```bash
