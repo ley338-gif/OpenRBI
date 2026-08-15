@@ -25,7 +25,7 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
       - name: Type-check backend
@@ -53,6 +53,15 @@ jobs:
         run: python -m pip install "pip-audit==2.9.0"
       - name: Audit resolved production dependencies
         run: pip-audit --requirement "${{ matrix.component }}/requirements.lock" --require-hashes --disable-pip --strict --progress-spinner off
+
+  fresh-install-acceptance:
+    name: Fresh install acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and accept a clean installation
+        run: ./scripts/run-fresh-install-acceptance.sh
 
   # Roadmap Phase A / A5: dependency & image scanning. Builds every image
   # OpenRBI actually ships (backend, session-agent, frontend, the browser
@@ -281,6 +290,7 @@ jobs:
     needs:
       - python-quality
       - dependency-scan-python
+      - fresh-install-acceptance
       - image-scan
       - dependency-scan-frontend
       - backend-integration-tests
@@ -291,6 +301,7 @@ jobs:
         env:
           PYTHON_QUALITY: ${{ needs.python-quality.result }}
           PYTHON_DEPENDENCIES: ${{ needs.dependency-scan-python.result }}
+          FRESH_INSTALL: ${{ needs.fresh-install-acceptance.result }}
           IMAGE_SCAN: ${{ needs.image-scan.result }}
           FRONTEND_DEPENDENCIES: ${{ needs.dependency-scan-frontend.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration-tests.result }}
@@ -299,6 +310,7 @@ jobs:
           for result in \
             "$PYTHON_QUALITY" \
             "$PYTHON_DEPENDENCIES" \
+            "$FRESH_INSTALL" \
             "$IMAGE_SCAN" \
             "$FRONTEND_DEPENDENCIES" \
             "$BACKEND_INTEGRATION" \

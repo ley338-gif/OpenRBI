@@ -23,6 +23,7 @@ pinned compiler and fails on any diff. The frontend build and audit use
 | Python type checking | The same job runs mypy independently for backend and Session Agent, avoiding their intentionally identical top-level `app` package names colliding. |
 | Version consistency | The same job runs `scripts/check-version-sync.py`, which fails if any package or image default differs from the root `VERSION`. |
 | Migration validation | Both integration jobs run `alembic upgrade head` against a fresh PostgreSQL database. Multiple heads, broken imports, or a migration that cannot build the current schema fail the job. |
+| Fresh-install acceptance | `Fresh install acceptance` builds an isolated Compact installation from an empty volume, generates secrets, migrates, applies network isolation, bootstraps MFA, creates/logs in a user, and starts/terminates a real browser sandbox. |
 
 ## Branch and release policy
 
