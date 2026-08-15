@@ -50,7 +50,7 @@ if _ca_cert_file:
 import ldap  # noqa: E402 - see comment above; must follow the LDAPTLS_* env setup
 import ldap.filter  # noqa: E402
 
-from app.core.auth_providers.base import AuthResult
+from app.core.auth_providers.base import AuthResult  # noqa: E402
 
 
 @dataclass
