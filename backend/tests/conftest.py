@@ -41,6 +41,33 @@ async def db():
 @pytest_asyncio.fixture
 async def client():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as c:
+        async def _attach_csrf_token(request: httpx.Request) -> None:
+            """RBI-POST-003: every mutating request now needs a matching
+            X-CSRF-Token header (app/core/csrf.py) — attached transparently
+            here so the many existing POST/PUT/DELETE call sites across
+            this test suite don't each need updating individually. Mirrors
+            what the real frontend's shared ApiClient does
+            (frontend/shared/api/client.ts): bootstrap the cookie with a
+            cheap GET first if this client doesn't have one yet, then echo
+            it back as the header. Closes over `c` (rather than a
+            module-level function) since it needs this specific client's
+            cookie jar, not a global one.
+            """
+            if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+                return
+            if "x-csrf-token" in request.headers:
+                # A test deliberately set (or deliberately omitted, via
+                # headers={"X-CSRF-Token": None} — httpx drops None
+                # values) its own header to probe the CSRF check itself
+                # (test_csrf.py) — never override that.
+                return
+            if not c.cookies.get("csrf_token"):
+                await c.get("/health")
+            token = c.cookies.get("csrf_token")
+            if token:
+                request.headers["X-CSRF-Token"] = token
+
+        c.event_hooks["request"] = [_attach_csrf_token]
         yield c
 
 

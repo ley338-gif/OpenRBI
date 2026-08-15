@@ -222,6 +222,7 @@ jobs:
           sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
           sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
           sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -304,6 +305,7 @@ jobs:
           sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
           sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
           sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |

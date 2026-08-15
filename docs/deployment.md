@@ -138,6 +138,13 @@ docker compose up -d backend
 ```
 Verified end-to-end against the live stack: enrolled a real TOTP secret, ran the rotation, restarted `backend` with the new key configured, and confirmed the app's own `decrypt_secret()` still recovered the original plaintext under the new key. Do the `.env` update and restart promptly after `--apply` succeeds — until then, the DB holds secrets encrypted under the new key while `backend` is still configured with the old one, and MFA verification fails for everyone in that window.
 
+**`OPENRBI_CSRF_SECRET_KEY`** (RBI-POST-003, [docs/security-model.md](security-model.md#csrf-protection-rbi-post-003)) — signs the CSRF double-submit cookie only; nothing is encrypted at rest under it, so rotation is simple:
+```bash
+# Edit .env: OPENRBI_CSRF_SECRET_KEY=<new-key>
+docker compose up -d backend
+```
+Every `csrf_token` cookie issued under the old key stops validating immediately on restart. Any browser tab with an open session gets one CSRF-rejected request (403) on its next mutating action; a page reload (a plain `GET`, which the CSRF check never blocks) picks up a fresh cookie from the new key and subsequent actions succeed normally — no session/login impact, no re-authentication needed.
+
 ## Backup and restore
 
 ```bash

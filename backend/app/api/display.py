@@ -70,6 +70,23 @@ async def display_ws(
     else is indistinguishable from one that doesn't exist. Admin/reviewer
     access to other users' sessions is Phase 11, a distinct audited path.
     """
+    # RBI-POST-003: CSRF defenses elsewhere in the app (app/core/csrf.py)
+    # can't reach a WebSocket upgrade request — there's no way for the
+    # frontend to attach a custom header to the handshake itself. Origin
+    # validation is the equivalent control here: a real browser always
+    # sends Origin on a WS handshake (same-origin or not), so a mismatch
+    # means this isn't our own frontend making the request. Compares only
+    # the host component (not scheme) against the Host header — behind
+    # docker-compose.prod.yml's reverse proxy, TLS terminates at nginx and
+    # this process only ever sees the plain-HTTP hop to it, so comparing
+    # scheme would reject every legitimate request in that deployment.
+    origin = websocket.headers.get("origin")
+    if origin is not None:
+        origin_host = origin.split("://", 1)[-1]
+        if origin_host != websocket.headers.get("host"):
+            await websocket.close(code=_CLOSE_NOT_FOUND)
+            return
+
     session = await db.get(BrowserSession, session_id)
     if session is None or session.user_id != current_user.id:
         await websocket.close(code=_CLOSE_NOT_FOUND)
