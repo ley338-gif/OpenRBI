@@ -108,11 +108,16 @@ rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
 
 # A CA bundle unrelated to the test server's real CA — used to prove that
 # a *wrong* CA is rejected exactly like no CA at all, never silently
-# accepted just because some CA file was configured.
-docker exec "$BACKEND_CONTAINER" \
-    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-    -keyout /tmp/bogus-ca-key.pem -out /app/test_ldap_wrong_ca.crt \
+# accepted just because some CA file was configured. Generated on the
+# runner/host, not inside the backend container — the production backend
+# image deliberately has no openssl CLI (Debian slim base, no reason to
+# ship it), same as it has no docker socket or host access.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+    -keyout "$SCRIPT_DIR/../backend/test_ldap_wrong_ca_key.pem" \
+    -out "$SCRIPT_DIR/../backend/test_ldap_wrong_ca.crt" \
     -subj "/CN=openrbi-test-unrelated-ca" >/dev/null 2>&1
+docker cp "$SCRIPT_DIR/../backend/test_ldap_wrong_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_wrong_ca.crt"
+rm -f "$SCRIPT_DIR/../backend/test_ldap_wrong_ca_key.pem" "$SCRIPT_DIR/../backend/test_ldap_wrong_ca.crt"
 
 # pytest is a [dev]-only dependency (backend/pyproject.toml), not baked
 # into the production image — matches scripts/run-integration-tests.sh's
