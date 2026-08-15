@@ -99,7 +99,7 @@ SETUP_TOKEN="$(docker logs "$BACKEND_CONTAINER" 2>&1 | grep -A2 'initial setup t
 docker cp "$SCRIPT_DIR/fresh-install-acceptance.py" "$BACKEND_CONTAINER:/tmp/fresh-install-acceptance.py"
 compose exec -T backend python /tmp/fresh-install-acceptance.py "$SETUP_TOKEN"
 docker cp "$SCRIPT_DIR/backup-restore-acceptance.py" "$BACKEND_CONTAINER:/tmp/backup-restore-acceptance.py"
-compose exec -T backend python /tmp/backup-restore-acceptance.py seed "$MANIFEST"
+compose exec -T -e PYTHONPATH=/app backend python /tmp/backup-restore-acceptance.py seed "$MANIFEST"
 echo "ACCEPT BR-03 exact baseline table counts and evidence identifiers recorded outside the backup"
 
 OPENRBI_POSTGRES_CONTAINER="$POSTGRES_CONTAINER" \
@@ -112,7 +112,7 @@ gzip -t "$DB_DUMP"
 tar -tzf "$QUARANTINE_TAR" >/dev/null
 echo "ACCEPT BR-02 real database and quarantine backup artifacts created and validated"
 
-compose exec -T backend python /tmp/backup-restore-acceptance.py corrupt "$MANIFEST"
+compose exec -T -e PYTHONPATH=/app backend python /tmp/backup-restore-acceptance.py corrupt "$MANIFEST"
 
 printf 'yes\n' | COMPOSE_PROJECT_NAME="$PROJECT" \
     OPENRBI_POSTGRES_CONTAINER="$POSTGRES_CONTAINER" \
@@ -127,8 +127,8 @@ for attempt in $(seq 1 60); do
     [ "$attempt" -lt 60 ] || { compose logs backend reverse-proxy >&2; echo "Restored backend did not become ready" >&2; exit 1; }
     sleep 1
 done
-compose exec -T backend python /tmp/backup-restore-acceptance.py verify-data "$MANIFEST"
-compose exec -T backend python /tmp/backup-restore-acceptance.py verify-functional "$MANIFEST"
+compose exec -T -e PYTHONPATH=/app backend python /tmp/backup-restore-acceptance.py verify-data "$MANIFEST"
+compose exec -T -e PYTHONPATH=/app backend python /tmp/backup-restore-acceptance.py verify-functional "$MANIFEST"
 
 curl --fail --silent --show-error http://localhost:8080/health >/dev/null
 curl --fail --silent --show-error http://localhost:8080/ >/dev/null
