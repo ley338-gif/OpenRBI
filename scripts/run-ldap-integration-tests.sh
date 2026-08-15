@@ -134,7 +134,11 @@ EOF
 # LDAPTLS_REQCERT=never blanket bypass. Bind-mounted read-only since the
 # file must exist before the backend process's Settings() validation runs
 # at startup.
-docker cp "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ca.crt" "$TEST_CA_FILE"
+# See scripts/run-ldap-tests.sh's comment: ca.crt is a symlink inside the
+# container, which `docker cp` copies literally rather than following —
+# `docker exec ... cat` reads through the container's own filesystem
+# instead.
+docker exec "$LDAP_CONTAINER" cat /container/service/slapd/assets/certs/ca.crt > "$TEST_CA_FILE"
 
 echo "[ldap-integration-tests] starting throwaway LDAP-enabled backend..."
 BACKEND_IMAGE="$(cd "$REPO_ROOT" && docker compose images -q backend)"

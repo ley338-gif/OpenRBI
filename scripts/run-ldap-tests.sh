@@ -110,14 +110,16 @@ echo "[ldap-tests] seeded testuser + openrbi-admins group"
 # supplied) so the test client can trust it explicitly, the same way a
 # real deployment would trust an internal CA via OPENRBI_LDAP_CA_CERT_FILE
 # (RBI-POST-001) — not via a blanket TLS-verification bypass.
-echo "[ldap-tests] DEBUG: assets/certs contents:"
-docker exec "$LDAP_CONTAINER" ls -la /container/service/slapd/assets/certs/ || true
-echo "[ldap-tests] DEBUG: /etc/ldap/certs contents:"
-docker exec "$LDAP_CONTAINER" ls -la /etc/ldap/certs/ || true
-docker cp "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ca.crt" \
-    "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
+# /container/service/slapd/assets/certs/ca.crt is a symlink (to
+# /container/service/:ssl-tools/assets/default-ca/default-ca.pem inside
+# the container) — `docker cp` copies a symlink literally rather than
+# following it, which produces a broken link on the host pointing at a
+# path that only exists inside the container. `docker exec ... cat`
+# reads it through the container's own filesystem instead, sidestepping
+# that entirely.
+docker exec "$LDAP_CONTAINER" cat /container/service/slapd/assets/certs/ca.crt \
+    > "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
 echo "[ldap-tests] extracted CA cert:"
-ls -la "$SCRIPT_DIR/../backend/test_ldap_ca.crt" || true
 openssl x509 -in "$SCRIPT_DIR/../backend/test_ldap_ca.crt" -noout -subject -issuer -dates -ext subjectAltName || true
 docker cp "$SCRIPT_DIR/../backend/test_ldap_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_ca.crt"
 rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
