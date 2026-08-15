@@ -41,28 +41,34 @@ async def db():
 @pytest_asyncio.fixture
 async def client():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as c:
+        # RBI-POST-003: every mutating request now needs a matching
+        # X-CSRF-Token header (app/core/csrf.py) — bootstrapped here, once,
+        # before any test code runs, so the many existing POST/PUT/DELETE
+        # call sites across this suite don't each need updating
+        # individually. This has to happen *before* any mutating request is
+        # built, not inside a "request" event hook triggered by one:
+        # httpx assembles a request's own outgoing Cookie header at
+        # build_request() time, which runs before hooks fire — a hook that
+        # fetches the cookie reactively updates the client's cookie jar too
+        # late to affect that same request's already-built Cookie header,
+        # so the request would arrive with a matching X-CSRF-Token header
+        # but no matching cookie, and still get rejected.
+        await c.get("/health")
+
         async def _attach_csrf_token(request: httpx.Request) -> None:
-            """RBI-POST-003: every mutating request now needs a matching
-            X-CSRF-Token header (app/core/csrf.py) — attached transparently
-            here so the many existing POST/PUT/DELETE call sites across
-            this test suite don't each need updating individually. Mirrors
-            what the real frontend's shared ApiClient does
-            (frontend/shared/api/client.ts): bootstrap the cookie with a
-            cheap GET first if this client doesn't have one yet, then echo
-            it back as the header. Closes over `c` (rather than a
-            module-level function) since it needs this specific client's
-            cookie jar, not a global one.
+            """Echoes the (already-bootstrapped) csrf_token cookie back as
+            the header, mirroring what the real frontend's shared
+            ApiClient does (frontend/shared/api/client.ts). Closes over
+            `c` (rather than a module-level function) since it needs this
+            specific client's cookie jar, not a global one.
             """
             if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
                 return
             if "x-csrf-token" in request.headers:
                 # A test deliberately set (or deliberately omitted, via
-                # headers={"X-CSRF-Token": None} — httpx drops None
-                # values) its own header to probe the CSRF check itself
-                # (test_csrf.py) — never override that.
+                # headers={"X-CSRF-Token": ""}) its own header to probe the
+                # CSRF check itself (test_csrf.py) — never override that.
                 return
-            if not c.cookies.get("csrf_token"):
-                await c.get("/health")
             token = c.cookies.get("csrf_token")
             if token:
                 request.headers["X-CSRF-Token"] = token
