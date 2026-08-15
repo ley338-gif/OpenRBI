@@ -14,6 +14,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ### Added
 
+- V1-010 upgrade acceptance: a required CI gate now builds the pinned,
+  reproducible 0.1.1 baseline, seeds persistent MFA/LDAP/user/policy/session/
+  audit/quarantine/worker state, takes a pre-upgrade backup, replaces all four
+  images with the target commit, runs Alembic, and proves the old state and live
+  admin/user/download/sandbox/proxy flows still work. The upgrade and rollback
+  procedure plus the absence of historical published images/schema delta are
+  documented explicitly.
 - V1-009 backup/restore acceptance: a required destructive CI gate now records
   current-schema baseline counts and concrete user, policy, security-event and
   quarantine evidence; runs the production backup; corrupts rows and bytes;

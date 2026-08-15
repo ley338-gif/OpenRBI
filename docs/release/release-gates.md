@@ -25,6 +25,7 @@ pinned compiler and fails on any diff. The frontend build and audit use
 | Migration validation | Both integration jobs run `alembic upgrade head` against a fresh PostgreSQL database. Multiple heads, broken imports, or a migration that cannot build the current schema fail the job. |
 | Fresh-install acceptance | `Fresh install acceptance` builds an isolated Compact installation from an empty volume, generates secrets, migrates, applies network isolation, bootstraps MFA, creates/logs in a user, and starts/terminates a real browser sandbox. |
 | Backup/restore acceptance | `Backup and restore acceptance` records current-schema baseline counts and concrete user, policy, audit and quarantine evidence; runs the production backup; corrupts database rows and bytes; restores; then proves exact data, login, sandbox lifecycle, health and proxy behavior. |
+| Upgrade acceptance | `Upgrade acceptance` preserves a pinned, reproducibly built 0.1.1 deployment while replacing all four images with the target commit, running Alembic, and proving existing MFA/LDAP/users/policies/sessions/audit/quarantine/worker state plus live login/download/sandbox/proxy behavior. |
 
 ## Branch and release policy
 
