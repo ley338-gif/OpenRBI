@@ -48,7 +48,16 @@ trap cleanup EXIT
 # real deployment against an internal/private CA would use — instead of
 # the previous LDAPTLS_REQCERT=never blanket bypass.
 docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$LDAP_CONTAINER" \
+# --hostname matters now that certificate verification is real
+# (RBI-POST-001): osixia/openldap generates its self-signed server
+# certificate's CN/SAN from the container's own hostname at boot, and
+# without this flag that defaults to the random container ID, not
+# "$LDAP_CONTAINER" — the name actually used in
+# OPENRBI_LDAP_SERVER_URI=ldaps://$LDAP_CONTAINER:636 below. A mismatch
+# there fails the handshake even with the right CA trusted, since
+# hostname verification is a separate check from chain-of-trust
+# verification.
+docker run -d --name "$LDAP_CONTAINER" --hostname "$LDAP_CONTAINER" \
     --network openrbi_control-plane \
     -e LDAP_ORGANISATION="OpenRBI Test" \
     -e LDAP_DOMAIN="example.org" \

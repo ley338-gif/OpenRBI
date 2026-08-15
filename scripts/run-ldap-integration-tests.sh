@@ -56,7 +56,12 @@ wait_for_ldap() {
 
 echo "[ldap-integration-tests] starting throwaway LDAPS server..."
 docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$LDAP_CONTAINER" \
+# --hostname: see scripts/run-ldap-tests.sh's comment on the same flag —
+# osixia/openldap's generated cert CN/SAN needs to match $LDAP_CONTAINER,
+# the name actually used in the ldaps:// URI below, for hostname
+# verification to pass now that certificate verification is real
+# (RBI-POST-001).
+docker run -d --name "$LDAP_CONTAINER" --hostname "$LDAP_CONTAINER" \
     --network openrbi_control-plane \
     -e LDAP_ORGANISATION="OpenRBI Test" \
     -e LDAP_DOMAIN="example.org" \
