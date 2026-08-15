@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Security
+
+- LDAP/LDAPS: certificate verification is now explicitly enforced (`OPT_X_TLS_REQUIRE_CERT=demand`) rather than relying on the OS/OpenLDAP default, and a custom CA bundle can be configured via `OPENRBI_LDAP_CA_CERT_FILE` for directories using an internal/private CA (RBI-POST-001).
+
 ## [1.0.0] - 2026-08-15
 
 ### Security

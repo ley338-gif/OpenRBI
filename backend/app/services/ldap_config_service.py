@@ -28,10 +28,15 @@ def config_from_settings(settings: Settings) -> LdapConnectionConfig:
         base_dn=settings.ldap_base_dn,
         user_search_filter=settings.ldap_user_search_filter,
         group_attribute=settings.ldap_group_attribute,
+        ca_cert_file=settings.ldap_ca_cert_file,
     )
 
 
 def config_from_row(row: LdapConfig, bind_password: str) -> LdapConnectionConfig:
+    # ca_cert_file is a deployment-level trust-store setting (mounted file,
+    # OPENRBI_LDAP_CA_CERT_FILE), not admin-portal-editable per-row state —
+    # it applies identically regardless of whether the DB row or the env
+    # path is the effective config (RBI-POST-001).
     return LdapConnectionConfig(
         server_uri=row.server_uri,
         use_starttls=row.use_starttls,
@@ -40,6 +45,7 @@ def config_from_row(row: LdapConfig, bind_password: str) -> LdapConnectionConfig
         base_dn=row.base_dn,
         user_search_filter=row.user_search_filter,
         group_attribute=row.group_attribute,
+        ca_cert_file=get_settings().ldap_ca_cert_file,
     )
 
 

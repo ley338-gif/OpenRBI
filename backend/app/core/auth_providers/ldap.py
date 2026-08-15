@@ -50,6 +50,10 @@ class LdapConnectionConfig:
     base_dn: str
     user_search_filter: str
     group_attribute: str
+    # Additional PEM CA bundle to trust, on top of the OS trust store —
+    # empty means "OS trust store only" (RBI-POST-001). Never a way to
+    # disable verification: _new_connection always demands a valid chain.
+    ca_cert_file: str = ""
 
 
 @dataclass
@@ -106,6 +110,24 @@ class LdapAuthProvider:
         conn.set_option(ldap.OPT_REFERRALS, 0)
         conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
         conn.set_option(ldap.OPT_TIMEOUT, 5.0)
+
+        # RBI-POST-001: certificate verification must be explicit, not an
+        # implicit OpenLDAP-/Debian-default that a differently-configured
+        # host or library upgrade could silently change out from under us.
+        # OPT_X_TLS_DEMAND fails the handshake (and therefore the whole
+        # bind) on any missing/invalid/untrusted server certificate — there
+        # is deliberately no code path that sets a weaker OPT_X_TLS_*REQUIRE
+        # value. If ca_cert_file is set, it's an *additional* trust anchor
+        # (an internal/private CA) layered on top of the OS trust store,
+        # never a replacement for it.
+        conn.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
+        if self._config.ca_cert_file:
+            conn.set_option(ldap.OPT_X_TLS_CACERTFILE, self._config.ca_cert_file)
+        # libldap's TLS options are process-global until a new TLS context
+        # is requested for this handle — without this, the options above
+        # can silently not apply to the handshake that follows.
+        conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
+
         # Config-load-time validation (app/config.py, and app/services/
         # ldap_config_service.py for the DB-backed path) already refuses a
         # plain ldap:// URI with StartTLS disabled — this is the

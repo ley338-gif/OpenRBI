@@ -10,12 +10,13 @@
 #
 # This exercises LdapAuthProvider directly, in-process within pytest — it
 # never restarts the backend or talks to a running server, so the
-# LDAPTLS_REQCERT=never override below only has to apply to *this* pytest
-# process. The admin LDAP HTTP API (app/api/admin_ldap.py) is different: it
-# runs inside the already-running uvicorn process, which needs its own TLS
-# trust for this throwaway self-signed cert — that's covered by
-# scripts/run-ldap-integration-tests.sh instead, which actually restarts
-# the backend with the right environment (see test_admin_ldap.py there).
+# OPENRBI_LDAP_CA_CERT_FILE override below only has to apply to *this*
+# pytest process. The admin LDAP HTTP API (app/api/admin_ldap.py) is
+# different: it runs inside the already-running uvicorn process, which
+# needs its own TLS trust for this throwaway self-signed cert — that's
+# covered by scripts/run-ldap-integration-tests.sh instead, which actually
+# restarts the backend with the right environment (see test_admin_ldap.py
+# there).
 #
 # Uses OpenLDAP's own native schema (uid=...) rather than Active
 # Directory's sAMAccountName — there is no real AD available to test
@@ -32,18 +33,20 @@ TEST_USER_PASSWORD="TestUserPassword2026!"
 
 cleanup() {
     docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
-    MSYS_NO_PATHCONV=1 docker exec -u root "$BACKEND_CONTAINER" rm -f /app/test_ldap_auth.py >/dev/null 2>&1 || true
+    MSYS_NO_PATHCONV=1 docker exec -u root "$BACKEND_CONTAINER" \
+        rm -f /app/test_ldap_auth.py /app/test_ldap_ca.crt /app/test_ldap_wrong_ca.crt >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # LDAP_TLS=true makes the image generate and serve a self-signed cert on
 # 636/StartTLS-on-389 at boot — real TLS, not a plaintext bind, so this
 # test actually exercises the encrypted path app/config.py's startup
-# validation requires. LDAPTLS_REQCERT=never below (applied only to the
-# pytest exec's environment, never to the application code itself) is what
-# lets the test client trust that self-signed cert without adding any
-# cert-verification bypass to LdapAuthProvider — a real deployment against
-# a real AD's properly-issued certificate needs no such override.
+# validation requires. RBI-POST-001: LdapAuthProvider now always demands a
+# verifiable certificate chain (OPT_X_TLS_REQUIRE_CERT=demand), so this
+# throwaway server's own generated CA is extracted below and handed to the
+# test client via OPENRBI_LDAP_CA_CERT_FILE — the exact same mechanism a
+# real deployment against an internal/private CA would use — instead of
+# the previous LDAPTLS_REQCERT=never blanket bypass.
 docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$LDAP_CONTAINER" \
     --network openrbi_control-plane \
@@ -93,6 +96,24 @@ EOF
 
 echo "[ldap-tests] seeded testuser + openrbi-admins group"
 
+# Extract the throwaway server's own generated CA cert (osixia/openldap
+# writes its self-signed bundle here when LDAP_TLS=true and no certs are
+# supplied) so the test client can trust it explicitly, the same way a
+# real deployment would trust an internal CA via OPENRBI_LDAP_CA_CERT_FILE
+# (RBI-POST-001) — not via a blanket TLS-verification bypass.
+docker cp "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ca.crt" \
+    "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
+docker cp "$SCRIPT_DIR/../backend/test_ldap_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_ca.crt"
+rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
+
+# A CA bundle unrelated to the test server's real CA — used to prove that
+# a *wrong* CA is rejected exactly like no CA at all, never silently
+# accepted just because some CA file was configured.
+docker exec "$BACKEND_CONTAINER" \
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+    -keyout /tmp/bogus-ca-key.pem -out /app/test_ldap_wrong_ca.crt \
+    -subj "/CN=openrbi-test-unrelated-ca" >/dev/null 2>&1
+
 # pytest is a [dev]-only dependency (backend/pyproject.toml), not baked
 # into the production image — matches scripts/run-integration-tests.sh's
 # same on-demand install.
@@ -110,5 +131,6 @@ MSYS_NO_PATHCONV=1 docker exec \
     -e OPENRBI_LDAP_BASE_DN="dc=example,dc=org" \
     -e OPENRBI_LDAP_USER_SEARCH_FILTER="(uid={username})" \
     -e OPENRBI_LDAP_TEST_USER_PASSWORD="$TEST_USER_PASSWORD" \
-    -e LDAPTLS_REQCERT=never \
+    -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
+    -e OPENRBI_LDAP_WRONG_CA_CERT_FILE=/app/test_ldap_wrong_ca.crt \
     "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider /app/test_ldap_auth.py
