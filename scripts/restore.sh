@@ -78,4 +78,30 @@ APP_STOPPED=0
 compose restart reverse-proxy >/dev/null
 trap - EXIT HUP INT TERM
 
+# RBI-POST-018: a light functional sanity check, not a substitute for the
+# real end-to-end validation in scripts/run-backup-restore-acceptance.sh
+# (exact record/byte comparison against a known baseline) — deliberately
+# no checksum database or per-file verification here, just "did the
+# restore actually leave a working, migrated, queryable database and a
+# reachable quarantine volume" before handing control back to the
+# operator. A failure here is a strong signal something's wrong; success
+# is not itself proof the data is correct, only that it's there.
+echo "[restore] verifying database is reachable and migrated..."
+for i in $(seq 1 30); do
+    if docker exec "$POSTGRES_CONTAINER" pg_isready -U openrbi -d openrbi >/dev/null 2>&1; then
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo "[restore] WARNING: PostgreSQL did not become ready within 30s after restore — verify manually" >&2
+    fi
+    sleep 1
+done
+if ! docker exec "$POSTGRES_CONTAINER" psql -U openrbi -d openrbi -tAc \
+    "SELECT 1 FROM users LIMIT 1" >/dev/null 2>&1; then
+    echo "[restore] WARNING: could not read the 'users' table after restore — schema may not match this backup (run alembic upgrade head, see docs/deployment.md#update-procedure)" >&2
+fi
+if ! MSYS_NO_PATHCONV=1 compose exec -T backend sh -c 'test -d /app/data' >/dev/null 2>&1; then
+    echo "[restore] WARNING: quarantine storage volume is not accessible from the backend container after restore" >&2
+fi
+
 echo "[restore] done; reverse proxy restarted. Run alembic upgrade if this backup predates the current schema (docs/deployment.md#update-procedure)."
