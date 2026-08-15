@@ -112,6 +112,8 @@ echo "[ldap-tests] seeded testuser + openrbi-admins group"
 # (RBI-POST-001) — not via a blanket TLS-verification bypass.
 docker cp "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ca.crt" \
     "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
+echo "[ldap-tests] extracted CA cert:"
+openssl x509 -in "$SCRIPT_DIR/../backend/test_ldap_ca.crt" -noout -subject -issuer -dates -ext subjectAltName || true
 docker cp "$SCRIPT_DIR/../backend/test_ldap_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_ca.crt"
 rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
 
