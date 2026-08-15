@@ -24,6 +24,13 @@ RUN npm run build --workspace=user
 RUN npm run build --workspace=admin
 
 FROM nginx:1.27-alpine
+ARG OPENRBI_VERSION=0.1.1
+ARG OPENRBI_COMMIT_SHA=unknown
+ARG OPENRBI_BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="OpenRBI Frontend" \
+      org.opencontainers.image.version="$OPENRBI_VERSION" \
+      org.opencontainers.image.revision="$OPENRBI_COMMIT_SHA" \
+      org.opencontainers.image.created="$OPENRBI_BUILD_DATE"
 # Pulls in whatever OS security patches Alpine has released since this tag
 # was last pulled (A5) — verified to actually close real findings here,
 # unlike the Debian-based images where the equivalent apt-get upgrade left
@@ -37,4 +44,7 @@ COPY --from=build /app/admin/dist /usr/share/nginx/html/admin
 # (Compact) or its own origin root (Segmented, OPENRBI_ADMIN_BASE_PATH=/).
 COPY docs/ /usr/share/nginx/html/docs/
 COPY docs/ /usr/share/nginx/html/admin/docs/
+RUN printf '{"version":"%s","commit_sha":"%s","build_date":"%s"}\n' \
+    "$OPENRBI_VERSION" "$OPENRBI_COMMIT_SHA" "$OPENRBI_BUILD_DATE" \
+    > /usr/share/nginx/html/version.json
 EXPOSE 80

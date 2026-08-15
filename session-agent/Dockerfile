@@ -4,6 +4,17 @@
 # inside a browser sandbox (see docs/adr/0004, 0005).
 FROM python:3.11-slim AS base
 
+ARG OPENRBI_VERSION=0.1.1
+ARG OPENRBI_COMMIT_SHA=unknown
+ARG OPENRBI_BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="OpenRBI Session Agent" \
+      org.opencontainers.image.version="$OPENRBI_VERSION" \
+      org.opencontainers.image.revision="$OPENRBI_COMMIT_SHA" \
+      org.opencontainers.image.created="$OPENRBI_BUILD_DATE"
+ENV OPENRBI_VERSION="$OPENRBI_VERSION" \
+    OPENRBI_COMMIT_SHA="$OPENRBI_COMMIT_SHA" \
+    OPENRBI_BUILD_DATE="$OPENRBI_BUILD_DATE"
+
 # Pulls in whatever OS security patches Debian has actually released for
 # this base image since it was last pulled (A5) — some CVEs still show up
 # afterward with no upstream fix yet, tracked explicitly in .trivyignore.

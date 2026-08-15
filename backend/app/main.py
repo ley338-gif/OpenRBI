@@ -21,6 +21,7 @@ from app.api.mfa import router as mfa_router
 from app.api.policies import router as policies_router
 from app.api.sessions import router as sessions_router
 from app.api.setup import router as setup_router
+from app.build_info import BUILD_INFO
 from app.config import get_settings
 from app.core import node_poller, orphan_reconciler, quarantine_retention
 from app.db.session import async_session_factory
@@ -91,7 +92,7 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OpenRBI Backend",
-    version="0.1.0",
+    version=BUILD_INFO.version,
     description="OpenRBI control-plane API (MVP 1 under active development).",
     lifespan=_lifespan,
 )

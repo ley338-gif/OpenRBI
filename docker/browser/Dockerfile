@@ -9,6 +9,17 @@
 # read-only filesystem).
 FROM debian:bookworm-slim
 
+ARG OPENRBI_VERSION=0.1.1
+ARG OPENRBI_COMMIT_SHA=unknown
+ARG OPENRBI_BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="OpenRBI Browser Sandbox" \
+      org.opencontainers.image.version="$OPENRBI_VERSION" \
+      org.opencontainers.image.revision="$OPENRBI_COMMIT_SHA" \
+      org.opencontainers.image.created="$OPENRBI_BUILD_DATE"
+ENV OPENRBI_VERSION="$OPENRBI_VERSION" \
+    OPENRBI_COMMIT_SHA="$OPENRBI_COMMIT_SHA" \
+    OPENRBI_BUILD_DATE="$OPENRBI_BUILD_DATE"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # upgrade before install so firefox-esr's own dependency chain (glib,
