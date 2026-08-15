@@ -38,10 +38,29 @@ trap cleanup EXIT
 wait_for_ldap() {
     phase="$1"
     for i in $(seq 1 30); do
+        # A successful ldapsearch against localhost inside the LDAP
+        # container only proves the container's own local admin socket is
+        # up. It does NOT prove the LDAPS TCP listener is actually
+        # accepting connections over the docker network yet — there's a
+        # real, reproducible-once gap between those two points (seen in
+        # CI run 31895301423: 5 tests failed with "Could not reach the
+        # LDAP server" because the backend container tried to connect
+        # over the network before the LDAPS port was ready, even though
+        # the local check above had already passed). Probe with a plain TCP
+        # connect from a separate throwaway container on the same network
+        # the real backend will use, the same way the backend itself
+        # reaches it — deliberately not a full LDAP bind: that dragged in
+        # LDAP-client TLS-trust and image-entrypoint complications
+        # unrelated to what this check actually needs to prove. Reuses
+        # python:3.11-slim (already pulled for this job's own backend
+        # image) purely as a container with a Python interpreter in it.
         if docker exec "$LDAP_CONTAINER" ldapsearch -x -H ldap://localhost \
             -b "dc=example,dc=org" \
             -D "cn=admin,dc=example,dc=org" \
-            -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1; then
+            -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1 \
+            && docker run --rm --network openrbi_control-plane python:3.11-slim \
+                python3 -c "import socket; socket.create_connection(('$LDAP_CONTAINER', 636), timeout=3)" \
+                >/dev/null 2>&1; then
             return 0
         fi
         if [ "$(docker inspect -f '{{.State.Running}}' "$LDAP_CONTAINER" 2>/dev/null || true)" != "true" ]; then
