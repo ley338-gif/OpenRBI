@@ -99,7 +99,7 @@ POSTGRES_CONTAINER="$(compose ps -q postgres)"
 SETUP_TOKEN="$(docker logs "$BACKEND_CONTAINER" 2>&1 | grep -A2 'initial setup token' | tail -1 | tr -d ' \r')"
 [ -n "$SETUP_TOKEN" ] || { echo "initial setup token not found" >&2; exit 1; }
 docker cp "$SCRIPT_DIR/fresh-install-acceptance.py" "$BACKEND_CONTAINER:/tmp/fresh-install-acceptance.py"
-compose exec -T backend python /tmp/fresh-install-acceptance.py "$SETUP_TOKEN"
+compose exec -T -e OPENRBI_ACCEPT_CHECK_DISPLAY_PROXY=1 backend python /tmp/fresh-install-acceptance.py "$SETUP_TOKEN"
 docker cp "$SCRIPT_DIR/backup-restore-acceptance.py" "$BACKEND_CONTAINER:/tmp/backup-restore-acceptance.py"
 compose exec -T -e PYTHONPATH=/app backend python /tmp/backup-restore-acceptance.py seed "$MANIFEST"
 echo "ACCEPT BR-03 exact baseline table counts and evidence identifiers recorded outside the backup"

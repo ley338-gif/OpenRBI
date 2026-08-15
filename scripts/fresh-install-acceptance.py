@@ -194,24 +194,32 @@ def main() -> None:
     # request whose Host/Origin both carry a real, non-default port (like
     # this project's own documented default of 8080) must be accepted, not
     # rejected by a proxy that silently drops the port off Host.
-    cookie = client.session_cookie()
-    same_origin_status = display_ws_handshake_status(
-        session_id, cookie, host_header="openrbi.acceptance.test:8080", origin_header="http://openrbi.acceptance.test:8080"
-    )
-    assert same_origin_status.startswith("HTTP/1.1 101"), (
-        f"real reverse-proxy path rejected a same-origin display WS handshake with a "
-        f"non-default port: {same_origin_status}"
-    )
-    # A genuinely cross-origin handshake must still be rejected -- guards
-    # against a future fix that weakens or removes the check entirely
-    # instead of just correcting the port handling.
-    cross_origin_status = display_ws_handshake_status(
-        session_id, cookie, host_header="openrbi.acceptance.test:8080", origin_header="http://evil.example.com:8080"
-    )
-    assert not cross_origin_status.startswith("HTTP/1.1 101"), (
-        f"real reverse-proxy path accepted a cross-origin display WS handshake: {cross_origin_status}"
-    )
-    print("ACCEPT 14b display WebSocket handshake through the real reverse-proxy enforces same-origin correctly")
+    #
+    # Gated on an explicit opt-in: this script is also reused (unmodified)
+    # by run-upgrade-acceptance.sh to seed the pinned 0.1.1 baseline, whose
+    # backend predates RBI-POST-003's origin check entirely -- there, every
+    # handshake (same- or cross-origin) is correctly accepted by that old
+    # code, which would make this assertion fail for a reason that has
+    # nothing to do with the current codebase under test.
+    if os.environ.get("OPENRBI_ACCEPT_CHECK_DISPLAY_PROXY") == "1":
+        cookie = client.session_cookie()
+        same_origin_status = display_ws_handshake_status(
+            session_id, cookie, host_header="openrbi.acceptance.test:8080", origin_header="http://openrbi.acceptance.test:8080"
+        )
+        assert same_origin_status.startswith("HTTP/1.1 101"), (
+            f"real reverse-proxy path rejected a same-origin display WS handshake with a "
+            f"non-default port: {same_origin_status}"
+        )
+        # A genuinely cross-origin handshake must still be rejected --
+        # guards against a future fix that weakens or removes the check
+        # entirely instead of just correcting the port handling.
+        cross_origin_status = display_ws_handshake_status(
+            session_id, cookie, host_header="openrbi.acceptance.test:8080", origin_header="http://evil.example.com:8080"
+        )
+        assert not cross_origin_status.startswith("HTTP/1.1 101"), (
+            f"real reverse-proxy path accepted a cross-origin display WS handshake: {cross_origin_status}"
+        )
+        print("ACCEPT 14b display WebSocket handshake through the real reverse-proxy enforces same-origin correctly")
 
     terminated = client.post(f"/sessions/{session_id}/terminate")
     assert terminated["status"] == "TERMINATED"

@@ -116,7 +116,7 @@ if [ -z "$SETUP_TOKEN" ]; then
     exit 1
 fi
 docker cp "$SCRIPT_DIR/fresh-install-acceptance.py" "$BACKEND_CONTAINER:/tmp/fresh_install_acceptance.py"
-compose exec -T backend python /tmp/fresh_install_acceptance.py "$SETUP_TOKEN"
+compose exec -T -e OPENRBI_ACCEPT_CHECK_DISPLAY_PROXY=1 backend python /tmp/fresh_install_acceptance.py "$SETUP_TOKEN"
 
 if docker ps -q --filter label=openrbi.managed=true | grep -q .; then
     echo "a managed browser sandbox remained after session termination" >&2
