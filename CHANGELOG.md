@@ -6,6 +6,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-08-15
+
 ### Security
 
 - Made password-bearing local identities authoritative over same-named LDAP identities, closing a collision path that could otherwise authenticate a local privileged role with a directory password.
