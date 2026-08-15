@@ -18,6 +18,8 @@ pinned compiler and fails on any diff. The frontend build and audit use
 | Browser sandbox build | The browser entry of `Image vulnerability scan (Trivy)` builds `docker/browser/Dockerfile` before scanning it. The integration job also builds the image used by lifecycle tests. |
 | Image vulnerability scans | All four Trivy matrix entries must pass at CRITICAL severity. Any exception must identify and document a concrete CVE in `.trivyignore`. |
 | Node dependency vulnerabilities | `Frontend dependency scan (npm audit)` audits the lockfile-resolved workspace at CRITICAL severity. |
+| Repository secrets | `Secret scan (gitleaks)` scans the complete Git history, not only the checked-out tree. |
+| Frontend secret boundary | The frontend dependency job builds both production portals and rejects backend-only secret identifiers in `dist`. |
 | Python dependency vulnerabilities | Both entries of `Python dependency scan` audit the exact hash-verified backend and Session Agent production locks with `pip-audit --strict`. |
 | Python lint | `Python lint and type checking` runs Ruff over application code, tests, and migrations. |
 | Python type checking | The same job runs mypy independently for backend and Session Agent, avoiding their intentionally identical top-level `app` package names colliding. |

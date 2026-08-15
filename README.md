@@ -70,6 +70,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/release/fresh-install-acceptance.md](docs/release/fresh-install-acceptance.md) | Executable clean-install protocol and step-by-step acceptance criteria |
 | [docs/release/backup-restore-acceptance.md](docs/release/backup-restore-acceptance.md) | Destructive current-schema recovery protocol and functional evidence contract |
 | [docs/release/upgrade-acceptance.md](docs/release/upgrade-acceptance.md) | Pinned 0.1.1-to-v1 upgrade, rollback procedure, and known limitations |
+| [docs/release/security-review.md](docs/release/security-review.md) | Targeted v1 authentication, sandbox, file, and secrets release review |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
 | [docs/api.md](docs/api.md) | API reference |
