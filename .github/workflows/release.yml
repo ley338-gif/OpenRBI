@@ -32,7 +32,7 @@ jobs:
       tag: ${{ steps.verify.outputs.tag }}
       build_date: ${{ steps.verify.outputs.build_date }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -116,7 +116,7 @@ jobs:
             context: docker/browser
             dockerfile: docker/browser/Dockerfile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Install Syft
         id: syft
