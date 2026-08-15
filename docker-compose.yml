@@ -69,6 +69,15 @@ services:
       # set OPENRBI_LDAP_CA_CERT_FILE=/etc/openrbi/ldap-ca.pem in .env.
       # Read-only; never required for a publicly-issued LDAPS certificate.
       # - ./config/ldap-ca.pem:/etc/openrbi/ldap-ca.pem:ro
+      # RBI-POST-002: read-only marker written by
+      # scripts/setup-network-isolation.sh on the Docker host — this is how
+      # the backend's health status can tell "isolation was verifiably
+      # applied recently" apart from "docker compose up alone, isolation
+      # was never set up" without granting the container any host/root
+      # access. Docker creates this host directory automatically (empty) if
+      # it doesn't exist yet, which is exactly the correct "not configured"
+      # starting state. See docs/deployment.md#network-isolation.
+      - /var/lib/openrbi/network-isolation:/etc/openrbi/network-isolation:ro
     # Deliberately no volume mount of /var/run/docker.sock — see
     # docs/adr/0005-no-docker-socket-in-backend.md. All sandbox lifecycle
     # operations go through session-agent's internal API instead.

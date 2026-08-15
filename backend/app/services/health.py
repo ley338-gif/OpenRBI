@@ -5,6 +5,7 @@ a full picture instead of a 500.
 """
 
 import os
+import time
 from dataclasses import dataclass
 from enum import Enum
 
@@ -20,6 +21,12 @@ class ComponentStatus(str, Enum):
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"
     UNAVAILABLE = "UNAVAILABLE"
+    # network_isolation only (RBI-POST-002): the host-level setup script
+    # (scripts/setup-network-isolation.sh) has never been run for this
+    # deployment at all — distinct from DEGRADED (it *was* run, but not
+    # recently enough to trust) so the Admin dashboard can say "not set up"
+    # rather than "broken".
+    NOT_CONFIGURED = "NOT_CONFIGURED"
 
 
 @dataclass
@@ -101,6 +108,70 @@ async def check_quarantine_storage() -> ComponentHealth:
         return ComponentHealth(name="quarantine_storage", status=ComponentStatus.UNAVAILABLE, detail=str(exc))
 
 
+async def check_network_isolation() -> ComponentHealth:
+    """Reads the marker file scripts/setup-network-isolation.sh writes
+    after successfully applying the DOCKER-USER iptables blocklist
+    (RBI-POST-002) — a plain filesystem read, deliberately the only kind
+    of check the backend container is allowed to do here, since it has no
+    host/root access to inspect iptables state directly (same
+    minimal-privilege boundary as the no-docker-socket-in-backend
+    decision). This can only ever prove "the script ran recently enough to
+    trust"; it is not a live re-read of the kernel's netfilter tables —
+    that gap is the reason for the freshness window below rather than a
+    one-time check, and it is documented as a known limitation in
+    docs/deployment.md rather than silently overclaimed.
+
+    Never returns HEALTHY on a missing/unreadable/stale marker — a broken
+    or absent check must not be reported as if isolation were verified.
+    """
+    settings = get_settings()
+    path = settings.network_isolation_marker_file
+    try:
+        with open(path, encoding="utf-8") as f:
+            fields = dict(
+                line.split("=", 1) for line in f.read().splitlines() if "=" in line
+            )
+    except FileNotFoundError:
+        return ComponentHealth(
+            name="network_isolation",
+            status=ComponentStatus.NOT_CONFIGURED,
+            detail=(
+                "Browser network isolation is not verified. Do not use OpenRBI in "
+                "production until scripts/setup-network-isolation.sh has been run on "
+                "the Docker host — see docs/deployment.md#network-isolation."
+            ),
+        )
+    except OSError as exc:
+        return ComponentHealth(name="network_isolation", status=ComponentStatus.UNAVAILABLE, detail=str(exc))
+
+    if fields.get("MARKER") != "openrbi-network-isolation" or "APPLIED_AT" not in fields:
+        return ComponentHealth(
+            name="network_isolation", status=ComponentStatus.UNAVAILABLE, detail="marker file is malformed"
+        )
+
+    try:
+        applied_at = float(fields["APPLIED_AT"])
+    except ValueError:
+        return ComponentHealth(
+            name="network_isolation", status=ComponentStatus.UNAVAILABLE, detail="marker file is malformed"
+        )
+
+    age_seconds = time.time() - applied_at
+    if age_seconds > settings.network_isolation_max_staleness_seconds or age_seconds < 0:
+        return ComponentHealth(
+            name="network_isolation",
+            status=ComponentStatus.DEGRADED,
+            detail=(
+                f"isolation rules were last confirmed {int(age_seconds)}s ago, exceeding the "
+                f"{int(settings.network_isolation_max_staleness_seconds)}s freshness window — "
+                "re-run scripts/setup-network-isolation.sh, or install "
+                "scripts/systemd/openrbi-network-isolation.timer so it reruns automatically."
+            ),
+        )
+
+    return ComponentHealth(name="network_isolation", status=ComponentStatus.HEALTHY)
+
+
 @dataclass
 class SystemHealth:
     status: ComponentStatus
@@ -118,6 +189,7 @@ async def get_system_health(db: AsyncSession) -> SystemHealth:
         image_health,
         await check_clamav(),
         await check_quarantine_storage(),
+        await check_network_isolation(),
     ]
     # Postgres/API down means the control plane itself is unusable — that's
     # a system-wide UNAVAILABLE. Any other single dependency down (ClamAV,

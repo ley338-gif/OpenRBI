@@ -1,0 +1,23 @@
+# Reruns openrbi-network-isolation.service every 5 minutes (idempotent —
+# the script clears its own previously-added rules before reapplying) so a
+# host reboot, Docker restart, or browser-plane network recreation is
+# re-covered without anyone having to remember to rerun it by hand, and so
+# the marker file backend/app/services/health.py reads stays fresh enough
+# to keep reporting HEALTHY (default freshness window: 900s — see
+# OPENRBI_NETWORK_ISOLATION_MAX_STALENESS_SECONDS in .env.example).
+#
+# OnBootSec matters as much as the recurring interval: a plain
+# "OnCalendar=*:0/5" timer only fires on 5-minute wall-clock boundaries and
+# can leave a multi-minute gap right after boot, during which the marker
+# is simply absent (correctly reported as NOT_CONFIGURED, not a false
+# HEALTHY) rather than merely stale.
+[Unit]
+Description=Reapply OpenRBI network isolation periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Unit=openrbi-network-isolation.service
+
+[Install]
+WantedBy=timers.target

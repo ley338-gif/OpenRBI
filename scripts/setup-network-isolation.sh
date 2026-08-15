@@ -28,6 +28,18 @@ set -eu
 MARKER="openrbi-network-isolation"
 MODE="${1:-apply}"
 BROWSER_PLANE_NETWORK="${OPENRBI_BROWSER_PLANE_NETWORK:-openrbi_browser-plane}"
+# RBI-POST-002: a plain, self-attested marker file the backend can read
+# without any host privilege (bind-mounted read-only, docker-compose.yml)
+# to tell "isolation was verifiably applied, recently" apart from "docker
+# compose up alone, nobody ran this script" or "ran once, long ago, and
+# never reconfirmed since" (e.g. after a host reboot with no timer unit
+# installed — see docs/deployment.md and scripts/systemd/). This is a
+# presence/freshness signal, not a live re-read of the kernel's netfilter
+# tables — the backend container has no host/root access to do that
+# itself, by design (docs/adr/0005-no-docker-socket-in-backend.md's same
+# minimal-privilege reasoning extends here).
+MARKER_DIR="${OPENRBI_NETWORK_ISOLATION_MARKER_DIR:-/var/lib/openrbi/network-isolation}"
+MARKER_FILE="$MARKER_DIR/marker"
 # Address(es) on browser-plane allowed to *initiate* connections into it —
 # i.e. whichever process actually terminates /display/*/ws and therefore
 # needs to open the noVNC/VNC relay connection to a sandbox. Space-separated,
@@ -70,7 +82,8 @@ done
 log "cleared any previous $MARKER rules"
 
 if [ "$MODE" = "--remove" ]; then
-    log "remove-only mode complete"
+    rm -f "$MARKER_FILE"
+    log "remove-only mode complete (marker file cleared — network_isolation health will report NOT_CONFIGURED)"
     exit 0
 fi
 
@@ -151,4 +164,17 @@ for ip in $BACKEND_BROWSER_PLANE_IP; do
     iptables -I DOCKER-USER 1 -s "$ip" -j ACCEPT -m comment --comment "$MARKER"
 done
 
+mkdir -p "$MARKER_DIR"
+{
+    echo "MARKER=$MARKER"
+    echo "APPLIED_AT=$(date +%s)"
+    echo "BROWSER_PLANE_SUBNET=$BROWSER_SUBNET"
+} > "$MARKER_FILE"
+chmod 644 "$MARKER_FILE"
+log "wrote marker file: $MARKER_FILE"
+
 log "done. Verify with: iptables -L DOCKER-USER -n --line-numbers"
+log "re-run this script after every host reboot and after any Docker/network"
+log "recreation — install scripts/systemd/openrbi-network-isolation.{service,timer}"
+log "to automate that instead of relying on someone remembering (see"
+log "docs/deployment.md#network-isolation)."

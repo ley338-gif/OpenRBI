@@ -38,6 +38,30 @@ sudo ./scripts/setup-network-isolation.sh
 
 At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
 
+## Network isolation
+
+**`docker compose up` alone is NOT enough for production.** It brings up the browser sandboxes' network, but nothing about `docker compose up` itself applies the egress blocklist (RFC1918/link-local/metadata/inter-sandbox/host-IP, `scripts/setup-network-isolation.sh`) that actually isolates a compromised sandbox from everything it must not reach. Running that script once (RBI-POST-002), on the real host, as root, is a required and separate step for any real deployment — it cannot be done from inside a container, deliberately: the backend has no host/root access (same minimal-privilege boundary as [ADR 0005](adr/0005-no-docker-socket-in-backend.md)), so it cannot apply or self-verify these rules on its own.
+
+**The Admin dashboard's health status now surfaces this** (`network_isolation` component, `/admin` health endpoint): the script writes a marker file (`/var/lib/openrbi/network-isolation/marker` on the host, bind-mounted read-only into the backend container) each time it successfully applies the rules, and the backend reports:
+
+- **`NOT_CONFIGURED`** — the marker file doesn't exist. Either the script has never been run on this host, or `OPENRBI_NETWORK_ISOLATION_MARKER_DIR`/the bind mount don't line up. Shown to admins as: *"Browser network isolation is not verified. Do not use OpenRBI in production until the isolation rules are applied."*
+- **`DEGRADED`** — a marker exists but is older than the freshness window (`OPENRBI_NETWORK_ISOLATION_MAX_STALENESS_SECONDS`, default 900s) — the rules were applied at some point but haven't been reconfirmed recently enough to trust, most commonly because the host rebooted (which does **not** re-run the script by itself) and no timer unit is installed.
+- **`HEALTHY`** — a valid, recent marker exists.
+
+This is a presence/freshness check on a self-attested marker file, not a live re-read of the kernel's iptables tables — the backend container is deliberately not granted the host privilege that would take. It reliably catches "nobody ever ran the script" and "the script hasn't been reconfirmed in a long time" (the two most common real-world gaps: initial setup skipped, or a host reboot / Docker restart / network recreation silently un-applying the rules), but it cannot detect someone manually flushing `DOCKER-USER` out from under a fresh marker between runs.
+
+**Re-running after restarts** — install the provided systemd timer so this happens automatically instead of depending on someone remembering:
+
+```
+sudo cp scripts/systemd/openrbi-network-isolation.service /etc/systemd/system/
+sudo cp scripts/systemd/openrbi-network-isolation.timer /etc/systemd/system/
+# edit WorkingDirectory in the .service file to match where this repo is checked out
+sudo systemctl daemon-reload
+sudo systemctl enable --now openrbi-network-isolation.timer
+```
+
+Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_BACKEND_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
+
 ## First-run setup (Roadmap B1.9)
 
 A fresh installation has no user accounts at all yet — there is no default `admin`/`admin` or any other built-in credential, and **no manual database access or SQL is ever required** to create the first one. Open the Admin Portal (`/admin/`); since no administrator exists yet, it shows **Initial System Setup** instead of the normal login form.

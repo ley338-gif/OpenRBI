@@ -18,6 +18,7 @@ const CRITICAL = new Set([
 ]);
 const WARNING = new Set([
   "DEGRADED",
+  "NOT_CONFIGURED",
   "TERMINATING",
   "SCANNING",
   "PENDING_SCAN",
