@@ -147,37 +147,6 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
     -subj "/CN=openrbi-test-unrelated-ca" >/dev/null 2>&1
 docker cp "$CERT_DIR/wrong-ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_wrong_ca.crt"
 
-echo "[ldap-tests] DEBUG: full two-connection authenticate() flow, in-process:"
-docker exec \
-    -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
-    "$BACKEND_CONTAINER" python3 -c "
-import os
-os.environ['LDAPTLS_REQCERT'] = 'demand'
-os.environ['LDAPTLS_CACERT'] = os.environ['OPENRBI_LDAP_CA_CERT_FILE']
-import ldap, ldap.filter
-
-def new_conn():
-    c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
-    c.set_option(ldap.OPT_REFERRALS, 0)
-    c.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
-    c.set_option(ldap.OPT_TIMEOUT, 5.0)
-    return c
-
-try:
-    search_conn = new_conn()
-    search_conn.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
-    print('search bind OK')
-    results = search_conn.search_s('dc=example,dc=org', ldap.SCOPE_SUBTREE, '(uid=testuser)', ['memberOf'])
-    print('search OK:', results)
-    search_conn.unbind_s()
-    user_conn = new_conn()
-    user_conn.simple_bind_s('uid=testuser,ou=people,dc=example,dc=org', 'TestUserPassword2026!')
-    print('user bind OK')
-    user_conn.unbind_s()
-except Exception as e:
-    print('FAILED:', repr(e))
-" || true
-
 # pytest is a [dev]-only dependency (backend/pyproject.toml), not baked
 # into the production image — matches scripts/run-integration-tests.sh's
 # same on-demand install.
@@ -186,15 +155,41 @@ docker exec -u root "$BACKEND_CONTAINER" \
 
 docker cp "$SCRIPT_DIR/../backend/tests/integration/test_ldap_auth.py" "$BACKEND_CONTAINER:/app/test_ldap_auth.py"
 
-MSYS_NO_PATHCONV=1 docker exec \
-    -e OPENRBI_LDAP_ENABLED=true \
-    -e OPENRBI_LDAP_SERVER_URI="ldaps://$LDAP_CONTAINER:636" \
-    -e OPENRBI_LDAP_USE_STARTTLS=true \
-    -e OPENRBI_LDAP_BIND_DN="cn=admin,dc=example,dc=org" \
-    -e OPENRBI_LDAP_BIND_PASSWORD="$LDAP_ADMIN_PASSWORD" \
-    -e OPENRBI_LDAP_BASE_DN="dc=example,dc=org" \
-    -e OPENRBI_LDAP_USER_SEARCH_FILTER="(uid={username})" \
-    -e OPENRBI_LDAP_TEST_USER_PASSWORD="$TEST_USER_PASSWORD" \
+# RBI-POST-001: TLS trust is read once, at module-import time, into the
+# LDAPTLS_CACERT environment variable app/core/auth_providers/ldap.py sets
+# up before `import ldap` — see test_ldap_auth.py's _config_from_env
+# docstring. That means it can't be varied per-test-function within a
+# single pytest process; each CA-trust scenario below is therefore its own
+# fresh `pytest` invocation (a fresh process, a fresh module import) with a
+# different OPENRBI_LDAP_CA_CERT_FILE, rather than a config override.
+LDAP_TEST_COMMON_ENV="
+    -e OPENRBI_LDAP_ENABLED=true
+    -e OPENRBI_LDAP_SERVER_URI=ldaps://$LDAP_CONTAINER:636
+    -e OPENRBI_LDAP_USE_STARTTLS=true
+    -e OPENRBI_LDAP_BIND_DN=cn=admin,dc=example,dc=org
+    -e OPENRBI_LDAP_BIND_PASSWORD=$LDAP_ADMIN_PASSWORD
+    -e OPENRBI_LDAP_BASE_DN=dc=example,dc=org
+    -e OPENRBI_LDAP_USER_SEARCH_FILTER=(uid={username})
+    -e OPENRBI_LDAP_TEST_USER_PASSWORD=$TEST_USER_PASSWORD
+"
+
+echo "[ldap-tests] main run: correctly configured CA — full test file"
+# shellcheck disable=SC2086
+MSYS_NO_PATHCONV=1 docker exec $LDAP_TEST_COMMON_ENV \
     -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
     -e OPENRBI_LDAP_WRONG_CA_CERT_FILE=/app/test_ldap_wrong_ca.crt \
     "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider /app/test_ldap_auth.py
+
+echo "[ldap-tests] scenario run: no CA configured — untrusted self-signed cert must be rejected"
+# shellcheck disable=SC2086
+MSYS_NO_PATHCONV=1 docker exec $LDAP_TEST_COMMON_ENV \
+    "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider /app/test_ldap_auth.py \
+    -k test_untrusted_certificate_is_rejected_without_a_configured_ca
+
+echo "[ldap-tests] scenario run: wrong CA configured — must still be rejected"
+# shellcheck disable=SC2086
+MSYS_NO_PATHCONV=1 docker exec $LDAP_TEST_COMMON_ENV \
+    -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_wrong_ca.crt \
+    -e OPENRBI_LDAP_WRONG_CA_CERT_FILE=/app/test_ldap_wrong_ca.crt \
+    "$BACKEND_CONTAINER" pytest -v -p no:cacheprovider /app/test_ldap_auth.py \
+    -k test_wrong_ca_cert_is_rejected

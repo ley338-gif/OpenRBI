@@ -30,7 +30,6 @@ from app.api.schemas.admin_ldap import (
     LdapTestResponse,
     LdapTestStepResponse,
 )
-from app.config import get_settings
 from app.core.auth_providers.ldap import LdapAuthProvider, LdapConnectionConfig, LdapTestResult
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.deps import get_current_user, require_role
@@ -79,7 +78,6 @@ async def test_config(
         base_dn=payload.base_dn,
         user_search_filter=payload.user_search_filter,
         group_attribute=payload.group_attribute,
-        ca_cert_file=get_settings().ldap_ca_cert_file,
     )
     result = await LdapAuthProvider(config).test_connection(test_username=payload.test_username)
     await record_security_event(
@@ -126,7 +124,6 @@ async def update_config(
             base_dn=payload.base_dn,
             user_search_filter=payload.user_search_filter,
             group_attribute=payload.group_attribute,
-            ca_cert_file=get_settings().ldap_ca_cert_file,
         )
         test_result = await LdapAuthProvider(candidate).test_connection()
         if not test_result.success:

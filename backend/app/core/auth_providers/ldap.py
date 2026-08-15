@@ -29,8 +29,26 @@ path a real login would.
 import os
 from dataclasses import dataclass, field
 
-import ldap
-import ldap.filter
+from app.config import get_settings
+
+# RBI-POST-001: these must be set before `import ldap` below, not merely
+# before any connection is opened. In testing, python-ldap's underlying
+# OpenLDAP C library reads LDAPTLS_REQCERT/LDAPTLS_CACERT once, at import/
+# first-load time — an os.environ mutation made later at connection time
+# (even before ldap.initialize()) was silently ignored, with TLS
+# certificate verification falling back to whatever was in the
+# environment at import instead. "demand" is a fixed, unconditional
+# policy — there is no setting anywhere that weakens it. ca_cert_file is
+# itself a single deployment-wide value (OPENRBI_LDAP_CA_CERT_FILE) fixed
+# for the lifetime of this process, so reading it once here, at the only
+# point that's actually reliable, is correct — not merely a workaround.
+os.environ["LDAPTLS_REQCERT"] = "demand"
+_ca_cert_file = get_settings().ldap_ca_cert_file
+if _ca_cert_file:
+    os.environ["LDAPTLS_CACERT"] = _ca_cert_file
+
+import ldap  # noqa: E402 - see comment above; must follow the LDAPTLS_* env setup
+import ldap.filter  # noqa: E402
 
 from app.core.auth_providers.base import AuthResult
 
@@ -51,10 +69,6 @@ class LdapConnectionConfig:
     base_dn: str
     user_search_filter: str
     group_attribute: str
-    # Additional PEM CA bundle to trust, on top of the OS trust store —
-    # empty means "OS trust store only" (RBI-POST-001). Never a way to
-    # disable verification: _new_connection always demands a valid chain.
-    ca_cert_file: str = ""
 
 
 @dataclass
@@ -117,27 +131,10 @@ class LdapAuthProvider:
         # internal/private CA) layered on top of the OS trust store, never
         # a replacement for it.
         #
-        # These are set via the LDAPTLS_* environment variables rather than
-        # ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT/CACERTFILE, ...):
-        # those options live in OpenLDAP's process-global TLS context, and
-        # in testing did not reliably apply per-connection even combined
-        # with OPT_X_TLS_NEWCTX (silently fell back to treating a correctly
-        # configured, correctly signed CA as untrusted). The environment
-        # variables are libldap's own documented, reliably-applied
-        # mechanism for the same settings. Safe to set on every call
-        # (not just once) because ca_cert_file is itself a single
-        # deployment-wide value (OPENRBI_LDAP_CA_CERT_FILE) — every
-        # LdapConnectionConfig built anywhere in this process (env path,
-        # DB-backed path, and the admin "test configuration" candidate
-        # path) already resolves to the same value, so there is no
-        # concurrent-request scenario where two different connections
-        # would need two different values here.
-        os.environ["LDAPTLS_REQCERT"] = "demand"
-        if self._config.ca_cert_file:
-            os.environ["LDAPTLS_CACERT"] = self._config.ca_cert_file
-        else:
-            os.environ.pop("LDAPTLS_CACERT", None)
-
+        # Actual enforcement is the module-level LDAPTLS_REQCERT/
+        # LDAPTLS_CACERT setup above, applied once at import time — see
+        # that comment for why it can't be done reliably here, per
+        # connection, at all.
         conn = ldap.initialize(self._config.server_uri)
         conn.set_option(ldap.OPT_REFERRALS, 0)
         conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
@@ -195,11 +192,10 @@ class LdapAuthProvider:
             group_dns = [g.decode("utf-8") if isinstance(g, bytes) else g for g in raw_groups]
             return AuthResult(success=True, username=username, ldap_group_dns=group_dns)
 
-        except (ldap.SERVER_DOWN, ldap.CONNECT_ERROR, ldap.TIMEOUT, ldap.LDAPError) as exc:
+        except (ldap.SERVER_DOWN, ldap.CONNECT_ERROR, ldap.TIMEOUT, ldap.LDAPError):
             # Deliberately broad: any LDAP-layer failure not already
             # handled above (server unreachable, TLS handshake failure,
             # malformed response, ...) is fail-closed, not a bypass.
-            print(f"DEBUG authenticate() exception: {exc!r}")  # noqa: T201
             return AuthResult(success=False)
 
     async def health(self) -> bool:
