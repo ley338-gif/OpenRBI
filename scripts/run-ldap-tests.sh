@@ -147,20 +147,35 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
     -subj "/CN=openrbi-test-unrelated-ca" >/dev/null 2>&1
 docker cp "$CERT_DIR/wrong-ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_wrong_ca.crt"
 
-echo "[ldap-tests] DEBUG: raw bind via production code path env:"
+echo "[ldap-tests] DEBUG: full two-connection authenticate() flow, in-process:"
 docker exec \
     -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
     "$BACKEND_CONTAINER" python3 -c "
 import os
 os.environ['LDAPTLS_REQCERT'] = 'demand'
 os.environ['LDAPTLS_CACERT'] = os.environ['OPENRBI_LDAP_CA_CERT_FILE']
-import ldap
-c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
+import ldap, ldap.filter
+
+def new_conn():
+    c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
+    c.set_option(ldap.OPT_REFERRALS, 0)
+    c.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
+    c.set_option(ldap.OPT_TIMEOUT, 5.0)
+    return c
+
 try:
-    c.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
-    print('BIND OK')
+    search_conn = new_conn()
+    search_conn.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
+    print('search bind OK')
+    results = search_conn.search_s('dc=example,dc=org', ldap.SCOPE_SUBTREE, '(uid=testuser)', ['memberOf'])
+    print('search OK:', results)
+    search_conn.unbind_s()
+    user_conn = new_conn()
+    user_conn.simple_bind_s('uid=testuser,ou=people,dc=example,dc=org', 'TestUserPassword2026!')
+    print('user bind OK')
+    user_conn.unbind_s()
 except Exception as e:
-    print('BIND FAILED:', repr(e))
+    print('FAILED:', repr(e))
 " || true
 
 # pytest is a [dev]-only dependency (backend/pyproject.toml), not baked
