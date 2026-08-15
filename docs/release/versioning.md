@@ -12,6 +12,10 @@ The values are stored as standard OCI image labels (`org.opencontainers.image.ve
 
 Local builds use the manifest version and `unknown` for commit/date. Release builds must pass all three values explicitly; the release workflow records image digests separately.
 
+The guarded dry-run and publishing procedure is defined in
+[`publishing.md`](publishing.md). Never create release tags or push release
+images by hand around that workflow.
+
 ## Version update procedure
 
 1. Update `VERSION` and every package/image default reported by `python scripts/check-version-sync.py`.
