@@ -1,6 +1,6 @@
 [project]
 name = "openrbi-session-agent"
-version = "1.0.0"
+version = "1.0.1-rc.1"
 description = "OpenRBI Session Agent — the only component holding sandbox-runtime credentials (see docs/adr/0004, 0005)."
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"

@@ -2,7 +2,7 @@
 
 The manually dispatched GitHub Actions workflow `.github/workflows/release.yml`
 builds all four OpenRBI images from one exact commit. It supports Semantic
-Versioning tags, including `v1.0.0-rc.N` and `v1.0.0`. The requested tag must
+Versioning tags, including candidates such as `v1.0.1-rc.N` and GA tags such as `v1.0.1`. The requested tag must
 match the root `VERSION` value exactly (apart from the leading `v`).
 
 ## Safety gates
