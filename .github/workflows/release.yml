@@ -261,4 +261,6 @@ jobs:
           if [[ "$TAG" == *-rc.* ]]; then
             release_args+=(--prerelease)
           fi
-          gh release create "$TAG" release-assets/* "${release_args[@]}"
+          gh release create "$TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            "${release_args[@]}"
