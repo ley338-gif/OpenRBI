@@ -48,8 +48,67 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
     except SessionAgentError:
         return []  # sandbox not reachable right now; try again next poll
 
+    settings = get_settings()
     created: list[QuarantineFile] = []
     for entry in files:
+        # RBI-POST-016: list_downloads() already reports each file's size
+        # before any bytes are fetched — checking it here means an
+        # oversized file is never pulled into memory at all (fetch_download
+        # and every step after it in this function buffer the full file as
+        # one bytes object; there is no streaming path to make that safe).
+        # Fail closed the same way an unscannable file already does
+        # (scan_and_finalize's "scanner unavailable" branch): kept
+        # QUARANTINED for admin review, never silently dropped or released.
+        if entry.size_bytes > settings.download_max_size_bytes:
+            sha256 = hashlib.sha256(
+                f"size-rejected:{session.id}:{entry.filename}:{entry.size_bytes}".encode()
+            ).hexdigest()
+            extension = os.path.splitext(entry.filename)[1] or None
+            quarantine_file = QuarantineFile(
+                session_id=session.id,
+                user_id=session.user_id,
+                original_name=entry.filename,
+                extension=extension,
+                declared_mime=None,
+                detected_mime=None,
+                size_bytes=entry.size_bytes,
+                sha256=sha256,
+                initial_url=None,
+                final_url=None,
+                source_host=None,
+                redirect_chain=None,
+                tls_used=None,
+                scanner_status=ScannerStatus.ERROR,
+                scanner_result=(
+                    f"exceeds maximum allowed download size "
+                    f"({entry.size_bytes} > {settings.download_max_size_bytes} bytes) — never fetched"
+                ),
+                policy_action=None,
+                policy_version_id=None,
+                status=QuarantineStatus.QUARANTINED,
+                storage_object_id=None,
+            )
+            db.add(quarantine_file)
+            await db.flush()
+            await record_security_event(
+                db,
+                SecurityEventType.DOWNLOAD_BLOCKED,
+                user_id=session.user_id,
+                session_id=session.id,
+                quarantine_file_id=quarantine_file.id,
+                metadata={
+                    "reason": "exceeds maximum allowed download size",
+                    "size_bytes": entry.size_bytes,
+                    "max_size_bytes": settings.download_max_size_bytes,
+                },
+            )
+            created.append(quarantine_file)
+            try:
+                await session_agent_client.delete_download(str(session.id), entry.filename)
+            except SessionAgentError:
+                pass
+            continue
+
         try:
             data, origin_url = await session_agent_client.fetch_download(str(session.id), entry.filename)
         except SessionAgentError:

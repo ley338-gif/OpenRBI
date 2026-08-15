@@ -81,6 +81,8 @@ Verified end-to-end against the live stack: a clean upload with no group policy 
 
 Fail-closed at every step — see [ADR 0008](adr/0008-fail-closed.md): scanner unavailable → no auto-release; policy engine error → no release; unknown file type → quarantine; quarantine storage unavailable → downloads blocked entirely.
 
+**Maximum download size (RBI-POST-016)**: nothing in this pipeline streams a file's bytes — from the sandbox read through hashing, MIME detection, staging, and the ClamAV scan, a file is held in memory as one complete buffer at every step. `OPENRBI_DOWNLOAD_MAX_SIZE_BYTES` (default 500 MiB) is checked against the size the Session Agent already reports *before* any of that happens (step 2/3 above), so an oversized file is never fetched into memory at all — it's the one thing in this pipeline that has to be a hard refusal rather than a stream boundary. Exceeding it fails the same way an unreachable scanner does: the file is kept `QUARANTINED` for admin review (not silently dropped, not released), with `scanner_status=ERROR` and a `scanner_result` explaining why, and a `DOWNLOAD_BLOCKED` security event recording the actual and configured size.
+
 ## Quarantine storage
 
 Quarantined files are **never** stored under their original filename on disk. Storage is content-addressed / keyed by an internal object ID, with all descriptive metadata held separately in the database:
