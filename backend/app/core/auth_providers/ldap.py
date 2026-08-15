@@ -120,12 +120,23 @@ class LdapAuthProvider:
         # value. If ca_cert_file is set, it's an *additional* trust anchor
         # (an internal/private CA) layered on top of the OS trust store,
         # never a replacement for it.
-        conn.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
+        #
+        # These two MUST be set on the ldap *module* (global), not on the
+        # connection object — OpenLDAP's TLS context options live in a
+        # process-global struct, not per-handle; calling conn.set_option()
+        # for them raises "ValueError: option error". This is safe to do
+        # unconditionally here (not just once at import time) because
+        # ca_cert_file is itself a single deployment-wide setting
+        # (OPENRBI_LDAP_CA_CERT_FILE) — every LdapConnectionConfig built
+        # anywhere in this process (env path, DB-backed path, and the
+        # admin "test configuration" candidate path) already resolves to
+        # the same value, so there is no concurrent-request scenario where
+        # two different connections would need two different global values.
+        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
         if self._config.ca_cert_file:
-            conn.set_option(ldap.OPT_X_TLS_CACERTFILE, self._config.ca_cert_file)
-        # libldap's TLS options are process-global until a new TLS context
-        # is requested for this handle — without this, the options above
-        # can silently not apply to the handshake that follows.
+            ldap.set_option(ldap.OPT_X_TLS_CACERTFILE, self._config.ca_cert_file)
+        # Per-handle: forces *this* connection to pick up the global TLS
+        # options just set, rather than whatever context existed before.
         conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
 
         # Config-load-time validation (app/config.py, and app/services/
