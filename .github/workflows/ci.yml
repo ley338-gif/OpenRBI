@@ -25,7 +25,7 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
       - name: Type-check backend
@@ -78,6 +78,19 @@ jobs:
         run: sudo chmod 666 /var/run/docker.sock
       - name: Back up, corrupt, restore, and functionally verify the current schema
         run: ./scripts/run-backup-restore-acceptance.sh
+
+  upgrade-acceptance:
+    name: Upgrade acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Upgrade pinned 0.1.1 state to the current v1 candidate
+        run: ./scripts/run-upgrade-acceptance.sh
 
   # Roadmap Phase A / A5: dependency & image scanning. Builds every image
   # OpenRBI actually ships (backend, session-agent, frontend, the browser
@@ -308,6 +321,7 @@ jobs:
       - dependency-scan-python
       - fresh-install-acceptance
       - backup-restore-acceptance
+      - upgrade-acceptance
       - image-scan
       - dependency-scan-frontend
       - backend-integration-tests
@@ -320,6 +334,7 @@ jobs:
           PYTHON_DEPENDENCIES: ${{ needs.dependency-scan-python.result }}
           FRESH_INSTALL: ${{ needs.fresh-install-acceptance.result }}
           BACKUP_RESTORE: ${{ needs.backup-restore-acceptance.result }}
+          UPGRADE_ACCEPTANCE: ${{ needs.upgrade-acceptance.result }}
           IMAGE_SCAN: ${{ needs.image-scan.result }}
           FRONTEND_DEPENDENCIES: ${{ needs.dependency-scan-frontend.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration-tests.result }}
@@ -330,6 +345,7 @@ jobs:
             "$PYTHON_DEPENDENCIES" \
             "$FRESH_INSTALL" \
             "$BACKUP_RESTORE" \
+            "$UPGRADE_ACCEPTANCE" \
             "$IMAGE_SCAN" \
             "$FRONTEND_DEPENDENCIES" \
             "$BACKEND_INTEGRATION" \

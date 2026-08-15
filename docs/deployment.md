@@ -148,6 +148,15 @@ a real browser session, health, reverse proxy and both portals still work. See
 [Backup and restore acceptance](release/backup-restore-acceptance.md) for the
 full evidence contract.
 
+### Upgrade and rollback
+
+The supported Compact upgrade sequence, executable 0.1.1-to-v1 acceptance gate,
+rollback procedure, and known limitations are defined in
+[Upgrade acceptance](release/upgrade-acceptance.md). Always take and validate a
+database/quarantine backup, preserve the existing `.env` encryption keys, run
+Alembic from the target backend image, and verify authentication, downloads,
+sandbox lifecycle, health and proxy behavior before reopening access.
+
 ### Clean-install release acceptance
 
 Before an RC, run the automated 16-step clean-host protocol from a fresh clone:
