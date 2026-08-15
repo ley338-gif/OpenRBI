@@ -124,6 +124,24 @@ The frontend's shared `ApiClient` (`frontend/shared/api/client.ts`) handles this
 
 Rejected requests are logged (`logging.getLogger("openrbi.csrf")`, `WARNING`) with method, path, and which side (cookie/header) was missing — not yet a `SecurityEvent`/audit-log entry, since the CSRF check runs in ASGI middleware before FastAPI's dependency injection resolves a database session; wiring that up is tracked as a follow-up, not done in this pass.
 
+## Content-Security-Policy (RBI-POST-022)
+
+`docker/nginx/nginx.conf` and `nginx.tls.conf` (kept in sync) add:
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+Both portals are entirely self-hosted — no CDN scripts/fonts, no inline `<script>` tag in either `index.html` — so `default-src 'self'` is realistic without a long allowlist:
+
+- **`script-src 'self' 'wasm-unsafe-eval'`** — no `'unsafe-inline'`, no `'unsafe-eval'`. `'wasm-unsafe-eval'` covers `@novnc/novnc`'s WebAssembly decoder path specifically, without granting general `eval()`/`Function()` the way `'unsafe-eval'` would.
+- **`style-src 'self' 'unsafe-inline'`** — the one real compromise here: several components across both portals use React's inline `style={{...}}` prop, which renders as an HTML `style="..."` attribute and requires `'unsafe-inline'` in `style-src` to render at all (a nonce/hash scheme for dynamically-computed inline styles is disproportionate scope for a hardening patch release). `script-src` is the higher-value target for XSS mitigation and does not carry this exception.
+- **`connect-src 'self'`** — covers both normal API `fetch()` calls and the noVNC display relay's WebSocket upgrade (`wss?://` to the same origin is matched by `'self'`, not a separate scheme entry — this is standard CSP `'self'` matching behavior, not an omission).
+- **`frame-ancestors 'none'`** — redundant with `X-Frame-Options: DENY` above by design (defense in depth; `frame-ancestors` is the modern replacement `X-Frame-Options` predates, kept for older-browser coverage).
+- **`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`** — standard hardening: no plugins/Flash-era embeds, no `<base>` tag hijacking a relative-URL page, no form submitting anywhere but this origin.
+
+Not deployed in report-only mode first — the policy was derived from an actual read of both portals' dependencies and inline-style usage (not guessed), not a blind default. CI's fresh-install/backup-restore/upgrade acceptance jobs do fetch both portals' index pages against the real built images, which would catch a fully broken response, but they don't execute JavaScript in a real browser — they cannot catch a CSP directive silently blocking a script/style/connection at runtime. Verify with real browser devtools (Console tab, CSP violations are reported there) before relying on this in production, same as any nginx config change.
+
 ## Secrets
 
 No secrets in git. No hardcoded passwords or tokens. Database credentials, session-signing keys, and the TOTP secret-encryption key are provided via environment variables / a secrets manager at deploy time (see [deployment.md](deployment.md) and `.env.example`). The Session Agent's internal API credentials are provisioned the same way and are never accessible from inside a browser sandbox.
