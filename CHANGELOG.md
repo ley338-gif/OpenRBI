@@ -18,7 +18,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Release Engineering
 
-- Added a GitHub repository ruleset protecting `refs/tags/v*` from deletion and force-repointing, with no bypass — a published release tag is now immutable at the platform level, not just by convention. See [docs/release/repository-protection.md](release/repository-protection.md) (RBI-POST-004).
+- Added a GitHub repository ruleset protecting `refs/tags/v*` from deletion and force-repointing, with no bypass — a published release tag is now immutable at the platform level, not just by convention. See [docs/release/repository-protection.md](docs/release/repository-protection.md) (RBI-POST-004).
 
 ### Operations
 
