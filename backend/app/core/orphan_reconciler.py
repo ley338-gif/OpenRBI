@@ -93,6 +93,7 @@ async def _reconcile_once() -> None:
     settings = get_settings()
     try:
         running_ids = await session_agent_client.list_active_sandboxes()
+        managed_ids = await session_agent_client.list_managed_sandboxes()
     except SessionAgentError:
         # Fail closed: never act on a partial/unknown view of what's
         # actually running. The candidate grace-period state is left
@@ -112,17 +113,24 @@ async def _reconcile_once() -> None:
         except (ValueError, AttributeError):
             logger.warning("skipping non-UUID session id reported by session agent: %r", session_id)
     running_ids_set = set(running_uuids)
+    managed_uuids: dict[str, uuid.UUID] = {}
+    for session_id in managed_ids:
+        try:
+            managed_uuids[session_id] = uuid.UUID(session_id)
+        except (ValueError, AttributeError):
+            logger.warning("skipping non-UUID managed session id reported by session agent: %r", session_id)
+    managed_ids_set = set(managed_uuids)
 
     async with async_session_factory() as db:
         result = (
-            await db.execute(select(BrowserSession).where(BrowserSession.id.in_(running_uuids.values())))
-            if running_uuids
+            await db.execute(select(BrowserSession).where(BrowserSession.id.in_(managed_uuids.values())))
+            if managed_uuids
             else None
         )
         sessions_by_id = {str(s.id): s for s in result.scalars()} if result is not None else {}
 
         orphan_ids: set[str] = set()
-        for session_id in running_ids_set:
+        for session_id in managed_ids_set:
             session = sessions_by_id.get(session_id)
             if session is not None and session.status in _NOT_ORPHAN_STATUSES:
                 continue
@@ -192,9 +200,25 @@ async def _reconcile_once() -> None:
                 to_fail.append(session_id)
 
         for session_id in to_fail:
-            del _lost_candidates[session_id]
             session = lost_rows_by_id[session_id]
             last_status = session.status
+
+            # A hard `docker kill` leaves a stopped managed container behind.
+            # list_active_sandboxes() correctly excludes it, but merely marking
+            # the DB row FAILED would leak that stopped container forever.  The
+            # agent's terminate operation is idempotent for an already-missing
+            # container and removes a stopped one, so use it as the cleanup
+            # primitive in both cases before finalising the DB transition.
+            try:
+                await session_agent_client.terminate_sandbox(session_id)
+            except SessionAgentError:
+                logger.exception("failed to clean up lost session container %s", session_id)
+                # Keep the candidate at/above the grace threshold.  A later
+                # cycle retries cleanup instead of hiding an unremoved
+                # container behind a terminal FAILED row.
+                continue
+
+            del _lost_candidates[session_id]
             session.status = SessionStatus.FAILED
             session.ended_at = datetime.now(UTC)
             discard_stale_connection(session.id)

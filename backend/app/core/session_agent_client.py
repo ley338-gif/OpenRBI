@@ -86,6 +86,17 @@ async def list_active_sandboxes() -> list[str]:
     return response.json()
 
 
+async def list_managed_sandboxes() -> list[str]:
+    """Session IDs for all managed containers, including stopped ones.
+
+    Reconciliation needs this wider inventory to clean up resources left by
+    a hard container kill or an interrupted startup.  Scheduling/capacity
+    still uses the running-only inventory above.
+    """
+    response = await _request("GET", "/v1/sandboxes", params={"include_stopped": "true"})
+    return response.json()
+
+
 async def create_sandbox(
     session_id: str,
     *,

@@ -181,8 +181,25 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
         await _wait_for_display_ready(str(session.id))
     except SessionAgentError as exc:
         session.status = SessionStatus.FAILED
+        cleanup_detail = ""
+        try:
+            # Covers a hard kill during STARTING as well as partial
+            # create/start failures.  terminate is idempotent when no
+            # container was created; when cleanup itself is temporarily
+            # unavailable, the reconciler's all-managed-container inventory
+            # retries it after the agent recovers.
+            await session_agent_client.terminate_sandbox(str(session.id))
+        except SessionAgentError as cleanup_exc:
+            cleanup_detail = f"; cleanup deferred: {cleanup_exc}"
+        await record_security_event(
+            db,
+            SecurityEventType.SESSION_START_FAILED,
+            user_id=user.id,
+            session_id=session.id,
+            metadata={"reason": str(exc), "cleanup_deferred": bool(cleanup_detail)},
+        )
         await db.flush()
-        raise SessionServiceError(f"failed to start sandbox: {exc}") from exc
+        raise SessionServiceError(f"failed to start sandbox: {exc}{cleanup_detail}") from exc
 
     session.status = SessionStatus.ACTIVE
     session.started_at = datetime.now(UTC)

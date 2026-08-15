@@ -225,6 +225,11 @@ class SecurityEventType(str, enum.Enum):
     # every sandbox container down without anything telling the DB.
     SESSION_LOST_RECONCILED = "SESSION_LOST_RECONCILED"
 
+    # Sandbox creation/start/display readiness failed after a DB session row
+    # had already been allocated.  Distinct from SESSION_LOST_RECONCILED:
+    # this failure happened before the session ever reached ACTIVE.
+    SESSION_START_FAILED = "SESSION_START_FAILED"
+
     # Quarantine/downloads retention (app/core/quarantine_retention.py):
     # automatic deletion of a QuarantineFile's staged bytes (and scrubbing
     # of its descriptive metadata) once its retention window has passed —

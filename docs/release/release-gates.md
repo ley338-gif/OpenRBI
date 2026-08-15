@@ -11,6 +11,7 @@ pinned compiler and fails on any diff. The frontend build and audit use
 |---|---|
 | Backend integration tests | `Backend integration tests` runs the complete pytest integration suite against PostgreSQL, Valkey, Session Agent, and the real Docker runtime. |
 | Security regression tests | Host-level security tests run inside `Backend integration tests` after network-isolation rules are applied. |
+| Fault-injection acceptance | The same isolated integration job destructively kills/restarts Browser Sandbox, Session Agent, backend, PostgreSQL, and Valkey; stops ClamAV; creates an orphan; interrupts startup and networking; and verifies Drain/Maintenance recovery with DB, container, capacity, audit, incident, warning, and user-error assertions. See [`fault-injection-acceptance.md`](fault-injection-acceptance.md). |
 | LDAP/LDAPS integration | `LDAP integration tests` covers the provider and real HTTP login/admin-configuration flows against a throwaway TLS-enabled OpenLDAP server. |
 | Backend build | The backend entry of `Image vulnerability scan (Trivy)` builds `backend/Dockerfile` before scanning it. |
 | Session Agent build | The Session Agent entry of `Image vulnerability scan (Trivy)` builds `session-agent/Dockerfile` before scanning it. |

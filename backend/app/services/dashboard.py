@@ -299,6 +299,20 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
             )
         )
 
+    start_failure_count = await db.scalar(
+        select(func.count(SecurityEvent.id)).where(
+            SecurityEvent.event_type == SecurityEventType.SESSION_START_FAILED,
+            SecurityEvent.created_at >= since_orphans,
+        )
+    ) or 0
+    if start_failure_count:
+        warnings.append(
+            Warning(
+                kind="session_start_failures",
+                message=f"{start_failure_count} browser session startup failure(s) in the last 24h",
+            )
+        )
+
     history = await metrics_history.session_history(db, range_key=range_key, now=now)
 
     return Dashboard(
