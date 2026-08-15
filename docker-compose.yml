@@ -94,6 +94,24 @@ services:
     cap_drop: [ALL]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Found on real infrastructure, not caught by CI (RBI-POST — real
+    # upgrade-acceptance run against genuine ghcr.io images on a fresh
+    # Linux host): session-agent's non-root user (uid 10001, primary group
+    # 0 — session-agent/Dockerfile) has no access to docker.sock on a real
+    # host. docker.sock is normally root:<docker-group> mode 660, and the
+    # docker group's GID is essentially never 0 on a real install — CI
+    # only ever worked because its runner-setup step separately chmods the
+    # socket to 666, which is explicitly documented there as a
+    # CI-runner-only workaround, never something a real deployment does.
+    # group_add supplies the host's actual docker-group GID as a
+    # *supplementary* group at container-start time — no image rebuild,
+    # no baked-in host-specific GID, works with whatever group_add
+    # says regardless of the image's user/group config. Fails closed
+    # (docker compose refuses to start at all) if unset, same convention
+    # already used for POSTGRES_USER/PASSWORD/DB above — see
+    # docs/deployment.md#installation for how to determine and set it.
+    group_add:
+      - "${OPENRBI_DOCKER_SOCKET_GID:?set this to the docker socket's group ID on this host — run: stat -c '%g' /var/run/docker.sock — see docs/deployment.md#installation}"
     networks: [control-plane]
 
   frontend:

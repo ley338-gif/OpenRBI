@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`session-agent` could not reach `/var/run/docker.sock` on a real deployment host**, and therefore could not manage any browser sandbox at all — found by actually running the v1.0.0 → v1.0.1-rc.1 upgrade-acceptance test against genuine `ghcr.io` images on real infrastructure, not by CI (whose runners paper over this with their own `chmod 666` workaround, explicitly documented there as CI-only). `docker.sock` is normally `root:<docker-group>` mode `660` on a real host, and that group's GID is host-specific, essentially never `0` — but `session-agent`'s non-root user only ever had primary group `0`. `docker-compose.yml` now requires a new `OPENRBI_DOCKER_SOCKET_GID` variable (fails closed — refuses to start `session-agent` at all if unset, rather than starting broken) and adds it as a supplementary `group_add`. **Every existing v1.0.0 deployment needs this added to `.env` before upgrading** — see `docs/deployment.md#update-procedure`.
+
 ## [1.0.1-rc.1] - 2026-08-15
 
 ### Security
