@@ -25,7 +25,7 @@ from app.models.security_event import SecurityEvent
 from app.models.user import User
 from app.models.worker_metric_sample import WorkerMetricSample
 from app.services import metrics_history
-from app.services.health import ComponentStatus, get_system_health
+from app.services.health import get_system_health
 from app.services.worker_health import WorkerHealth, compute_worker_health, is_heartbeat_stale
 
 _ACTIVE_SESSION_STATUSES = (SessionStatus.ACTIVE, SessionStatus.DISCONNECTED)
@@ -150,7 +150,6 @@ def _sustained_high_load_warnings(nodes: list[BrowserNode], samples_by_node: dic
 
 async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboard:
     now = datetime.now(UTC)
-    settings = get_settings()
 
     result = await db.execute(select(BrowserSession.status))
     all_statuses = result.scalars().all()

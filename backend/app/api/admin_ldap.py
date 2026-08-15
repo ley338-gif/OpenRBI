@@ -19,7 +19,6 @@ write path already satisfies "a failed test/save can't destroy the active
 config" without a second state machine.
 """
 
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession

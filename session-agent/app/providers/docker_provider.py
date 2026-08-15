@@ -9,7 +9,6 @@ from app.providers.base import (
     SandboxConfig,
     SandboxDisplayInfo,
     SandboxMetrics,
-    SandboxProvider,
     SandboxRuntimeStatus,
     SandboxStatus,
 )

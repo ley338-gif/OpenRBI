@@ -8,7 +8,6 @@ a BrowserNode's already-loaded fields, so these run fast and don't need
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 
 from app.models.browser_node import BrowserNode
 from app.models.enums import BrowserNodeStatus

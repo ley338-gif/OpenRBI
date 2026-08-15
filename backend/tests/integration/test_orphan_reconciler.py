@@ -5,7 +5,6 @@ but doesn't gets marked FAILED. Exercises the real Session Agent / Docker
 socket, not a mock, and the real grace-period state in
 app.core.orphan_reconciler.
 """
-import uuid
 
 import pytest
 from sqlalchemy import select, text

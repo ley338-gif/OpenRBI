@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.crypto import decrypt_secret, encrypt_secret
+from app.core.crypto import decrypt_secret
 from app.core.recovery_codes import generate_recovery_codes
 from app.core.security import hash_password, verify_password
 from app.core.sessions import revoke_all_sessions_for_user

@@ -21,7 +21,6 @@ import pyotp
 import pytest_asyncio
 from sqlalchemy import text
 
-from app.core.security import hash_password
 from app.db.session import async_session_factory
 from app.services.users import create_user
 
