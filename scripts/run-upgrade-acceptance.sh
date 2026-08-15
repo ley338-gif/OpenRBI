@@ -155,8 +155,18 @@ base_compose down --remove-orphans
 echo "ACCEPT UP-03 0.x containers removed while persistent volumes were retained"
 
 target_compose config --quiet
-target_compose build
-docker build -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
+TARGET_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+TARGET_VERSION="$(tr -d ' \r\n' < "$REPO_ROOT/VERSION")"
+TARGET_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+target_compose build \
+    --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
+    --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
+    --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE"
+docker build \
+    --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
+    --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
+    --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE" \
+    -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
 target_compose up -d postgres redis clamav
 for attempt in $(seq 1 60); do
     target_compose exec -T postgres pg_isready -U openrbi >/dev/null 2>&1 && break
@@ -173,6 +183,14 @@ TARGET_BACKEND_IMAGE="$(docker image inspect "${PROJECT}-backend:latest" --forma
 TARGET_AGENT_IMAGE="$(docker image inspect "${PROJECT}-session-agent:latest" --format '{{.Id}}')"
 TARGET_FRONTEND_IMAGE="$(docker image inspect "${PROJECT}-frontend:latest" --format '{{.Id}}')"
 TARGET_BROWSER_IMAGE="$(docker image inspect openrbi-browser:latest --format '{{.Id}}')"
+for image in \
+    "${PROJECT}-backend:latest" \
+    "${PROJECT}-session-agent:latest" \
+    "${PROJECT}-frontend:latest" \
+    openrbi-browser:latest; do
+    [ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$TARGET_SHA" ]
+    [ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$TARGET_VERSION" ]
+done
 [ "$BASE_BACKEND_IMAGE" != "$TARGET_BACKEND_IMAGE" ]
 [ "$BASE_AGENT_IMAGE" != "$TARGET_AGENT_IMAGE" ]
 [ "$BASE_FRONTEND_IMAGE" != "$TARGET_FRONTEND_IMAGE" ]
