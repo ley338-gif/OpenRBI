@@ -6,6 +6,41 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-15
+
+Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record.
+
+### Security
+
+- LDAP/LDAPS: certificate verification is now explicitly enforced (`OPT_X_TLS_REQUIRE_CERT=demand`) rather than relying on the OS/OpenLDAP default, and a custom CA bundle can be configured via `OPENRBI_LDAP_CA_CERT_FILE` for directories using an internal/private CA (RBI-POST-001).
+- Added CSRF protection (signed double-submit cookie) as a second, independent layer alongside `SameSite=Lax` on the session cookie — every state-changing request now requires a matching `X-CSRF-Token` header, enforced by new middleware covering every listener mode and both portals via the shared `ApiClient`. Requires a new `OPENRBI_CSRF_SECRET_KEY` secret (RBI-POST-003).
+- Fixed a check-then-update race in MFA recovery code redemption (`SELECT ... FOR UPDATE`) — two concurrent requests replaying the same single-use recovery code could previously both succeed (RBI-POST-015).
+- Added a Content-Security-Policy header (`default-src 'self'`, no `'unsafe-eval'`, no inline scripts) to both the plain-HTTP and TLS reverse-proxy configs (RBI-POST-022).
+- Added a configurable maximum download size (`OPENRBI_DOWNLOAD_MAX_SIZE_BYTES`, default 500 MiB) — a file exceeding it is now quarantined for review without ever being fetched into memory; previously nothing capped how large a file the download-interception pipeline would buffer (RBI-POST-016).
+- `GET /admin/ldap/config` (a sensitive config disclosure) is now audited (`LDAP_CONFIG_READ`), matching every other LDAP configuration action (RBI-POST-017).
+- **The Admin Portal's client-side route guard didn't check role** — any authenticated `USER` account navigating directly to `/admin/` reached the full admin shell (nav, layout) before individual pages' own API calls correctly `403`'d with a confusing generic "could not load" error. Backend authorization was never actually bypassed (every real admin endpoint already denied the request), but the UI shouldn't have let a non-privileged session in at all. `RequireAuth` now checks for `ADMIN`/`SECURITY_REVIEWER` and redirects any other role straight to the User Portal (RBI-POST-025).
+
+### Fixed
+
+- **`session-agent` could not reach `/var/run/docker.sock` on a real deployment host**, and therefore could not manage any browser sandbox at all — found by actually running the v1.0.0 → v1.0.1-rc.1 upgrade-acceptance test against genuine `ghcr.io` images on real infrastructure, not by CI (whose runners paper over this with their own `chmod 666` workaround, explicitly documented there as CI-only). `docker.sock` is normally `root:<docker-group>` mode `660` on a real host, and that group's GID is host-specific, essentially never `0` — but `session-agent`'s non-root user only ever had primary group `0`. `docker-compose.yml` now requires a new `OPENRBI_DOCKER_SOCKET_GID` variable (fails closed — refuses to start `session-agent` at all if unset, rather than starting broken) and adds it as a supplementary `group_add`. **Every existing v1.0.0 deployment needs this added to `.env` before upgrading** — see `docs/deployment.md#update-procedure`.
+- **No Secure Browser session could ever display on any deployment not running on port 80/443** — including this project's own documented default of `8080` — found the same way, by actually clicking through the real UI after the upgrade above. The display WebSocket's origin check (`app/api/display.py`, added by RBI-POST-003 in this same release) compares the client's `Origin` header against the `Host` header it receives; nginx's `$host` variable silently strips a non-default port before forwarding, but a real browser's `Origin` header never does, so the comparison always failed. `docker/nginx/nginx.conf` and `nginx.tls.conf` now forward `$http_host` instead. No existing test caught this because every acceptance script talks to the backend directly, bypassing the reverse proxy entirely — `scripts/fresh-install-acceptance.py` now also opens a real WebSocket handshake through the actual `reverse-proxy` container (RBI-POST-024).
+
+### Documentation
+
+- Backup and restore docs now explicitly state that `./scripts/backup.sh` does not include `.env` (most critically `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) or TLS certificates/keys, and what restoring without them does to existing MFA enrollments (RBI-POST-005).
+- Removed stale pre-1.0 language ("pre-alpha", "MVP 1 under active development", "release candidate preparation") from `README.md`, `SECURITY.md`, `docs/supported-configurations.md`, the backend API's own description, and the GitHub repository description — all still described a pre-release state after v1.0.0 had already shipped. `SECURITY.md`'s supported-versions table now lists `1.0.x` (RBI-POST-009/010/011/012).
+
+### Release Engineering
+
+- Added a GitHub repository ruleset protecting `refs/tags/v*` from deletion and force-repointing, with no bypass — a published release tag is now immutable at the platform level, not just by convention. See [docs/release/repository-protection.md](docs/release/repository-protection.md) (RBI-POST-004).
+- Added `.github/dependabot.yml` (pip/npm/docker/github-actions, weekly) — dependency updates now open as visible PRs instead of relying on manually noticing an outdated lockfile (RBI-POST-013).
+- Added `scripts/build.sh` — a local/development build now reports its real git version/commit/build date instead of every image silently reporting `version=1.0.0`/`commit_sha=unknown` (RBI-POST-014).
+
+### Operations
+
+- Added a `network_isolation` component to `/admin` system health, reporting `NOT_CONFIGURED`/`DEGRADED`/`HEALTHY` based on a marker file `scripts/setup-network-isolation.sh` now writes — surfaces a visible warning when the required host-level iptables isolation has never been applied or hasn't been reconfirmed recently, instead of the stack silently appearing fully healthy either way. Provided `scripts/systemd/openrbi-network-isolation.{service,timer}` to reapply it automatically after host reboots (RBI-POST-002).
+- `scripts/restore.sh` now runs a light post-restore sanity check (database reachable and migrated, quarantine volume accessible) and warns instead of silently leaving a broken restore in place — not a substitute for the full acceptance protocol's exact record/byte comparison (RBI-POST-018).
+
 ## [1.0.1-rc.2] - 2026-08-15
 
 ### Fixed
