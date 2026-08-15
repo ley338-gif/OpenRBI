@@ -11,6 +11,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 - LDAP/LDAPS: certificate verification is now explicitly enforced (`OPT_X_TLS_REQUIRE_CERT=demand`) rather than relying on the OS/OpenLDAP default, and a custom CA bundle can be configured via `OPENRBI_LDAP_CA_CERT_FILE` for directories using an internal/private CA (RBI-POST-001).
 - Added CSRF protection (signed double-submit cookie) as a second, independent layer alongside `SameSite=Lax` on the session cookie — every state-changing request now requires a matching `X-CSRF-Token` header, enforced by new middleware covering every listener mode and both portals via the shared `ApiClient`. Requires a new `OPENRBI_CSRF_SECRET_KEY` secret (RBI-POST-003).
 
+### Documentation
+
+- Backup and restore docs now explicitly state that `./scripts/backup.sh` does not include `.env` (most critically `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) or TLS certificates/keys, and what restoring without them does to existing MFA enrollments (RBI-POST-005).
+
 ### Operations
 
 - Added a `network_isolation` component to `/admin` system health, reporting `NOT_CONFIGURED`/`DEGRADED`/`HEALTHY` based on a marker file `scripts/setup-network-isolation.sh` now writes — surfaces a visible warning when the required host-level iptables isolation has never been applied or hasn't been reconfirmed recently, instead of the stack silently appearing fully healthy either way. Provided `scripts/systemd/openrbi-network-isolation.{service,timer}` to reapply it automatically after host reboots (RBI-POST-002).

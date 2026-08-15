@@ -6,6 +6,14 @@
 # browser data (profiles, cookies, history) is intentionally excluded —
 # there is none to back up (ADR 0007).
 #
+# RBI-POST-005: this deliberately does NOT include .env or ./certs/ — see
+# docs/deployment.md's Backup and restore section for why (most
+# critically: OPENRBI_TOTP_SECRET_ENCRYPTION_KEY, without which the TOTP
+# secrets in this very backup cannot be decrypted after a restore) and
+# what to do about it instead. Folding raw secrets into this tarball
+# without deliberately accepting the resulting at-rest-protection burden
+# is exactly the mistake that finding exists to prevent.
+#
 # Usage: ./scripts/backup.sh [output-directory]   (default: ./backups)
 set -eu
 
