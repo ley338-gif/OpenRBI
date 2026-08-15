@@ -1,0 +1,66 @@
+# RBI-POST-013: dependency-update visibility (Dependabot opens PRs; it
+# does not auto-merge anything — every update still goes through the
+# normal CI/review gate before landing). Weekly, not daily, to avoid a PR
+# flood — security-relevant updates for an already-known vulnerability are
+# opened by Dependabot as soon as the advisory is published regardless of
+# this schedule, so this cadence only controls routine version-bump
+# noise, not how fast a real CVE gets a PR.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    groups:
+      backend-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/session-agent"
+    schedule:
+      interval: "weekly"
+    groups:
+      session-agent-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+
+  # One entry per Dockerfile — Dependabot's docker ecosystem only reads
+  # the FROM line(s) in the file at `directory`, it does not recurse.
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/session-agent"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/docker/browser"
+    schedule:
+      interval: "weekly"
+
+  # No entry for docker/nginx: reverse-proxy uses the stock nginx:1.27-alpine
+  # image directly in docker-compose.yml, with no custom Dockerfile —
+  # Dependabot's docker ecosystem needs an actual Dockerfile at `directory`.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
