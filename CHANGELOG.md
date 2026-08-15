@@ -16,6 +16,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 - Backup and restore docs now explicitly state that `./scripts/backup.sh` does not include `.env` (most critically `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) or TLS certificates/keys, and what restoring without them does to existing MFA enrollments (RBI-POST-005).
 
+### Release Engineering
+
+- Added a GitHub repository ruleset protecting `refs/tags/v*` from deletion and force-repointing, with no bypass — a published release tag is now immutable at the platform level, not just by convention. See [docs/release/repository-protection.md](docs/release/repository-protection.md) (RBI-POST-004).
+
 ### Operations
 
 - Added a `network_isolation` component to `/admin` system health, reporting `NOT_CONFIGURED`/`DEGRADED`/`HEALTHY` based on a marker file `scripts/setup-network-isolation.sh` now writes — surfaces a visible warning when the required host-level iptables isolation has never been applied or hasn't been reconfirmed recently, instead of the stack silently appearing fully healthy either way. Provided `scripts/systemd/openrbi-network-isolation.{service,timer}` to reapply it automatically after host reboots (RBI-POST-002).
