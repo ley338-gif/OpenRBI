@@ -1,6 +1,6 @@
 [project]
 name = "openrbi-backend"
-version = "1.0.1-rc.1"
+version = "1.0.1-rc.2"
 description = "OpenRBI control-plane API"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
