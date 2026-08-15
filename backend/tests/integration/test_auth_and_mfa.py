@@ -3,6 +3,7 @@ disabled user cannot start a session (nor even log in), admin login
 requires MFA, recovery codes are single-use, MFA reset generates an audit
 event, and login failures/lockout are auditable.
 """
+import asyncio
 import uuid
 
 import pyotp
@@ -129,6 +130,44 @@ async def test_recovery_code_is_single_use(db, client):
     mfa_token = r.json()["mfa_token"]
     r = await client.post("/auth/mfa/verify", json={"mfa_token": mfa_token, "code": recovery_code})
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_recovery_code_cannot_be_redeemed_twice_concurrently(db, client):
+    # RBI-POST-015: two genuinely concurrent requests replaying the same
+    # recovery code — a plain SELECT-then-UPDATE (no row lock) lets both
+    # pass the "is it still unused" check before either commits, so the
+    # same single-use code redeems twice. Each request needs its own
+    # mfa_pending token (one per /auth/login call) since that's a
+    # per-attempt challenge, but both race to redeem the exact same
+    # underlying recovery code for the same user.
+    user, password = await make_user(db, role_name="ADMIN")
+    r = await client.post("/auth/login", json={"username": user.username, "password": password})
+    mfa_token = r.json()["mfa_token"]
+    r = await client.post("/mfa/setup/enroll", json={"mfa_token": mfa_token})
+    uri = r.json()["otpauth_uri"]
+    secret = dict(part.split("=") for part in uri.split("?", 1)[1].split("&"))["secret"]
+    code = pyotp.TOTP(secret).now()
+    r = await client.post("/mfa/setup/confirm", json={"mfa_token": mfa_token, "code": code})
+    recovery_code = r.json()["recovery_codes"][0]
+
+    mfa_tokens = []
+    for _ in range(2):
+        r = await client.post("/auth/login", json={"username": user.username, "password": password})
+        mfa_tokens.append(r.json()["mfa_token"])
+
+    responses = await asyncio.gather(
+        *(
+            client.post("/auth/mfa/verify", json={"mfa_token": tok, "code": recovery_code})
+            for tok in mfa_tokens
+        )
+    )
+    statuses = sorted(r.status_code for r in responses)
+    assert statuses == [200, 401], f"expected exactly one success and one rejection, got {statuses}"
+
+    result = await db.execute(select(RecoveryCode).where(RecoveryCode.user_id == user.id))
+    used_count = sum(1 for rc in result.scalars() if rc.used_at is not None)
+    assert used_count == 1, "the recovery code must be marked used exactly once, not zero or two times"
 
 
 @pytest.mark.asyncio
