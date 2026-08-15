@@ -54,8 +54,21 @@ async def verify_login_factor(db: AsyncSession, user: User, code: str) -> bool:
         if secret and verify_code(secret, code):
             return True
 
+    # RBI-POST-015: FOR UPDATE closes a check-then-update race — without
+    # it, two concurrent requests replaying the same recovery code could
+    # both SELECT the still-unused row and both pass verify_password()
+    # before either commits its used_at write, redeeming the same
+    # single-use code twice. Postgres blocks the second transaction's
+    # SELECT ... FOR UPDATE on this row until the first commits, then
+    # (READ COMMITTED's documented FOR UPDATE behavior) re-fetches the
+    # row's now-current data — so the second pass sees used_at already
+    # set and correctly treats the code as already spent, matching the
+    # exact-once redemption guarantee this exists to make real rather
+    # than merely likely.
     result = await db.execute(
-        select(RecoveryCode).where(RecoveryCode.user_id == user.id, RecoveryCode.used_at.is_(None))
+        select(RecoveryCode)
+        .where(RecoveryCode.user_id == user.id, RecoveryCode.used_at.is_(None))
+        .with_for_update()
     )
     for recovery_code in result.scalars():
         if verify_password(code, recovery_code.code_hash):
