@@ -8,7 +8,7 @@
 #
 # Build context is the repo root (docker-compose.yml), not frontend/, so
 # this can also copy in docs/*.md for the in-app Help menus.
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 COPY frontend/package.json ./
 COPY frontend/package-lock.json ./
