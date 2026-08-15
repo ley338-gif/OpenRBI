@@ -126,7 +126,7 @@ docker exec "$LDAP_CONTAINER" cat /container/service/slapd/assets/certs/ldap.crt
     | openssl x509 -noout -subject -issuer -ext subjectAltName || true
 docker cp "$SCRIPT_DIR/../backend/test_ldap_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_ca.crt"
 rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
-echo "[ldap-tests] DEBUG: raw python-ldap TLS error:"
+echo "[ldap-tests] DEBUG: raw python-ldap TLS error (set_option approach):"
 docker exec \
     -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
     "$BACKEND_CONTAINER" python3 -c "
@@ -135,6 +135,19 @@ ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
 ldap.set_option(ldap.OPT_X_TLS_CACERTFILE, os.environ['OPENRBI_LDAP_CA_CERT_FILE'])
 c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
 c.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
+try:
+    c.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
+    print('BIND OK')
+except Exception as e:
+    print('BIND FAILED:', repr(e))
+" || true
+echo "[ldap-tests] DEBUG: raw python-ldap TLS error (LDAPTLS_* env var approach):"
+docker exec \
+    -e LDAPTLS_REQCERT=demand \
+    -e LDAPTLS_CACERT=/app/test_ldap_ca.crt \
+    "$BACKEND_CONTAINER" python3 -c "
+import ldap
+c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
 try:
     c.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
     print('BIND OK')
