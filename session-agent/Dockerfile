@@ -2,7 +2,7 @@
 # the container-runtime socket. It must never share a network namespace or
 # credentials with the backend/frontend, and must never be reachable from
 # inside a browser sandbox (see docs/adr/0004, 0005).
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 ARG OPENRBI_VERSION=1.0.1
 ARG OPENRBI_COMMIT_SHA=unknown
