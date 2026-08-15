@@ -23,6 +23,13 @@ cp .env.example .env
 # #secrets-fail-closed-startup-validation-phase-20). Generate each with:
 #   openssl rand -hex 32
 
+# REQUIRED, host-specific — found by actually running the upgrade
+# acceptance test on real infrastructure, not by CI (whose runners paper
+# over this with their own chmod 666 workaround): session-agent runs
+# as a non-root user and cannot reach /var/run/docker.sock at all without
+# this. docker-compose.yml refuses to start session-agent without it set.
+echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+
 docker compose up -d --build
 
 # Building this way reports version=1.0.0/commit_sha=unknown for every
@@ -253,6 +260,14 @@ docker compose restart reverse-proxy   # nginx caches upstream container IPs at 
 ```
 
 Take a backup first (`./scripts/backup.sh`) — migrations in this project are additive where possible (see the Alembic-gotchas notes in `docs/development.md`), but a backup taken immediately before an update is the cheapest insurance against the one that isn't.
+
+**Upgrading from a deployment older than v1.0.1**: `.env` needs a new required line before `docker compose up -d` above will start `session-agent` at all —
+
+```bash
+grep -q '^OPENRBI_DOCKER_SOCKET_GID=' .env || echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+```
+
+Without it, `docker compose up -d` fails immediately with a clear error naming the missing variable — rather than `session-agent` starting and silently being unable to reach `/var/run/docker.sock`, which is what actually happened on every deployment before this was found (via a real upgrade-acceptance run on genuine infrastructure) and fixed. See the `group_add` comment on `session-agent` in `docker-compose.yml` for the full story.
 
 ## Compact vs. Segmented (Productization v0.1.1)
 

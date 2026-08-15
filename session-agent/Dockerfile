@@ -27,13 +27,15 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY app ./app
 
-# Non-root, but in group 0: the bind-mounted docker.sock is typically
-# root:root/root:docker with group read-write (see docs/deployment.md) —
-# putting the app user in group 0 grants socket access without making the
-# process itself uid 0. This does not fully neutralize a container escape
-# (group 0 is still broadly privileged on many hosts) but does drop the
-# process out of "actually root", which is the achievable improvement here
-# without depending on a host-specific docker-group GID (Phase 20 hardening).
+# Non-root: primary group 0 drops the process out of "actually uid 0"
+# without granting it anything docker.sock needs on its own — that
+# access comes from docker-compose.yml's group_add, which supplies the
+# real host docker-group GID as a *supplementary* group at container
+# start time (found empirically to be required: docker.sock is normally
+# root:<docker-group> mode 660 on a real host, and that group's GID is
+# essentially never 0, so primary-group-0 alone does not grant access —
+# see docker-compose.yml's session-agent service for the actual fix and
+# docs/deployment.md#installation for the required host-side step).
 RUN useradd --create-home --uid 10001 --gid 0 openrbi
 USER openrbi
 
