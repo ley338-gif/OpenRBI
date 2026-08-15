@@ -1,5 +1,7 @@
 # Deployment
 
+This guide's production procedure applies only to the Compact, single-host Linux path in the authoritative [supported configuration matrix](supported-configurations.md). The Segmented overlay later in this document is **experimental / technology preview**, not a supported OpenRBI 1.0 production deployment.
+
 ## Requirements
 
 - A Linux server with Docker Engine and the Docker Compose plugin. The network-isolation script (`scripts/setup-network-isolation.sh`) requires real Linux `iptables`/`ip`/root — it is not meaningfully testable through Docker Desktop's own VM indirection, so a genuine Linux host is required for a real deployment, not just for local development.
@@ -164,7 +166,7 @@ See [ADR 0011](adr/0011-user-admin-listener-separation.md) and [ADR 0012](adr/00
 
 Everything above on this page already describes Compact — it's the default, requires no `OPENRBI_LISTENER_MODE` setting (implicitly `both`), and is the only profile with a complete production guide today (TLS, firewall, backup/restore, update procedure, all above). Recommended for homelab, evaluation, development, and any deployment that doesn't have a specific reason to run two backend processes.
 
-### Segmented — preparatory, **not yet a complete production guide**
+### Segmented — **experimental / technology preview**, not a complete production guide
 
 ```
 OPENRBI_LISTENER_MODE=user    →  a "User API" process instance

@@ -22,6 +22,7 @@ The MVP 1 build order and scope are tracked internally against the phases in [do
 ## Quick start
 
 > See [docs/deployment.md](docs/deployment.md) for a full production deployment (TLS, firewall, backup/restore). The quick start below is local/evaluation only.
+> The deliberately narrow OpenRBI 1.0 platform and version scope is defined in [docs/supported-configurations.md](docs/supported-configurations.md). Segmented Deployment and gVisor are technology previews, not supported v1 production paths.
 
 ```bash
 git clone <this-repo>
@@ -63,6 +64,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/admin-guide.md](docs/admin-guide.md) | Admin operations |
 | [docs/user-guide.md](docs/user-guide.md) | End-user operations |
 | [docs/deployment.md](docs/deployment.md) | Installation, HTTPS, secrets, backup |
+| [docs/supported-configurations.md](docs/supported-configurations.md) | Authoritative supported, experimental, and unsupported v1 configurations |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
 | [docs/api.md](docs/api.md) | API reference |
