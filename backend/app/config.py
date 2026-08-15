@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import field_validator, model_validator
@@ -98,6 +99,14 @@ class Settings(BaseSettings):
     # app/core/auth_providers/ldap.py's escaping.
     ldap_user_search_filter: str = "(sAMAccountName={username})"
     ldap_group_attribute: str = "memberOf"
+    # Path to a PEM CA bundle to trust for LDAPS/StartTLS, in addition to
+    # (not instead of) the OS trust store — set this when the directory's
+    # certificate is issued by an internal/private CA. Empty means "OS
+    # trust store only", never "skip verification": app/core/
+    # auth_providers/ldap.py always sets OPT_X_TLS_REQUIRE_CERT=DEMAND
+    # regardless of this value (RBI-POST-001) — there is deliberately no
+    # setting anywhere that disables certificate verification.
+    ldap_ca_cert_file: str = ""
     # Group DN -> OpenRBI role name (Roadmap B1.3, docs/admin-guide.md).
     # An LDAP user whose groups match none of these keys gets the
     # least-privileged USER role, never an implicit elevated default — see
@@ -178,6 +187,12 @@ class Settings(BaseSettings):
                     f"OPENRBI_LDAP_GROUP_ROLE_MAPPING maps '{group_dn}' to unknown role "
                     f"'{role_name}' — must be one of {sorted(_valid_roles)}"
                 )
+        if self.ldap_ca_cert_file and not Path(self.ldap_ca_cert_file).is_file():
+            raise ValueError(
+                f"OPENRBI_LDAP_CA_CERT_FILE is set to '{self.ldap_ca_cert_file}' but that file "
+                "does not exist — refusing to start with a custom CA path that would silently "
+                "fall back to no additional trust at connection time"
+            )
         return self
 
 

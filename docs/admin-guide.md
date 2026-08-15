@@ -55,6 +55,31 @@ A plain `ldap://` URI with StartTLS turned off is refused (both here and in the 
 
 **Role authority when a username exists both locally (with a real password) and in LDAP** — the local account's role is authoritative and is **never** overwritten by an LDAP group login, even if that LDAP login succeeds. This specifically protects a deliberately-provisioned local account (e.g. an emergency ADMIN access path that should keep working even if someone's AD group memberships change or lapse) from being silently downgraded by an incidental LDAP login. Role is only ever re-derived from current LDAP groups for an account that was itself LDAP-provisioned (no local password) — for that account, the mapped role is re-checked on every login, the same "recompute from current source of truth" principle already applied to MFA-mandatory-role enforcement.
 
+### LDAP TLS trust (RBI-POST-001)
+
+Certificate verification is always explicit and always enforced (`OPT_X_TLS_REQUIRE_CERT=demand`, set unconditionally in `backend/app/core/auth_providers/ldap.py`) — there is no setting, environment variable, or Admin Portal toggle anywhere that disables it. A connection to a server presenting a missing, expired, self-signed (when untrusted), or otherwise invalid certificate fails the TLS handshake and the login is denied, the same as a wrong password.
+
+**Public CA** — if your directory's LDAPS certificate chains to a public CA already in the container's OS trust store (the common case for a certificate from a commercial or well-known CA), no extra configuration is needed. This is the default.
+
+**Internal/private CA** — if the certificate is issued by an internal or self-signed CA, mount that CA's PEM bundle read-only into the `backend` container and point `OPENRBI_LDAP_CA_CERT_FILE` at the mounted path:
+
+```yaml
+# docker-compose.yml, backend service
+volumes:
+  - ./config/ldap-ca.pem:/etc/openrbi/ldap-ca.pem:ro
+```
+
+```
+# .env
+OPENRBI_LDAP_CA_CERT_FILE=/etc/openrbi/ldap-ca.pem
+```
+
+This is an *additional* trust anchor layered on top of the OS trust store, never a replacement for it, and it applies identically whether the effective LDAP configuration comes from the Admin Portal or from `OPENRBI_LDAP_*` environment variables — it is a deployment-level setting, not a per-config field, so it is not editable from the Admin Portal. Restart `backend` after changing it (it's read once at process startup, like every other `OPENRBI_*` setting) — `docker compose up -d backend` refuses to start at all if the configured path does not exist inside the container, rather than silently falling back to no additional trust.
+
+**Certificate rotation** — when the directory's certificate is renewed by the same CA, no OpenRBI-side change is needed. When the *CA itself* rotates (a new root/intermediate), replace the mounted PEM file with the new CA bundle and restart `backend`; until that restart, LDAP logins fail closed exactly like any other TLS trust failure — they do not use the old CA to keep working.
+
+**Troubleshooting a TLS failure** — the Admin Portal's "Test connection" reports `TLS certificate validation failed` as the reason for a failed "TLS / connection" or "Service bind" step (`backend/app/core/auth_providers/ldap.py::_friendly_ldap_error`) without leaking the raw exception. Full details go to the server-side backend log only. Common causes: the mounted CA file doesn't actually contain the issuing CA's certificate, the file path in `OPENRBI_LDAP_CA_CERT_FILE` doesn't match the container-internal mount path, or the directory server is presenting a certificate for the wrong hostname.
+
 **If the LDAP server is unreachable or a TLS handshake fails**, login for LDAP-only accounts is denied — the same generic "invalid credentials" response as a wrong password, never a silent fallback to any outcome that grants access. Local accounts are completely unaffected and keep working throughout. There is currently no dedicated "LDAP is down" indicator in the Admin Portal beyond this — an admin noticing a wave of LDAP-account login failures during a real outage should check LDAP server reachability directly.
 
 **Group DN matching** (env or Admin Portal mapping table) is case-insensitive per RFC 4514/4517 (`app/core/ldap_dn.py`): RDN attribute type names and the caseIgnoreMatch-typed attribute values found in real-world DNs (`cn`, `ou`, `dc`, `o`, `uid`) are compared without regard to case, so a mapping entered as `CN=OpenRBI-Admins,OU=Groups,DC=Example,DC=ORG` still matches a directory that returns `cn=openrbi-admins,ou=groups,dc=example,dc=org` for the identical group — Active Directory in particular is known to normalize DN casing on its own, independent of however an admin typed it. This does **not** normalize a genuinely different attribute-ordering or hierarchy: `cn=admins,ou=groups,dc=example,dc=org` and `ou=groups,cn=admins,dc=example,dc=org` are different DNs and never match each other regardless of case. If a login unexpectedly resolves to `USER`, verify the mapping's DN is actually correct (same hierarchy, same attribute values) with a real `ldapsearch` against a test account, or the portal's "Test connection" with a test username — the previous exact-string-only behavior (a known limitation up to this point) has been fixed and covered by a regression test (`backend/tests/integration/test_ldap_dn.py`, `test_ldap_login_flow.py::test_group_role_mapping_is_case_insensitive_on_dn`).

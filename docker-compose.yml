@@ -64,6 +64,11 @@ services:
       # Interim local staging for intercepted downloads (Phase 13) —
       # replaced by a real quarantine-storage abstraction in Phase 15.
       - quarantine-staging:/app/data
+      # RBI-POST-001: uncomment and point at your internal CA's PEM bundle
+      # if LDAPS uses a certificate issued by a private/internal CA, then
+      # set OPENRBI_LDAP_CA_CERT_FILE=/etc/openrbi/ldap-ca.pem in .env.
+      # Read-only; never required for a publicly-issued LDAPS certificate.
+      # - ./config/ldap-ca.pem:/etc/openrbi/ldap-ca.pem:ro
       # RBI-POST-002: read-only marker written by
       # scripts/setup-network-isolation.sh on the Docker host — this is how
       # the backend's health status can tell "isolation was verifiably
