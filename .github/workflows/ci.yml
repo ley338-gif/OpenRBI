@@ -10,7 +10,7 @@ jobs:
     name: Python lint and type checking
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -47,7 +47,7 @@ jobs:
       matrix:
         component: [backend, session-agent]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         # The acceptance run exercises a real sandbox session. GitHub-hosted
         # runners use a separate docker group, while the hardened agent runs as
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         run: sudo chmod 666 /var/run/docker.sock
       - name: Back up, corrupt, restore, and functionally verify the current schema
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
@@ -127,7 +127,7 @@ jobs:
             context: docker/browser
             dockerfile: docker/browser/Dockerfile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build ${{ matrix.image }}
         run: docker build -t ${{ matrix.image }}:ci -f ${{ matrix.dockerfile }} ${{ matrix.context }}
@@ -150,7 +150,7 @@ jobs:
     name: Frontend dependency scan (npm audit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -172,7 +172,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Scan the complete Git history
@@ -188,7 +188,7 @@ jobs:
     name: Backend integration tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         # session-agent runs as uid 10001, group 0 — deliberately not full
         # root (Phase 20 hardening) but still in group 0 specifically
@@ -293,7 +293,7 @@ jobs:
     name: LDAP integration tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         run: sudo chmod 666 /var/run/docker.sock
       - name: Build and start the stack
