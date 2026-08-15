@@ -3,9 +3,10 @@
 tested in isolation (that's backend/tests/integration/test_ldap_auth.py).
 Run via `sh scripts/run-ldap-integration-tests.sh`, which starts a
 throwaway LDAP server, seeds a pytest_-prefixed user mapped to ADMIN via
-group membership, restarts the backend with OPENRBI_LDAP_* pointed at it,
-runs this file, then restores the backend to its normal (LDAP-disabled)
-configuration — these tests do nothing useful run any other way.
+group membership, starts a separate throwaway backend from the existing
+Compose image with OPENRBI_LDAP_* pointed at it, then runs this file. The
+normal backend and .env remain untouched — these tests do nothing useful
+run any other way.
 
 Covers the roadmap's own B1.6 test list:
   - B1.4: a mapped-to-ADMIN LDAP login enforces the same mandatory MFA

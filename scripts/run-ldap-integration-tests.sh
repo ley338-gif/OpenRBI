@@ -6,34 +6,27 @@
 # without ever restarting the backend or touching /auth/login.
 #
 # Unlike every other test runner in this project, this one has to
-# actually restart the backend container with different environment
+# actually start a backend process with different environment
 # (OPENRBI_LDAP_* pointed at a throwaway server) for the real /auth/login
 # endpoint to see it at all — the running uvicorn process reads
 # Settings() once at import time, so there is no way to flip this per-
-# request. .env is temporarily modified and always restored (trap), the
-# same "leave the stack exactly as it was" discipline scripts/run-
-# security-tests.sh applies to stopping/starting ClamAV.
+# request. A separate throwaway backend container reuses the already-built
+# Compose image and network. This leaves the application backend and .env
+# untouched and avoids a resource-heavy image rebuild/container recreate.
 set -eu
 
-BACKEND_CONTAINER="${OPENRBI_BACKEND_CONTAINER:-openrbi-backend-1}"
+BACKEND_CONTAINER="${OPENRBI_LDAP_TEST_BACKEND_CONTAINER:-openrbi-test-backend-ldap}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR/.."
 LDAP_CONTAINER=openrbi-test-ldap-integration
 LDAP_ADMIN_PASSWORD="test-admin-password-throwaway"
 TEST_USER_USERNAME="pytest_ldapadmin"
 TEST_USER_PASSWORD="PytestLdapAdmin2026!"
-ENV_BACKUP="$REPO_ROOT/.env.backup-ldap-integration-test"
 
 cleanup() {
-    echo "[ldap-integration-tests] restoring .env and restarting backend..."
-    if [ -f "$ENV_BACKUP" ]; then
-        mv "$ENV_BACKUP" "$REPO_ROOT/.env"
-        (cd "$REPO_ROOT" && docker compose up -d backend >/dev/null 2>&1) || true
-    fi
+    echo "[ldap-integration-tests] removing throwaway containers..."
+    docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
     docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
-    # No need to clean up /app/tests inside the backend container here —
-    # docker compose up -d backend just above already recreated it fresh
-    # from the image, which never had the temporary test tree copied in.
 }
 trap cleanup EXIT
 
@@ -104,26 +97,37 @@ cn: openrbi-admins
 member: uid=$TEST_USER_USERNAME,ou=people,dc=example,dc=org
 EOF
 
-echo "[ldap-integration-tests] enabling LDAP on the backend and restarting..."
-cp "$REPO_ROOT/.env" "$ENV_BACKUP"
-cat >>"$REPO_ROOT/.env" <<EOF
-OPENRBI_LDAP_ENABLED=true
-OPENRBI_LDAP_SERVER_URI=ldaps://$LDAP_CONTAINER:636
-OPENRBI_LDAP_USE_STARTTLS=true
-OPENRBI_LDAP_BIND_DN=cn=admin,dc=example,dc=org
-OPENRBI_LDAP_BIND_PASSWORD=$LDAP_ADMIN_PASSWORD
-OPENRBI_LDAP_BASE_DN=dc=example,dc=org
-OPENRBI_LDAP_USER_SEARCH_FILTER=(uid={username})
-OPENRBI_LDAP_GROUP_ATTRIBUTE=memberOf
-OPENRBI_LDAP_GROUP_ROLE_MAPPING={"cn=openrbi-admins,ou=groups,dc=example,dc=org": "ADMIN"}
-LDAPTLS_REQCERT=never
-EOF
-(cd "$REPO_ROOT" && docker compose up -d --build backend >/dev/null)
+echo "[ldap-integration-tests] starting throwaway LDAP-enabled backend..."
+BACKEND_IMAGE="$(cd "$REPO_ROOT" && docker compose images -q backend)"
+if [ -z "$BACKEND_IMAGE" ]; then
+    echo "[ldap-integration-tests] backend image is missing; start/build the Compose stack first" >&2
+    exit 1
+fi
+docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
+docker run -d --name "$BACKEND_CONTAINER" \
+    --network openrbi_control-plane \
+    --env-file "$REPO_ROOT/.env" \
+    -e OPENRBI_LDAP_ENABLED=true \
+    -e "OPENRBI_LDAP_SERVER_URI=ldaps://$LDAP_CONTAINER:636" \
+    -e OPENRBI_LDAP_USE_STARTTLS=true \
+    -e OPENRBI_LDAP_BIND_DN=cn=admin,dc=example,dc=org \
+    -e "OPENRBI_LDAP_BIND_PASSWORD=$LDAP_ADMIN_PASSWORD" \
+    -e OPENRBI_LDAP_BASE_DN=dc=example,dc=org \
+    -e 'OPENRBI_LDAP_USER_SEARCH_FILTER=(uid={username})' \
+    -e OPENRBI_LDAP_GROUP_ATTRIBUTE=memberOf \
+    -e 'OPENRBI_LDAP_GROUP_ROLE_MAPPING={"cn=openrbi-admins,ou=groups,dc=example,dc=org":"ADMIN"}' \
+    -e LDAPTLS_REQCERT=never \
+    "$BACKEND_IMAGE" >/dev/null
 
 echo "[ldap-integration-tests] waiting for backend to come back up..."
 for i in $(seq 1 30); do
     if docker exec "$BACKEND_CONTAINER" python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; then
         break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo "[ldap-integration-tests] throwaway backend did not become healthy within 30 seconds" >&2
+        docker logs "$BACKEND_CONTAINER" >&2 || true
+        exit 1
     fi
     sleep 1
 done
@@ -150,12 +154,12 @@ MSYS_NO_PATHCONV=1 docker exec \
 # run-ldap-tests.sh (which talks to LdapAuthProvider in-process, inside the
 # pytest process itself), the admin API's TLS handshake happens inside the
 # uvicorn process, so it needs the backend container's own
-# LDAPTLS_REQCERT=never (set via .env above) to trust this throwaway
+# LDAPTLS_REQCERT=never (set on the throwaway backend above) to trust this
 # self-signed cert — that's exactly why this file only runs here, not from
 # run-ldap-tests.sh. OPENRBI_LDAP_SERVER_URI/BIND_DN/BASE_DN/etc. are
-# already present in this exec's environment via .env's env_file wiring
-# (docker-compose.yml), which is what the test file's own request payloads
-# are built from.
+# are already present in this exec's environment because the throwaway
+# backend was started with --env-file plus explicit LDAP overrides, which
+# is what the test file's own request payloads are built from.
 echo "[ldap-integration-tests] running admin LDAP configuration API tests..."
 MSYS_NO_PATHCONV=1 docker exec \
     -e OPENRBI_LDAP_TEST_ADMIN_USERNAME="$TEST_USER_USERNAME" \
