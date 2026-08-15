@@ -31,12 +31,12 @@ RUN apt-get update && apt-get upgrade -y \
 RUN useradd --create-home --uid 10001 openrbi
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml requirements.lock requirements-dev.lock ./
 # python-ldap's C extension only needs gcc/libldap2-dev/libsasl2-dev to
 # *compile* against — purging them right after this one RUN keeps them out
 # of the final image layers entirely (single RUN, not a separate step, so
 # they never persist in the image history).
-RUN pip install --no-cache-dir . \
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
     && apt-get purge -y --auto-remove gcc libldap-dev libsasl2-dev python3-dev
 
 COPY app ./app

@@ -2,6 +2,11 @@
 
 This document defines the checks that must succeed for every OpenRBI release commit. The GitHub Actions `Release gates` job is the single fail-closed aggregate: it runs with `if: always()` and fails unless every job listed below completed successfully. It must be configured as a required status check for `main`.
 
+Python quality also regenerates every committed Python dependency lock with the
+pinned compiler and fails on any diff. The frontend build and audit use
+`npm ci`, so an inconsistent Node workspace lock fails closed as well. See
+[`dependencies.md`](dependencies.md) for the update procedure.
+
 | Required capability | GitHub Actions evidence |
 |---|---|
 | Backend integration tests | `Backend integration tests` runs the complete pytest integration suite against PostgreSQL, Valkey, Session Agent, and the real Docker runtime. |
@@ -13,7 +18,7 @@ This document defines the checks that must succeed for every OpenRBI release com
 | Browser sandbox build | The browser entry of `Image vulnerability scan (Trivy)` builds `docker/browser/Dockerfile` before scanning it. The integration job also builds the image used by lifecycle tests. |
 | Image vulnerability scans | All four Trivy matrix entries must pass at CRITICAL severity. Any exception must identify and document a concrete CVE in `.trivyignore`. |
 | Node dependency vulnerabilities | `Frontend dependency scan (npm audit)` audits the lockfile-resolved workspace at CRITICAL severity. |
-| Python dependency vulnerabilities | Both entries of `Python dependency scan` resolve and audit the backend and Session Agent production dependencies with `pip-audit --strict`. |
+| Python dependency vulnerabilities | Both entries of `Python dependency scan` audit the exact hash-verified backend and Session Agent production locks with `pip-audit --strict`. |
 | Python lint | `Python lint and type checking` runs Ruff over application code, tests, and migrations. |
 | Python type checking | The same job runs mypy independently for backend and Session Agent, avoiding their intentionally identical top-level `app` package names colliding. |
 | Version consistency | The same job runs `scripts/check-version-sync.py`, which fails if any package or image default differs from the root `VERSION`. |

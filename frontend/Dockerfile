@@ -11,10 +11,11 @@
 FROM node:22-slim AS build
 WORKDIR /app
 COPY frontend/package.json ./
+COPY frontend/package-lock.json ./
 COPY frontend/shared/package.json shared/package.json
 COPY frontend/user/package.json user/package.json
 COPY frontend/admin/package.json admin/package.json
-RUN npm install
+RUN npm ci
 
 COPY frontend/shared/ shared/
 COPY frontend/user/ user/

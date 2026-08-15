@@ -96,7 +96,8 @@ echo "[ldap-tests] seeded testuser + openrbi-admins group"
 # pytest is a [dev]-only dependency (backend/pyproject.toml), not baked
 # into the production image — matches scripts/run-integration-tests.sh's
 # same on-demand install.
-docker exec -u root "$BACKEND_CONTAINER" pip install --quiet ".[dev]"
+docker exec -u root "$BACKEND_CONTAINER" \
+    pip install --quiet --require-hashes -r requirements-dev.lock
 
 docker cp "$SCRIPT_DIR/../backend/tests/integration/test_ldap_auth.py" "$BACKEND_CONTAINER:/app/test_ldap_auth.py"
 
