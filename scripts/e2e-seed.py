@@ -14,12 +14,14 @@ import asyncio
 import json
 import sys
 import uuid
+from datetime import UTC, datetime
 
 import pyotp
 from sqlalchemy import text
 
 from app.core.crypto import encrypt_secret
 from app.db.session import async_session_factory
+from app.models.system_state import SYSTEM_STATE_ID, SystemState
 from app.services.users import create_user
 
 PREFIX = "e2e_"
@@ -31,6 +33,25 @@ PASSWORD = "E2E-Test-Password!2026"
 
 async def up():
     async with async_session_factory() as db:
+        # A completely fresh database (e.g. a throwaway CI stack that's
+        # never been through the real setup wizard) has setup_required
+        # still true, which makes the Admin Portal render SetupGate's
+        # "Initial System Setup" wizard instead of the normal login form
+        # -- no "Log in" button ever appears, and every test here would
+        # hang until Playwright's own timeout. This E2E suite creates its
+        # accounts directly via create_user(), bypassing POST /setup/admin
+        # entirely, so nothing else ever marks the system initialized.
+        # system_state.initialized only ever transitions false -> true,
+        # once (app/models/system_state.py) -- deliberately never reset in
+        # down() below, matching that one-way invariant.
+        state = await db.get(SystemState, SYSTEM_STATE_ID)
+        if state is None:
+            db.add(SystemState(id=SYSTEM_STATE_ID, initialized=True, initialized_at=datetime.now(UTC)))
+        elif not state.initialized:
+            state.initialized = True
+            state.initialized_at = datetime.now(UTC)
+            db.add(state)
+
         # e2e_admin: pre-enrolled with a known secret, via the same
         # encrypt_secret() the real enrollment flow uses (app/services/
         # mfa.py's confirm_enrollment) — not a hand-rolled bypass of MFA,
