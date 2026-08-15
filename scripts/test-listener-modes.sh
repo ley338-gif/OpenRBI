@@ -26,11 +26,22 @@ trap cleanup EXIT
 check_status() {
     # check_status <container> <method> <path> <expected-status> <description>
     container="$1"; method="$2"; path="$3"; expected="$4"; desc="$5"
+    # RBI-POST-003: CSRF middleware wraps the whole app, ahead of routing —
+    # a mutating request with no valid token gets 403 before this script's
+    # actual target (route-existence 404, auth 401, validation 422) is
+    # ever reached, which would make every expected-status assertion below
+    # meaningless. Bootstrap+attach a real token first so those checks
+    # keep testing what they say they test.
     actual=$(docker exec "$DRIVER_CONTAINER" python -c "
 import asyncio, httpx
 async def main():
-    async with httpx.AsyncClient(timeout=10.0) as c:
-        r = await c.request('$method', 'http://$container:8000$path', json={} if '$method' == 'POST' else None)
+    async with httpx.AsyncClient(timeout=10.0, base_url='http://$container:8000') as c:
+        csrf_token = None
+        if '$method' in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            r0 = await c.get('/health')
+            csrf_token = r0.cookies.get('csrf_token')
+        headers = {'X-CSRF-Token': csrf_token} if csrf_token else None
+        r = await c.request('$method', '$path', json={} if '$method' == 'POST' else None, headers=headers)
         print(r.status_code)
 asyncio.run(main())
 ")

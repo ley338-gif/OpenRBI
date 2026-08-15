@@ -24,6 +24,7 @@ from app.api.setup import router as setup_router
 from app.build_info import BUILD_INFO
 from app.config import get_settings
 from app.core import node_poller, orphan_reconciler, quarantine_retention
+from app.core.csrf import CSRFMiddleware
 from app.db.session import async_session_factory
 from app.services.setup_service import regenerate_setup_token
 
@@ -96,6 +97,12 @@ app = FastAPI(
     description="OpenRBI control-plane API (MVP 1 under active development).",
     lifespan=_lifespan,
 )
+
+# RBI-POST-003: the only middleware in the app — a second, independent
+# layer of CSRF protection alongside SameSite=Lax (app/core/
+# session_cookies.py). Applies uniformly across every listener mode since
+# it wraps this one shared `app` object, before route registration below.
+app.add_middleware(CSRFMiddleware)
 
 
 def _register_shared_routes(app: FastAPI) -> None:

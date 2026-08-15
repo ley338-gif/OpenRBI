@@ -9,6 +9,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 ### Security
 
 - LDAP/LDAPS: certificate verification is now explicitly enforced (`OPT_X_TLS_REQUIRE_CERT=demand`) rather than relying on the OS/OpenLDAP default, and a custom CA bundle can be configured via `OPENRBI_LDAP_CA_CERT_FILE` for directories using an internal/private CA (RBI-POST-001).
+- Added CSRF protection (signed double-submit cookie) as a second, independent layer alongside `SameSite=Lax` on the session cookie — every state-changing request now requires a matching `X-CSRF-Token` header, enforced by new middleware covering every listener mode and both portals via the shared `ApiClient`. Requires a new `OPENRBI_CSRF_SECRET_KEY` secret (RBI-POST-003).
 
 ### Operations
 

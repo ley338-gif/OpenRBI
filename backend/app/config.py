@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     totp_secret_encryption_key: str = ""
 
+    # RBI-POST-003 — signs the CSRF double-submit cookie (app/core/csrf.py).
+    # Generate with `openssl rand -hex 32`, same as the other secrets below.
+    csrf_secret_key: str = ""
+
     # Restrictive default per the project's fail-closed philosophy (§24
     # allows this to be configured higher; MVP 1 has no per-group/per-policy
     # override yet — that's Phase 12).
@@ -148,7 +152,7 @@ class Settings(BaseSettings):
     # single missed/delayed run doesn't flap the status.
     network_isolation_max_staleness_seconds: float = 900.0
 
-    @field_validator("session_agent_api_token", "totp_secret_encryption_key")
+    @field_validator("session_agent_api_token", "totp_secret_encryption_key", "csrf_secret_key")
     @classmethod
     def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
         if not value or value == _PLACEHOLDER_SECRET:

@@ -4,6 +4,7 @@ production image; no test-only dependency needed) and drives the exact
 same three-endpoint sequence the Admin Portal's SetupFlow component does.
 """
 
+import http.cookiejar
 import json
 import sys
 import urllib.parse
@@ -13,17 +14,28 @@ import pyotp
 
 BASE = "http://localhost:8000"
 
+_cookies = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookies))
+
 
 def call(path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        f"{BASE}{path}", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST"
-    )
-    with urllib.request.urlopen(req) as resp:
+    # RBI-POST-003: mutating POSTs need a matching X-CSRF-Token header
+    # (app/core/csrf.py) — bootstrap the cookie with a cheap GET first,
+    # same as the real frontend's shared ApiClient
+    # (frontend/shared/api/client.ts).
+    if not any(c.name == "csrf_token" for c in _cookies):
+        get(path="/health")
+    csrf_token = next((c.value for c in _cookies if c.name == "csrf_token"), None)
+    headers = {"Content-Type": "application/json"}
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
+    req = urllib.request.Request(f"{BASE}{path}", data=json.dumps(payload).encode(), headers=headers, method="POST")
+    with _opener.open(req) as resp:
         return json.load(resp)
 
 
 def get(path: str) -> dict:
-    with urllib.request.urlopen(f"{BASE}{path}") as resp:
+    with _opener.open(f"{BASE}{path}") as resp:
         return json.load(resp)
 
 

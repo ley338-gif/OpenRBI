@@ -107,6 +107,23 @@ TOTP is mandatory for ADMIN and SECURITY_REVIEWER roles (see [ADR 0002](adr/0002
 
 No two users' sessions ever share a browser instance, a writable profile, or a filesystem mount. Admins/Security Reviewers can Disconnect (drop the remote-display connection, sandbox persists), Isolate (network egress deny-all, clipboard deny both directions, uploads/downloads/new file-shares deny-all, sandbox persists for investigation), or Kill (idempotent full destruction) a session — see [session-lifecycle.md](session-lifecycle.md).
 
+## CSRF protection (RBI-POST-003)
+
+Two independent layers, not one:
+
+1. **`SameSite=Lax`** on the session cookie (`backend/app/core/session_cookies.py`) — blocks the cookie from being attached to most cross-site subrequests (form POSTs, fetch/XHR from another origin), the same protection every cookie-authenticated endpoint already had.
+2. **A signed double-submit cookie** (`backend/app/core/csrf.py`, the only ASGI middleware registered on the app). A non-`HttpOnly` `csrf_token` cookie (a random nonce plus an `HMAC-SHA256(OPENRBI_CSRF_SECRET_KEY, nonce)` signature) is issued on first contact with the backend, for every listener mode. Every `POST`/`PUT`/`PATCH`/`DELETE` request must echo that exact value back as an `X-CSRF-Token` header; the middleware rejects the request with `403` if the header is missing, doesn't match the cookie byte-for-byte, or the cookie's signature doesn't verify. `GET`/`HEAD`/`OPTIONS` are never checked — and never have side effects anywhere in this API, verified across every router during this work.
+
+Why this stops CSRF even though the cookie itself is readable by JavaScript: a cross-site attacker page can make the victim's browser *send* a request that automatically carries the session cookie, but the Same-Origin Policy stops that attacker page from *reading* `csrf_token`'s value — so it cannot construct a matching `X-CSRF-Token` header. The signature (not just cookie==header equality) additionally defeats a cookie-injection path (e.g. a misconfigured sibling subdomain setting an attacker-chosen `csrf_token` value): a forged value won't have a valid signature without `OPENRBI_CSRF_SECRET_KEY`.
+
+Deliberately **not bound to the session token** — the token has to work for the two pre-authentication `POST` endpoints (`/auth/login`, `/setup/*`) where no session exists yet. Its only job is proving "this request's header came from something that could read this origin's cookies", which holds regardless of whether a session is active.
+
+The frontend's shared `ApiClient` (`frontend/shared/api/client.ts`) handles this centrally — reads the cookie, attaches the header on every mutating call (including file-upload `postForm`), and makes one bootstrap `GET /health` first if it doesn't have a cookie yet (covers a fresh browser's very first request being a login POST). No page/component ever has to think about CSRF itself.
+
+**WebSocket** (`backend/app/api/display.py`'s remote-display relay) can't carry a custom header on its upgrade request, so it isn't covered by the header check — instead the handshake validates the `Origin` header's host component against the request's own `Host`, rejecting a cross-origin-initiated connection before `accept()`.
+
+Rejected requests are logged (`logging.getLogger("openrbi.csrf")`, `WARNING`) with method, path, and which side (cookie/header) was missing — not yet a `SecurityEvent`/audit-log entry, since the CSRF check runs in ASGI middleware before FastAPI's dependency injection resolves a database session; wiring that up is tracked as a follow-up, not done in this pass.
+
 ## Secrets
 
 No secrets in git. No hardcoded passwords or tokens. Database credentials, session-signing keys, and the TOTP secret-encryption key are provided via environment variables / a secrets manager at deploy time (see [deployment.md](deployment.md) and `.env.example`). The Session Agent's internal API credentials are provisioned the same way and are never accessible from inside a browser sandbox.

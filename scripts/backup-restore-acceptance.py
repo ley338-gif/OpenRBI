@@ -192,14 +192,29 @@ async def verify_data(manifest_path: Path) -> None:
 
 class ApiClient:
     def __init__(self) -> None:
-        jar = http.cookiejar.CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        self.cookies = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookies))
+
+    def _csrf_token(self) -> str | None:
+        for cookie in self.cookies:
+            if cookie.name == "csrf_token":
+                return cookie.value
+        return None
 
     def request(self, method: str, path: str, payload: dict | None = None, expected: int = 200) -> dict:
+        # RBI-POST-003: mutating requests need a matching X-CSRF-Token
+        # header (app/core/csrf.py) — bootstrap the cookie with a cheap GET
+        # first if this client doesn't have one yet, same as the real
+        # frontend's shared ApiClient (frontend/shared/api/client.ts).
+        if method != "GET" and self._csrf_token() is None:
+            self.request("GET", "/health")
         data = None if payload is None else json.dumps(payload).encode()
-        request = urllib.request.Request(
-            f"{BASE}{path}", data=data, headers={"Content-Type": "application/json"}, method=method
-        )
+        headers = {"Content-Type": "application/json"}
+        if method != "GET":
+            token = self._csrf_token()
+            if token:
+                headers["X-CSRF-Token"] = token
+        request = urllib.request.Request(f"{BASE}{path}", data=data, headers=headers, method=method)
         try:
             with self.opener.open(request, timeout=30) as response:
                 body = response.read()

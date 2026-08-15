@@ -48,6 +48,7 @@ umask 077
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 AGENT_TOKEN="$(openssl rand -hex 32)"
 TOTP_KEY="$(openssl rand -hex 32)"
+CSRF_KEY="$(openssl rand -hex 32)"
 cat > "$ENV_FILE" <<EOF
 POSTGRES_USER=openrbi
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
@@ -58,6 +59,7 @@ OPENRBI_REDIS_URL=redis://redis:6379/0
 OPENRBI_SESSION_AGENT_BASE_URL=http://session-agent:8100
 OPENRBI_SESSION_AGENT_API_TOKEN=$AGENT_TOKEN
 OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$TOTP_KEY
+OPENRBI_CSRF_SECRET_KEY=$CSRF_KEY
 OPENRBI_LDAP_BIND_PASSWORD=$(openssl rand -hex 32)
 OPENRBI_AGENT_API_TOKEN=$AGENT_TOKEN
 OPENRBI_AGENT_NODE_NAME=acceptance-node
@@ -66,7 +68,7 @@ EOF
 ENV_CREATED=1
 [ "$(stat -c '%a' "$ENV_FILE")" = "600" ]
 echo "ACCEPT 02 private .env generated with mode 600"
-[ "${#POSTGRES_PASSWORD}" -eq 64 ] && [ "${#AGENT_TOKEN}" -eq 64 ] && [ "${#TOTP_KEY}" -eq 64 ]
+[ "${#POSTGRES_PASSWORD}" -eq 64 ] && [ "${#AGENT_TOKEN}" -eq 64 ] && [ "${#TOTP_KEY}" -eq 64 ] && [ "${#CSRF_KEY}" -eq 64 ]
 ! grep -q 'changeme-generate-a-strong-secret' "$ENV_FILE"
 echo "ACCEPT 03 independent strong secrets generated without placeholders"
 

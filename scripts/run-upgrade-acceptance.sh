@@ -78,6 +78,11 @@ chmod -R a+rX "$BASE_DIR"
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 AGENT_TOKEN="$(openssl rand -hex 32)"
 TOTP_KEY="$(openssl rand -hex 32)"
+# v1.0.0 (the pinned baseline, $BASE_DIR) predates RBI-POST-003 and has no
+# such setting — harmless there (pydantic-settings ignores unrecognized
+# OPENRBI_* env vars), but required for the current checkout ($REPO_ROOT)
+# to boot at all. Same write_env() writes both on purpose (see below).
+CSRF_KEY="$(openssl rand -hex 32)"
 write_env() {
     cat > "$1" <<EOF
 POSTGRES_USER=openrbi
@@ -89,6 +94,7 @@ OPENRBI_REDIS_URL=redis://redis:6379/0
 OPENRBI_SESSION_AGENT_BASE_URL=http://session-agent:8100
 OPENRBI_SESSION_AGENT_API_TOKEN=$AGENT_TOKEN
 OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$TOTP_KEY
+OPENRBI_CSRF_SECRET_KEY=$CSRF_KEY
 OPENRBI_LDAP_BIND_PASSWORD=$(openssl rand -hex 32)
 OPENRBI_AGENT_API_TOKEN=$AGENT_TOKEN
 OPENRBI_AGENT_NODE_NAME=upgrade-acceptance-node
