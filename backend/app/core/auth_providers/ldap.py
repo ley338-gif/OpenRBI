@@ -195,10 +195,11 @@ class LdapAuthProvider:
             group_dns = [g.decode("utf-8") if isinstance(g, bytes) else g for g in raw_groups]
             return AuthResult(success=True, username=username, ldap_group_dns=group_dns)
 
-        except (ldap.SERVER_DOWN, ldap.CONNECT_ERROR, ldap.TIMEOUT, ldap.LDAPError):
+        except (ldap.SERVER_DOWN, ldap.CONNECT_ERROR, ldap.TIMEOUT, ldap.LDAPError) as exc:
             # Deliberately broad: any LDAP-layer failure not already
             # handled above (server unreachable, TLS handshake failure,
             # malformed response, ...) is fail-closed, not a bypass.
+            print(f"DEBUG authenticate() exception: {exc!r}")  # noqa: T201
             return AuthResult(success=False)
 
     async def health(self) -> bool:
