@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). The repository is preparing its first semantic versioned release candidate; until a version is tagged, changes remain under `Unreleased`.
+The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). Changes not yet part of a tagged release are listed under `Unreleased`.
 
 ## [Unreleased]
 
@@ -18,6 +18,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 ### Documentation
 
 - Backup and restore docs now explicitly state that `./scripts/backup.sh` does not include `.env` (most critically `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`) or TLS certificates/keys, and what restoring without them does to existing MFA enrollments (RBI-POST-005).
+- Removed stale pre-1.0 language ("pre-alpha", "MVP 1 under active development", "release candidate preparation") from `README.md`, `SECURITY.md`, `docs/supported-configurations.md`, the backend API's own description, and the GitHub repository description — all still described a pre-release state after v1.0.0 had already shipped. `SECURITY.md`'s supported-versions table now lists `1.0.x` (RBI-POST-009/010/011/012).
 
 ### Release Engineering
 
