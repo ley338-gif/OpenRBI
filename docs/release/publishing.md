@@ -25,7 +25,8 @@ Dispatch **Release** on `main`, leave `version` empty (or enter `v<VERSION>`),
 and leave `publish` disabled. The workflow builds every Linux/amd64 image but
 does not push, tag, or create a GitHub Release. It uploads a 90-day manifest
 artifact containing version, commit SHA, UTC build date, exact image references,
-and content-addressed local image IDs. This is the required first validation.
+and content-addressed local image IDs. It also contains all four CycloneDX SBOMs
+and a `SHA256SUMS` file. This is the required first validation.
 
 ## Publishing an RC or stable release
 
@@ -35,8 +36,8 @@ work is complete:
 1. Confirm a dry run succeeded for the exact `main` commit.
 2. Set repository variable `OPENRBI_RELEASES_ENABLED=true`.
 3. Dispatch the workflow from that commit with `publish` enabled.
-4. Verify the four immutable version tags and registry manifest digests in the
-   generated manifest and GitHub Release assets.
+4. Verify the four immutable version tags, registry manifest digests, CycloneDX
+   SBOMs, and `SHA256SUMS` in the generated manifest and GitHub Release assets.
 5. Set `OPENRBI_RELEASES_ENABLED=false` again after publication.
 
 Published image names are:
@@ -50,3 +51,6 @@ The workflow intentionally does not publish `latest`; consumers must select an
 explicit version. RC tags create prerelease GitHub Releases. A stable v1 tag
 creates a normal GitHub Release. Every image embeds the same version, full
 commit SHA, and build date as OCI provenance labels.
+
+SBOM format, validation, and limitations are documented in
+[`sbom.md`](sbom.md).

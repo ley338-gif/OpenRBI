@@ -36,3 +36,7 @@ The release workflow additionally re-verifies the successful `Release gates`
 check on its exact commit before it builds or publishes anything. Its digest
 recording and later artifact-specific checks complement these source and image
 gates; they do not replace them. See [`publishing.md`](publishing.md).
+
+Release builds additionally fail if any of the four image SBOMs cannot be
+generated or validated as CycloneDX JSON. These are release-workflow checks,
+not a substitute for the dependency and image vulnerability gates above.
