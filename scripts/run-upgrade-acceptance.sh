@@ -71,6 +71,9 @@ BASE_ARCHIVE="$WORK_DIR/v0.1.1.tar"
 mkdir -p "$BASE_DIR" "$BACKUP_DIR"
 git -C "$REPO_ROOT" archive --format=tar --output="$BASE_ARCHIVE" "$BASELINE_SHA"
 tar -xf "$BASE_ARCHIVE" -C "$BASE_DIR"
+# umask 077 protects generated secrets below, but source files copied into
+# non-root images must retain normal read/execute permissions.
+chmod -R a+rX "$BASE_DIR"
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 AGENT_TOKEN="$(openssl rand -hex 32)"
