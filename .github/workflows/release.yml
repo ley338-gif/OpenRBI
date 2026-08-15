@@ -118,6 +118,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.51.0
 
       - name: Log in to GitHub Container Registry
         if: inputs.publish
@@ -134,6 +139,8 @@ jobs:
           CONTEXT: ${{ matrix.context }}
           DOCKERFILE: ${{ matrix.dockerfile }}
           PUBLISH: ${{ inputs.publish }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+          SYFT_CMD: ${{ steps.syft.outputs.cmd }}
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           set -euo pipefail
@@ -165,6 +172,21 @@ jobs:
             digest_kind="local_image_id"
           fi
 
+          if [[ "$PUBLISH" == "true" ]]; then
+            sbom_source="registry:${image_ref}@${digest}"
+          else
+            sbom_source="docker:${version_ref}"
+          fi
+          sbom_file="${COMPONENT}.cdx.json"
+          "$SYFT_CMD" "$sbom_source" \
+            --output "cyclonedx-json=release-metadata/${sbom_file}"
+          jq -e '
+            .bomFormat == "CycloneDX"
+            and (.specVersion | type == "string")
+            and (.components | type == "array")
+          ' "release-metadata/${sbom_file}" >/dev/null
+          sbom_spec_version="$(jq -er '.specVersion' "release-metadata/${sbom_file}")"
+
           jq -n \
             --arg version "$VERSION" \
             --arg commit_sha "$GITHUB_SHA" \
@@ -173,15 +195,17 @@ jobs:
             --arg image "$version_ref" \
             --arg digest "$digest" \
             --arg digest_kind "$digest_kind" \
+            --arg sbom_file "$sbom_file" \
+            --arg sbom_spec_version "$sbom_spec_version" \
             --argjson published "$PUBLISH" \
-            '{version: $version, commit_sha: $commit_sha, build_date: $build_date, component: $component, image: $image, digest: $digest, digest_kind: $digest_kind, published: $published}' \
-            > "release-metadata/${COMPONENT}.json"
+            '{version: $version, commit_sha: $commit_sha, build_date: $build_date, component: $component, image: $image, digest: $digest, digest_kind: $digest_kind, published: $published, sbom: {filename: $sbom_file, format: "CycloneDX JSON", spec_version: $sbom_spec_version}}' \
+            > "release-metadata/${COMPONENT}.metadata.json"
 
       - name: Upload image metadata
         uses: actions/upload-artifact@v4
         with:
           name: release-metadata-${{ matrix.component }}
-          path: release-metadata/${{ matrix.component }}.json
+          path: release-metadata/
           if-no-files-found: error
           retention-days: 30
 
@@ -213,9 +237,9 @@ jobs:
             --arg build_date "$BUILD_DATE" \
             --argjson published "$PUBLISH" \
             '{version: $version, tag: $tag, commit_sha: $commit_sha, build_date: $build_date, published: $published, images: sort_by(.component)}' \
-            release-assets/*.json > release-metadata.json
+            release-assets/*.metadata.json > release-metadata.json
           mv release-metadata.json release-assets/release-metadata.json
-          (cd release-assets && sha256sum release-metadata.json > release-metadata.json.sha256)
+          (cd release-assets && sha256sum *.json > SHA256SUMS)
           cat release-assets/release-metadata.json
 
       - name: Upload dry-run/release manifest
