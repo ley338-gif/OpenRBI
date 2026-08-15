@@ -153,9 +153,26 @@ Every `csrf_token` cookie issued under the old key stops validating immediately 
 
 Produces a gzip'd `pg_dump` (built with `--clean --if-exists`, so restoring it is idempotent against a database that already has the same or an older schema) and a gzip'd tarball of the `quarantine-staging` volume, both timestamped.
 
+**This backup does NOT include `.env` or TLS certificates/keys (RBI-POST-005).** Specifically, `./scripts/backup.sh` backs up exactly two things:
+
+- PostgreSQL (`postgres-data`)
+- Quarantine (`quarantine-staging`)
+
+It does **not** back up:
+
+- `.env` — every secret in it, most critically **`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`**
+- TLS private keys/certificates (`./certs/`)
+- Anything held in an external secret store, if you use one instead of `.env`
+
+**Without the original `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`, the TOTP secrets restored from a database backup cannot be decrypted** — every enrolled ADMIN/SECURITY_REVIEWER/USER account is locked out of MFA on its next login, with no self-service recovery (recovery codes are hashed and single-use, and are themselves useless without a working TOTP-protected account to redeem them against in the first place, per [ADR 0002](adr/0002-totp-mfa.md)). This is the exact same failure mode described under [Secret rotation](#secret-rotation) above for a *botched rotation* — restoring the database without also restoring the matching `.env` has the identical effect, because the encrypted secrets in the DB backup are only ever meaningful together with the key that encrypted them.
+
+Recommended: back up `.env` and `./certs/` separately, encrypted at rest, on a schedule tied to when they actually change (secret rotation, cert renewal) rather than the routine DB/quarantine backup cadence — e.g. `gpg`-encrypt a tarball of both and store it wherever your organization already keeps secrets/credentials, never alongside the routine backup tarball unencrypted. Do not fold `.env`/certs into `backup.sh`'s own tarball without deliberately accepting the consequence: that tarball would then itself need the same at-rest protection as `.env` currently gets (mode `600`, restricted access) — a plain `db+quarantine` backup has no such requirement today because it contains no directly usable credentials on its own.
+
 ```bash
 ./scripts/restore.sh <db-dump.sql.gz> <quarantine.tar.gz>
 ```
+
+`restore.sh` restores the database and quarantine storage only, exactly matching what `backup.sh` produced — restoring onto a host whose `.env` doesn't match the `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY` that was active when the backup was taken reproduces the MFA-lockout scenario above. Restoring `.env`/certs (from wherever you separately backed them up) is a manual step outside this script's scope, and must happen *before* restarting `backend` with the restored database if you want existing MFA enrollments to keep working.
 
 **Destructive** — overwrites the live database and quarantine storage. Asks for an explicit `yes` before doing anything. Stops `backend`/`session-agent` for the database restore (nothing should be querying mid-restore) and restarts them afterward. If the backup predates the current schema, run the [update procedure](#update-procedure)'s `alembic upgrade head` step afterward.
 
