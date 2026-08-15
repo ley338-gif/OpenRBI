@@ -114,9 +114,8 @@ async def evaluate_file_action(
                 or matches_mime_pattern(decision.extension, rule.match_pattern)
             )
         elif rule.rule_type == FileRuleType.SOURCE:
-            matched = bool(decision.source_hostname) and matches_source_pattern(
-                decision.source_hostname, rule.match_pattern
-            )
+            if decision.source_hostname:
+                matched = matches_source_pattern(decision.source_hostname, rule.match_pattern)
 
         if not matched:
             continue

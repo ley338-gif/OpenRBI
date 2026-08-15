@@ -3,7 +3,6 @@ against a *real* sandbox (via the real Session Agent / Docker socket, not a
 mock) and are audited, kill is ADMIN-only (not SECURITY_REVIEWER), and an
 isolated session actually loses network access at the container level.
 """
-import uuid
 
 import httpx
 import pytest

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password

@@ -6,6 +6,48 @@ on:
   pull_request:
 
 jobs:
+  python-quality:
+    name: Python lint and type checking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            session-agent/pyproject.toml
+      - name: Install quality tools
+        run: python -m pip install "ruff==0.12.11" "mypy==1.17.1"
+      - name: Ruff
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app
+      - name: Type-check backend
+        working-directory: backend
+        run: mypy app --ignore-missing-imports
+      - name: Type-check session agent
+        working-directory: session-agent
+        run: mypy app --ignore-missing-imports
+
+  dependency-scan-python:
+    name: Python dependency scan (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, session-agent]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ${{ matrix.component }}/pyproject.toml
+      - name: Install pip-audit
+        run: python -m pip install "pip-audit==2.9.0"
+      - name: Audit resolved production dependencies
+        run: pip-audit "${{ matrix.component }}" --strict --progress-spinner off
+
   # Roadmap Phase A / A5: dependency & image scanning. Builds every image
   # OpenRBI actually ships (backend, session-agent, frontend, the browser
   # sandbox) and fails the build on a known CRITICAL vulnerability that
@@ -65,7 +107,7 @@ jobs:
         with:
           node-version: "22"
       - working-directory: frontend
-        run: npm install
+        run: npm ci
       - working-directory: frontend
         run: npm audit --audit-level=critical
 
@@ -163,11 +205,10 @@ jobs:
 
   # Roadmap Phase B / B1.2-B1.6, closing a gap noted since A5: the LDAP
   # test scripts were deliberately never wired into backend-integration-
-  # tests above, because run-ldap-integration-tests.sh restarts the
-  # backend container mid-run with different OPENRBI_LDAP_* env (the
-  # running uvicorn process only reads Settings() once) — too invasive to
-  # do inside a job that other, unrelated checks also depend on staying
-  # up. A separate job on its own fresh runner VM (GitHub Actions gives
+  # tests above, because the HTTP-level runner needs its own backend
+  # process with different OPENRBI_LDAP_* env (the running uvicorn process
+  # only reads Settings() once). A separate job on its own fresh runner VM
+  # (GitHub Actions gives
   # every job an isolated environment by default, no shared containers or
   # filesystem with backend-integration-tests) sidesteps that entirely: a
   # LDAP-specific backend here can't affect anything else.
@@ -219,11 +260,42 @@ jobs:
         if: failure()
         run: docker compose logs --tail=200
       # Always torn down, success or failure — this job's whole point is
-      # that its own backend restart and throwaway LDAP container never
+      # that its own throwaway backend and LDAP containers never
       # linger or affect anything else, matching the isolation the
       # existing LDAP scripts already apply to themselves (their own traps
-      # restore .env / stop their throwaway containers even on failure)
+      # remove throwaway containers even on failure)
       # one level up, at the runner/stack level.
       - name: Tear down the stack
         if: always()
         run: docker compose down -v
+
+  release-gates:
+    name: Release gates
+    if: always()
+    needs:
+      - python-quality
+      - dependency-scan-python
+      - image-scan
+      - dependency-scan-frontend
+      - backend-integration-tests
+      - ldap-integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release gate
+        env:
+          PYTHON_QUALITY: ${{ needs.python-quality.result }}
+          PYTHON_DEPENDENCIES: ${{ needs.dependency-scan-python.result }}
+          IMAGE_SCAN: ${{ needs.image-scan.result }}
+          FRONTEND_DEPENDENCIES: ${{ needs.dependency-scan-frontend.result }}
+          BACKEND_INTEGRATION: ${{ needs.backend-integration-tests.result }}
+          LDAP_INTEGRATION: ${{ needs.ldap-integration-tests.result }}
+        run: |
+          for result in \
+            "$PYTHON_QUALITY" \
+            "$PYTHON_DEPENDENCIES" \
+            "$IMAGE_SCAN" \
+            "$FRONTEND_DEPENDENCIES" \
+            "$BACKEND_INTEGRATION" \
+            "$LDAP_INTEGRATION"; do
+            test "$result" = "success"
+          done

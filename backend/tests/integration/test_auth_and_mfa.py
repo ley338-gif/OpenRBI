@@ -16,7 +16,7 @@ from app.models.security_event import SecurityEvent
 from app.services.mfa import reset_mfa
 from app.services.users import set_active
 
-from tests.conftest import login, login_with_mfa_enrollment, make_user
+from tests.conftest import login_with_mfa_enrollment, make_user
 
 
 @pytest.mark.asyncio

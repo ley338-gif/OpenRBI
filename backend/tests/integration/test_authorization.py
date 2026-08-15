@@ -3,7 +3,6 @@ see or act on user B's session or files, and this holds even for an ADMIN
 account, which gets no implicit ownership over anyone else's resources
 (docs/quarantine.md, app/api/sessions.py, app/api/files.py).
 """
-import uuid
 
 import pytest
 

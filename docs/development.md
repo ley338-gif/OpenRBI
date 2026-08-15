@@ -78,12 +78,15 @@ Both apps read their API base URL from `VITE_API_BASE_URL` (`.env`/`.env.example
 
 ## CI
 
-Roadmap Phase A / A5, `.github/workflows/ci.yml` — until this landed, every check below only ran when someone remembered to run it by hand. Four jobs, all on `push` to `main` and every pull request:
+Roadmap Phase A / A5 and v1 release hardening, `.github/workflows/ci.yml` — all checks run on `push` to `main` and every pull request. The authoritative required-check mapping is [release/release-gates.md](release/release-gates.md).
 
 - **`image-scan`** — builds `openrbi-backend`, `openrbi-session-agent`, `openrbi-frontend`, and `openrbi-browser` and scans each with Trivy for CRITICAL vulnerabilities, failing the build on anything not explicitly listed in `.trivyignore` (every entry there is a CVE individually verified to have no upstream fix yet — see that file's header for how and when it was checked, and re-verify before trusting it as still accurate).
 - **`dependency-scan-frontend`** — `npm audit --audit-level=critical` against the frontend workspace. The only place npm-level CVEs are actually checked, since the final frontend image is a static nginx build that never ships `node_modules`.
+- **`dependency-scan-python`** — resolves and audits the backend and Session Agent production dependency sets independently with `pip-audit --strict`.
+- **`python-quality`** — Ruff over shipped Python code, tests, and migrations, plus separate mypy runs for backend and Session Agent.
 - **`backend-integration-tests`** — brings up the full `docker compose` stack (with freshly generated random secrets, not `.env.example`'s placeholders, which the Phase 20 fail-closed startup check would reject anyway) and runs `scripts/run-integration-tests.sh` and `scripts/run-security-tests.sh` — the same two suites described below, now actually gating merges instead of only running when someone remembered to.
 - **`ldap-integration-tests`** — a separate job, on its own fresh runner VM with no shared containers/filesystem with `backend-integration-tests`, running `scripts/run-ldap-tests.sh` and `scripts/run-ldap-integration-tests.sh` (below) against a real, throwaway `docker compose` stack it brings up and tears down itself (`docker compose down -v`, `if: always()`, regardless of outcome). The HTTP-level runner starts a separate LDAP-enabled backend container from the already-built Compose image, so it neither mutates `.env` nor rebuilds/recreates the application backend. Previously these two scripts never ran in CI at all, closing a real, previously-documented gap: the entire LDAP authentication path had no automated regression protection since Roadmap Phase B / B1 landed. **If this job isn't yet configured as a required status check in this repository's branch protection settings, it should be** — that's a GitHub repository setting, not something this workflow file alone can enforce.
+- **`release-gates`** — a fail-closed aggregate that runs even when an upstream job failed or was cancelled and succeeds only if every required job succeeded. Configure this single stable check name as required branch protection for `main`.
 
 ## Tests
 
