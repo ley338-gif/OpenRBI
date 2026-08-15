@@ -10,7 +10,7 @@ The remote browser's display must reach the user's own browser with no native cl
 
 ## Decision
 
-MVP 1 uses noVNC as the `DisplayProvider` implementation: a standard VNC server (TigerVNC/x11vnc, TBD in [DEPENDENCIES.md](../../DEPENDENCIES.md)) runs inside the browser container against an Xvfb display, and noVNC's web client connects to it through the reverse proxy over a WebSocket tunnel. This is implemented behind the `DisplayProvider` interface (see [ADR 0003](0003-provider-abstraction.md)) specifically so it is not deeply coupled into session/core logic.
+MVP 1 uses noVNC as the `DisplayProvider` implementation: Debian's `x11vnc 0.9.16-9` runs inside the browser container against an Xvfb display, and noVNC's web client connects to it through the reverse proxy over a WebSocket tunnel. Exact release dependencies are recorded in [DEPENDENCIES.md](../../DEPENDENCIES.md). This is implemented behind the `DisplayProvider` interface (see [ADR 0003](0003-provider-abstraction.md)) specifically so it is not deeply coupled into session/core logic.
 
 ## Alternatives Considered
 

@@ -150,8 +150,10 @@ full evidence contract.
 
 ### Upgrade and rollback
 
-The supported Compact upgrade sequence, executable 0.1.1-to-v1 acceptance gate,
-rollback procedure, and known limitations are defined in
+The supported Compact operator sequence is defined in the
+[upgrade runbook](release/upgrade.md), with recovery in the
+[rollback runbook](release/rollback.md). Its executable 0.1.1-to-v1 gate and
+known qualification limitations are recorded in
 [Upgrade acceptance](release/upgrade-acceptance.md). Always take and validate a
 database/quarantine backup, preserve the existing `.env` encryption keys, run
 Alembic from the target backend image, and verify authentication, downloads,
@@ -209,7 +211,6 @@ What this **does** give you today: a `backend-user` process where `/admin/*` gen
 - **Separate reverse-proxy origins** — e.g. `https://browser.example.org` for the User API/Portal and `https://admin.example.internal` for the Admin API/Portal, each its own nginx vhost/TLS certificate, the admin one reachable only from a management network. Not wired up; `docker-compose.segmented.yml`'s two backend instances currently have no dedicated proxy path of their own.
 - **Separate Postgres roles** — both instances still connect with the same DB credentials/grants today. A `user-api` role with no access to admin-only tables/columns (role assignments, other users' TOTP secrets) is a documented, not-yet-implemented hardening option.
 - **Session Agent token scoping** — both instances hold the same shared `OPENRBI_SESSION_AGENT_API_TOKEN`. Per-listener tokens/scopes (so a compromised `backend-user` can't issue `isolate`/`terminate` on arbitrary sessions) are documented, not implemented.
-- **The display relay's network exemption** — `scripts/setup-network-isolation.sh`'s allow-list is hardcoded to the base `backend` service's pinned `browser-plane` address; `backend-user`'s own pinned address (see the overlay file's comments) is not yet exempted, so a real deployment running the display relay from `backend-user` instead of `backend` would need that script updated first — deliberately not done in this pass (see [ADR 0013](adr/0013-browser-isolation-zone.md); browser-plane itself is unchanged by this work).
 - **Firewall/VLAN enforcement** — entirely an operator decision once real separate origins exist; nothing in this repository automates it, on purpose (see the Productization v0.1.1 analysis's explicit anti-overengineering guardrail).
 - **The display relay's `browser-plane` exemption defaults to the base `backend` service only.** `scripts/setup-network-isolation.sh` now accepts `OPENRBI_BACKEND_BROWSER_PLANE_IP` as a space-separated list, so a Segmented deployment can exempt `backend-user`'s own pinned address (`172.30.0.4`, the process that actually terminates `/display/*/ws` in this profile) instead of Compact's default:
   ```bash
@@ -242,7 +243,7 @@ VITE_API_BASE_URL=https://admin.openrbi.local/api
 OPENRBI_ADMIN_BASE_PATH=/        # served at its own origin's root, not /admin/
 ```
 
-This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and the display-relay network exemption still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point.
+This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and operator-managed firewall/VLAN policy still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point. The display relay's browser-plane address can already be selected explicitly with `OPENRBI_BACKEND_BROWSER_PLANE_IP`, as shown above.
 
 ## Sizing
 
