@@ -60,6 +60,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        # The acceptance run exercises a real sandbox session. GitHub-hosted
+        # runners use a separate docker group, while the hardened agent runs as
+        # uid 10001/gid 0. This permission change is scoped to the ephemeral VM.
+        run: sudo chmod 666 /var/run/docker.sock
       - name: Build and accept a clean installation
         run: ./scripts/run-fresh-install-acceptance.sh
 
