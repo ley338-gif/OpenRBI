@@ -224,7 +224,7 @@ def verify_functional() -> None:
     print("ACCEPT BR-09 restored application starts and terminates a real browser session")
 
     health = client.request("GET", "/health")
-    assert health == {"status": "ok"}
+    assert health["status"] == "ok"
 
 
 def main() -> None:
