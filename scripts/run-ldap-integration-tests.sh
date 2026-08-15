@@ -49,13 +49,19 @@ wait_for_ldap() {
         # the local check above had already passed). Probe the LDAPS port
         # from a separate throwaway container on the same network the
         # real backend will use, the same way the backend itself connects.
+        # --entrypoint overrides straight to the ldapsearch binary the
+        # image already ships: its own default ENTRYPOINT bootstraps a
+        # full server and expects server env vars accordingly, so it is
+        # not meant for ad-hoc client commands like this one.
         if docker exec "$LDAP_CONTAINER" ldapsearch -x -H ldap://localhost \
             -b "dc=example,dc=org" \
             -D "cn=admin,dc=example,dc=org" \
             -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1 \
             && docker run --rm --network openrbi_control-plane \
+                --entrypoint ldapsearch \
                 -e LDAPTLS_REQCERT=never \
-                osixia/openldap:1.5.0 ldapsearch -x -H "ldaps://$LDAP_CONTAINER:636" \
+                osixia/openldap:1.5.0 \
+                -x -H "ldaps://$LDAP_CONTAINER:636" \
                 -b "dc=example,dc=org" \
                 -D "cn=admin,dc=example,dc=org" \
                 -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1; then
