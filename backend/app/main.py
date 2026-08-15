@@ -94,7 +94,7 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="OpenRBI Backend",
     version=BUILD_INFO.version,
-    description="OpenRBI control-plane API (MVP 1 under active development).",
+    description="OpenRBI control-plane API.",
     lifespan=_lifespan,
 )
 

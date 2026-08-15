@@ -1,8 +1,8 @@
 # Supported configurations
 
-This is the authoritative OpenRBI 1.0 support matrix. It describes the deliberately small production path the v1 release is being qualified against; it is not a promise that every compatible-looking combination works.
+This is the authoritative OpenRBI 1.0 support matrix. It describes the deliberately small production path the v1 release is qualified against; it is not a promise that every compatible-looking combination works.
 
-Until a v1.0 release candidate completes the v1 acceptance suite introduced by V1-008, the repository remains pre-release and must not be treated as production-ready.
+OpenRBI has completed the v1 acceptance suite introduced by V1-008 and reached a stable v1.0.x release. A configuration outside this matrix (any host/runtime/topology not listed as supported below) is not release-qualified and should not be treated as production-ready.
 
 ## Supported for OpenRBI 1.0
 
