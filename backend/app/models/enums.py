@@ -167,6 +167,12 @@ class SecurityEventType(str, enum.Enum):
     LDAP_ENABLED = "LDAP_ENABLED"
     LDAP_DISABLED = "LDAP_DISABLED"
     LDAP_CONNECTION_TESTED = "LDAP_CONNECTION_TESTED"
+    # RBI-POST-017 — reading the LDAP configuration (server URI, base DN,
+    # bind DN, group-role mapping) is a sensitive config disclosure even
+    # though the bind password itself is never returned
+    # (LdapConfigResponse never includes it) — now audited the same way
+    # every other LDAP configuration action already is.
+    LDAP_CONFIG_READ = "LDAP_CONFIG_READ"
 
     # Clipboard-policy enforcement (app/core/rfb_clipboard_filter.py) — a
     # real ClientCutText/ServerCutText message the relay dropped because
