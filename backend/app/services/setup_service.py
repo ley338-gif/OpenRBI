@@ -17,12 +17,13 @@ never creates a second admin or double-initializes the system.
 
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
+from app.config import get_settings
 from app.core.sessions import (
     clear_login_failures,
     create_mfa_pending,
@@ -106,6 +107,7 @@ async def regenerate_setup_token(db: AsyncSession) -> str | None:
 
     token = secrets.token_urlsafe(24)
     state.setup_token_hash = hash_password(token)
+    state.setup_token_created_at = datetime.now(UTC)
     await db.commit()
     return token
 
@@ -124,7 +126,13 @@ async def create_bootstrap_admin(db: AsyncSession, *, setup_token: str, username
         await db.rollback()
         raise SetupAlreadyInitializedError("system already initialized")
 
-    if state.setup_token_hash is None or not verify_password(setup_token, state.setup_token_hash):
+    token_expires_at = (
+        state.setup_token_created_at + timedelta(seconds=get_settings().setup_token_ttl_seconds)
+        if state.setup_token_created_at is not None
+        else None
+    )
+    token_is_expired = token_expires_at is None or datetime.now(UTC) >= token_expires_at
+    if token_is_expired or state.setup_token_hash is None or not verify_password(setup_token, state.setup_token_hash):
         await db.rollback()
         await record_login_failure(_SETUP_TOKEN_RATE_LIMIT_KEY)
         raise SetupInvalidTokenError("invalid setup token")
@@ -204,6 +212,7 @@ async def complete_bootstrap_mfa(db: AsyncSession, *, mfa_token: str, code: str,
     state.initialized = True
     state.initialized_at = datetime.now(UTC)
     state.setup_token_hash = None
+    state.setup_token_created_at = None
     db.add(state)
 
     await record_security_event(db, SecurityEventType.SYSTEM_INITIALIZED, user_id=user.id)

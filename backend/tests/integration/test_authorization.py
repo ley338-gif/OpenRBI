@@ -48,6 +48,16 @@ async def test_user_cannot_see_another_users_session(db, client):
     r = await client.get(f"/sessions/{session.id}", cookies={"openrbi_session": cookie})
     assert r.status_code == 404
 
+    r = await client.post(f"/sessions/{session.id}/terminate", cookies={"openrbi_session": cookie})
+    assert r.status_code == 404
+
+    r = await client.post(
+        f"/sessions/{session.id}/uploads",
+        cookies={"openrbi_session": cookie},
+        files={"file": ("probe.txt", b"ownership probe", "text/plain")},
+    )
+    assert r.status_code == 404
+
 
 @pytest.mark.asyncio
 async def test_admin_has_no_implicit_ownership_of_someone_elses_session(db, client):

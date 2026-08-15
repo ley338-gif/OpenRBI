@@ -17,6 +17,8 @@ startup hook calls), exactly the intended way to obtain one outside of
 reading a log.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pyotp
 import pytest
 import pytest_asyncio
@@ -196,6 +198,23 @@ async def test_wrong_setup_token_is_rejected(db, client):
     )
     assert r.status_code == 400
     assert "Traceback" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_expired_setup_token_is_rejected(db, client):
+    token = await _fresh_token(db)
+    username = _bootstrap_username()
+    state = await db.get(SystemState, SYSTEM_STATE_ID)
+    state.setup_token_created_at = datetime.now(UTC) - timedelta(hours=1)
+    await db.commit()
+
+    r = await client.post(
+        "/setup/admin",
+        json={"setup_token": token, "username": username, "password": "Bootstrap-Pw2026!"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"] == "could not create the initial administrator"
+    assert await db.scalar(text("SELECT COUNT(*) FROM users WHERE username = :username"), {"username": username}) == 0
 
 
 @pytest.mark.asyncio

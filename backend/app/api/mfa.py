@@ -12,11 +12,11 @@ from app.api.schemas.mfa import (
     SetupConfirmResponse,
     SetupEnrollRequest,
 )
-from app.config import get_settings
 from app.core.crypto import encrypt_secret
 from app.core.deps import get_current_user
 from app.core.qrcode_util import png_data_uri
 from app.core.sessions import create_session, delete_mfa_pending, get_mfa_pending
+from app.core.session_cookies import clear_session_cookie, set_session_cookie
 from app.core.totp import generate_secret, provisioning_uri
 from app.db.session import get_db
 from app.models.enums import SecurityEventType
@@ -33,7 +33,6 @@ from app.services.security_events import record_security_event
 # (MFA reset) moved to app/api/admin_mfa.py, admin-only, so it doesn't force
 # an admin route into a user-mode listener.
 router = APIRouter(prefix="/mfa", tags=["mfa"])
-settings = get_settings()
 
 
 async def _load_pending_user(db: AsyncSession, mfa_token: str) -> User:
@@ -126,14 +125,7 @@ async def setup_confirm(
 
     role = await db.get(Role, user.role_id)
     session_token = await create_session(user.id, role.name)
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.environment != "development",
-        samesite="lax",
-    )
+    set_session_cookie(response, session_token)
 
     await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
     await db.commit()
@@ -149,5 +141,5 @@ async def reset_self(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid authentication code")
     await reset_mfa(db, current_user, current_user.id)
     await db.commit()
-    response.delete_cookie(settings.session_cookie_name)
+    clear_session_cookie(response)
     return {"status": "ok"}

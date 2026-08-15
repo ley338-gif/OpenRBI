@@ -22,8 +22,11 @@ Covers the roadmap's own B1.6 test list:
 import os
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from app.core.security import hash_password
+from app.models.role import Role
+from app.models.user import User
 from tests.conftest import login_with_mfa_enrollment, make_user
 
 LDAP_ADMIN_USERNAME = os.environ.get("OPENRBI_LDAP_TEST_ADMIN_USERNAME", "")
@@ -72,6 +75,60 @@ async def test_local_login_still_works_with_ldap_enabled(db, client):
     r = await client.post("/auth/login", json={"username": user.username, "password": password})
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ldap_password_cannot_enter_same_named_local_admin(db, client):
+    # Ensure the directory identity has a reconciled row, then turn that row
+    # into an explicitly local, password-bearing ADMIN. The directory's
+    # different password must no longer be a fallback for this username.
+    await client.post(
+        "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+    )
+    user = await db.scalar(select(User).where(User.username == LDAP_ADMIN_USERNAME))
+    admin_role = await db.scalar(select(Role).where(Role.name == "ADMIN"))
+    assert user is not None and admin_role is not None
+    original_hash, original_role_id = user.password_hash, user.role_id
+    local_password = "Collision-Local-Password-2026!"
+    user.password_hash = hash_password(local_password)
+    user.role_id = admin_role.id
+    await db.commit()
+    try:
+        r = await client.post(
+            "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+        )
+        assert r.status_code == 401
+        assert r.json()["detail"] == "invalid credentials"
+
+        r = await client.post(
+            "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": local_password}
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] in {"mfa_required", "mfa_enrollment_required"}
+    finally:
+        user.password_hash = original_hash
+        user.role_id = original_role_id
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_disabled_ldap_identity_cannot_receive_a_session(db, client):
+    await client.post(
+        "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+    )
+    user = await db.scalar(select(User).where(User.username == LDAP_ADMIN_USERNAME))
+    assert user is not None
+    user.is_active = False
+    await db.commit()
+    try:
+        r = await client.post(
+            "/auth/login", json={"username": LDAP_ADMIN_USERNAME, "password": LDAP_ADMIN_PASSWORD}
+        )
+        assert r.status_code == 401
+        assert "openrbi_session" not in r.cookies
+    finally:
+        user.is_active = True
+        await db.commit()
 
 
 @pytest.mark.asyncio

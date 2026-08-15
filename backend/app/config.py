@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     session_cookie_name: str = "openrbi_session"
     session_ttl_seconds: int = 8 * 60 * 60
+    setup_token_ttl_seconds: int = 30 * 60
 
     totp_secret_encryption_key: str = ""
 
