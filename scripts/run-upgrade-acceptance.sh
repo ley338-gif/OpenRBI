@@ -210,10 +210,11 @@ ISOLATION_APPLIED=1
 
 TARGET_BACKEND="$(target_compose ps -q backend)"
 docker cp "$SCRIPT_DIR/upgrade-acceptance.py" "$TARGET_BACKEND:/tmp/upgrade-acceptance.py"
-docker cp "$HOST_MANIFEST" "$TARGET_BACKEND:$CONTAINER_MANIFEST"
-# The manifest contains an MFA seed and therefore stays mode 0600. docker cp
-# creates it as root, so hand ownership to the unprivileged backend UID.
-docker exec -u 0 "$TARGET_BACKEND" chown 10001 "$CONTAINER_MANIFEST"
+# Have the capability-free backend user create the secret-bearing manifest
+# itself. docker cp would make it root-owned and cap_drop: ALL rightly blocks
+# a subsequent chown, while broadening mode 0600 would expose the MFA seed.
+docker exec -i "$TARGET_BACKEND" sh -c 'umask 077; cat > "$1"' sh \
+    "$CONTAINER_MANIFEST" < "$HOST_MANIFEST"
 target_compose exec -T -e PYTHONPATH=/app backend \
     python /tmp/upgrade-acceptance.py verify-data "$CONTAINER_MANIFEST"
 target_compose exec -T -e PYTHONPATH=/app backend \
