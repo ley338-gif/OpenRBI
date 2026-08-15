@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # docs/quarantine.md.
     download_staging_dir: str = "/app/data/staging"
     download_poll_interval_seconds: float = 3.0
+    # RBI-POST-016: checked against the size list_downloads() already
+    # reports, before fetch_download() ever pulls the file's bytes into
+    # memory (app/services/downloads.py) — nothing in that path streams,
+    # so this is the only point an oversized file can be refused without
+    # risking OOM. Default 500 MiB; deliberately generous rather than
+    # tight, since the fail-closed behavior on exceeding it is a QUARANTINED
+    # file an admin has to review, not a silent drop — the operational cost
+    # of a too-tight default falls on every legitimate large download.
+    download_max_size_bytes: int = 500 * 1024 * 1024
 
     clamav_host: str = "clamav"
     clamav_port: int = 3310
