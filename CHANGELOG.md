@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), and this project does not yet follow semantic versioning (pre-alpha).
+The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). The repository is preparing its first semantic versioned release candidate; until a version is tagged, changes remain under `Unreleased`.
 
 ## [Unreleased]
 
@@ -22,6 +22,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 - V1-002 release gates: CI now lint-checks all shipped Python code, tests, and migrations with Ruff; type-checks backend and Session Agent independently with mypy; audits resolved production dependencies for both Python components with `pip-audit`; and exposes a single fail-closed `Release gates` result that succeeds only when every required build, scan, integration, security, LDAP, lint, and type-check job succeeded. The authoritative gate mapping is documented in `docs/release/release-gates.md`.
 
 ### Added
+
+- Binding v1.0 acceptance: `docs/release/v1-acceptance.md` records Preconditions, Steps, Expected Result, Actual Result, PASS/FAIL and Evidence for all 35 required release scenarios. CI validates manifest completeness while the aggregate release gate supplies the real functional evidence. Manual quarantine release now has explicit HTTP/RBAC/review-metadata/audit/idempotency coverage.
 
 - V1-010 upgrade acceptance: a required CI gate now builds the pinned,
   reproducible 0.1.1 baseline, seeds persistent MFA/LDAP/user/policy/session/

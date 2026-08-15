@@ -4,7 +4,7 @@
 
 ## Project status
 
-**Pre-alpha / MVP 1 in progress.** OpenRBI is not yet feature-complete and has not undergone independent security review. Do not deploy it in a production or security-critical environment yet. See [docs/threat-model.md](docs/threat-model.md) for what is and isn't covered today, and [CHANGELOG.md](CHANGELOG.md) for progress.
+**OpenRBI 1.0 release candidate preparation.** The scoped v1 feature set is complete and the repository has passed its first-party security review, destructive fault injection, clean-install, backup/restore, upgrade, and 35-scenario acceptance suites. It has not undergone an independent external security assessment; evaluate the documented residual risks and supported configuration before production use. See [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md), [docs/threat-model.md](docs/threat-model.md), and [docs/supported-configurations.md](docs/supported-configurations.md).
 
 The MVP 1 build order and scope are tracked internally against the phases in [docs/development.md](docs/development.md).
 
@@ -71,6 +71,11 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/release/backup-restore-acceptance.md](docs/release/backup-restore-acceptance.md) | Destructive current-schema recovery protocol and functional evidence contract |
 | [docs/release/upgrade-acceptance.md](docs/release/upgrade-acceptance.md) | Pinned 0.1.1-to-v1 upgrade, rollback procedure, and known limitations |
 | [docs/release/security-review.md](docs/release/security-review.md) | Targeted v1 authentication, sandbox, file, and secrets release review |
+| [docs/release/fault-injection-acceptance.md](docs/release/fault-injection-acceptance.md) | Destructive reliability scenarios and observed recovery state |
+| [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md) | Binding 35-scenario v1 release acceptance record |
+| [docs/release/release-process.md](docs/release/release-process.md) | RC and final-release decision/publishing sequence |
+| [docs/release/upgrade.md](docs/release/upgrade.md) | Supported Compact upgrade runbook |
+| [docs/release/rollback.md](docs/release/rollback.md) | Backup-based rollback and recovery verification |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
 | [docs/api.md](docs/api.md) | API reference |

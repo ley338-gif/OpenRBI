@@ -25,9 +25,13 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py scripts/fault-injection-probe.py
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py scripts/fault-injection-probe.py scripts/check-v1-acceptance.py scripts/check-docs-freeze.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
+      - name: Validate binding v1 acceptance manifest
+        run: python scripts/check-v1-acceptance.py
+      - name: Validate documentation freeze
+        run: python scripts/check-docs-freeze.py
       - name: Type-check backend
         working-directory: backend
         run: mypy app --ignore-missing-imports
