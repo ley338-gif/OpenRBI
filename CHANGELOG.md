@@ -11,6 +11,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 - LDAP/LDAPS: certificate verification is now explicitly enforced (`OPT_X_TLS_REQUIRE_CERT=demand`) rather than relying on the OS/OpenLDAP default, and a custom CA bundle can be configured via `OPENRBI_LDAP_CA_CERT_FILE` for directories using an internal/private CA (RBI-POST-001).
 - Added CSRF protection (signed double-submit cookie) as a second, independent layer alongside `SameSite=Lax` on the session cookie — every state-changing request now requires a matching `X-CSRF-Token` header, enforced by new middleware covering every listener mode and both portals via the shared `ApiClient`. Requires a new `OPENRBI_CSRF_SECRET_KEY` secret (RBI-POST-003).
 - Fixed a check-then-update race in MFA recovery code redemption (`SELECT ... FOR UPDATE`) — two concurrent requests replaying the same single-use recovery code could previously both succeed (RBI-POST-015).
+- Added a Content-Security-Policy header (`default-src 'self'`, no `'unsafe-eval'`, no inline scripts) to both the plain-HTTP and TLS reverse-proxy configs (RBI-POST-022).
 - Added a configurable maximum download size (`OPENRBI_DOWNLOAD_MAX_SIZE_BYTES`, default 500 MiB) — a file exceeding it is now quarantined for review without ever being fetched into memory; previously nothing capped how large a file the download-interception pipeline would buffer (RBI-POST-016).
 - `GET /admin/ldap/config` (a sensitive config disclosure) is now audited (`LDAP_CONFIG_READ`), matching every other LDAP configuration action (RBI-POST-017).
 
