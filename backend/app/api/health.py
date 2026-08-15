@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.build_info import BUILD_INFO
+
 router = APIRouter(prefix="/health", tags=["health"])
 
 
@@ -9,4 +11,4 @@ async def health() -> dict[str, str]:
     added in Phase 19 (Health Monitoring) — this endpoint intentionally does
     not claim dependencies are healthy yet.
     """
-    return {"status": "ok"}
+    return {"status": "ok", **BUILD_INFO.as_dict()}

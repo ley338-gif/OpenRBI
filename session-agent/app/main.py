@@ -6,12 +6,13 @@ from fastapi import Depends, FastAPI
 
 from app.api.sandboxes import router as sandboxes_router
 from app.auth import require_control_plane_token
+from app.build_info import BUILD_INFO
 from app.config import get_settings
 from app.providers.factory import get_provider
 
 app = FastAPI(
     title="OpenRBI Session Agent",
-    version="0.1.0",
+    version=BUILD_INFO.version,
     description=(
         "Internal-only privileged service for browser sandbox lifecycle. "
         "Not exposed publicly; see docs/adr/0004 and 0005."
@@ -31,7 +32,7 @@ _PROCESS_STARTED_AT = datetime.fromtimestamp(psutil.Process(os.getpid()).create_
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", **BUILD_INFO.as_dict()}
 
 
 @app.get("/v1/nodes/self", dependencies=[Depends(require_control_plane_token)])
