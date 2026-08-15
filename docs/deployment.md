@@ -25,6 +25,14 @@ cp .env.example .env
 
 docker compose up -d --build
 
+# Building this way reports version=1.0.0/commit_sha=unknown for every
+# image (each Dockerfile's ARG defaults, RBI-POST-014) — fine for a quick
+# local check, but useless for "which exact code is this" later. Use
+# scripts/build.sh instead of `docker compose build`/`up --build` for a
+# build that reports its real git version/commit/date:
+#   ./scripts/build.sh && docker compose up -d
+# See "Local build version metadata" below.
+
 # The browser sandbox image isn't a compose service — the Session Agent
 # spawns per-session containers from it directly. Build it once (and
 # whenever docker/browser/ changes):
@@ -61,6 +69,20 @@ sudo systemctl enable --now openrbi-network-isolation.timer
 ```
 
 Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_BACKEND_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
+
+## Local build version metadata (RBI-POST-014)
+
+**Official release build** — `.github/workflows/release.yml` sets `OPENRBI_VERSION` (the actual release tag), `OPENRBI_COMMIT_SHA` (`$GITHUB_SHA`), and `OPENRBI_BUILD_DATE` (a real UTC timestamp) as build args for every image; `docker inspect`, `/health`, and `/admin/health` all report the real values for an image pulled from `ghcr.io`.
+
+**Local/development build** — a plain `docker compose build` (or `up --build`) passes none of these, so every locally-built image silently falls back to each Dockerfile's `ARG` defaults: `OPENRBI_VERSION=1.0.0` (hardcoded, never changes), `OPENRBI_COMMIT_SHA=unknown`, `OPENRBI_BUILD_DATE=unknown` — the same "1.0.0/unknown" regardless of what's actually checked out, which is close to useless for "which exact code is running" during local debugging or support. Use `scripts/build.sh` instead:
+
+```bash
+./scripts/build.sh          # build every service
+./scripts/build.sh backend  # or just one, same as `docker compose build backend`
+docker compose up -d
+```
+
+It computes real values from the current checkout (`git describe --tags --always --dirty` for version, `git rev-parse HEAD` for commit, the actual UTC time for build date) and passes them as `--build-arg`s — no `.git`-context Dockerfile magic, just explicit values computed on the host before the build starts, so it works the same way regardless of Docker's build context handling. Falls back to `docker compose build` unchanged (Dockerfile defaults) if run outside a git checkout at all.
 
 ## First-run setup (Roadmap B1.9)
 
