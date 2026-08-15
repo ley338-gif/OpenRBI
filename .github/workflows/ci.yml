@@ -348,6 +348,95 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # Roadmap follow-up: wires the real, no-mock Playwright suite
+  # (frontend/e2e/, docs/development.md's "Tests" section) into CI as a
+  # required gate. Previously this suite only ran when a developer
+  # manually invoked scripts/e2e-run.sh, so real portal-UI regressions
+  # (e.g. RBI-POST-025's Admin Portal role-guard bug) could merge and
+  # ship without it ever running. Reuses the same real Compose stack
+  # setup as backend-integration-tests above (own isolated runner VM —
+  # no shared containers/filesystem with that job) and additionally
+  # builds the browser sandbox image, since one test drives a real
+  # Secure Browser session through a genuine noVNC connection.
+  frontend-e2e-tests:
+    name: Frontend E2E tests (Playwright)
+    runs-on: ubuntu-latest
+    # 20 minutes was too tight: every setup step (stack build/start,
+    # migrations, browser image, Playwright/Chromium install) completed
+    # well within budget on a real run, but the suite itself -- dozens of
+    # real portal-UI scenarios including a genuine noVNC-connected Secure
+    # Browser session -- got cancelled mid-run by the timeout, not by any
+    # actual test failure (see CI run 31905214589).
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Build and start the stack
+        run: |
+          cp .env.example .env
+          DB_PASSWORD=$(openssl rand -hex 32)
+          sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=${DB_PASSWORD}#" .env
+          sed -i "s#^OPENRBI_DATABASE_URL=.*#OPENRBI_DATABASE_URL=postgresql+asyncpg://openrbi:${DB_PASSWORD}@postgres:5432/openrbi#" .env
+          AGENT_TOKEN=$(openssl rand -hex 32)
+          sed -i "s#^OPENRBI_SESSION_AGENT_API_TOKEN=.*#OPENRBI_SESSION_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .env
+          sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
+          sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
+          echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+          docker compose up -d --build
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            if [ "$i" -eq 30 ]; then
+              echo "Backend did not become healthy within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Wait for PostgreSQL to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL did not become ready within 60 seconds" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Apply database migrations
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Build browser sandbox image
+        # The Secure Browser E2E test creates a real sandbox session
+        # (DockerSandboxProvider), same reason backend-integration-tests
+        # builds this image before its own integration tests.
+        run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
+      - name: Install Playwright and its Chromium browser
+        working-directory: frontend
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Run the real, no-mock Playwright E2E suite
+        run: sh scripts/e2e-run.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Upload Playwright trace/screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
+
   release-gates:
     name: Release gates
     if: always()
@@ -362,6 +451,7 @@ jobs:
       - secret-scan
       - backend-integration-tests
       - ldap-integration-tests
+      - frontend-e2e-tests
     runs-on: ubuntu-latest
     steps:
       - name: Require every release gate
@@ -376,6 +466,7 @@ jobs:
           SECRET_SCAN: ${{ needs.secret-scan.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration-tests.result }}
           LDAP_INTEGRATION: ${{ needs.ldap-integration-tests.result }}
+          FRONTEND_E2E: ${{ needs.frontend-e2e-tests.result }}
         run: |
           for result in \
             "$PYTHON_QUALITY" \
@@ -387,6 +478,7 @@ jobs:
             "$FRONTEND_DEPENDENCIES" \
             "$SECRET_SCAN" \
             "$BACKEND_INTEGRATION" \
-            "$LDAP_INTEGRATION"; do
+            "$LDAP_INTEGRATION" \
+            "$FRONTEND_E2E"; do
             test "$result" = "success"
           done
