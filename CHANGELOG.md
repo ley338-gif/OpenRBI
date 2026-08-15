@@ -6,7 +6,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
-## [1.0.0-rc.1] - 2026-08-15
+## [1.0.0] - 2026-08-15
 
 ### Security
 
