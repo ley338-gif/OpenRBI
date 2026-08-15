@@ -4,7 +4,7 @@
 
 ## Project status
 
-**OpenRBI 1.0 release candidate preparation.** The scoped v1 feature set is complete and the repository has passed its first-party security review, destructive fault injection, clean-install, backup/restore, upgrade, and 35-scenario acceptance suites. It has not undergone an independent external security assessment; evaluate the documented residual risks and supported configuration before production use. See [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md), [docs/threat-model.md](docs/threat-model.md), and [docs/supported-configurations.md](docs/supported-configurations.md).
+**Latest stable release: v1.0.x.** The scoped v1 feature set is complete and the repository has passed its first-party security review, destructive fault injection, clean-install, backup/restore, upgrade, and 35-scenario acceptance suites. It has not undergone an independent external security assessment; evaluate the documented residual risks and supported configuration before production use. See [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md), [docs/threat-model.md](docs/threat-model.md), and [docs/supported-configurations.md](docs/supported-configurations.md).
 
 The MVP 1 build order and scope are tracked internally against the phases in [docs/development.md](docs/development.md).
 

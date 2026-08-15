@@ -2,11 +2,10 @@
 
 ## Supported versions
 
-OpenRBI is currently pre-alpha (MVP 1 under active development). There is no stable release yet, and no version currently receives security patches under a formal support commitment. Once a first tagged release exists, this table will list supported versions.
-
 | Version | Supported |
 |---|---|
-| main (pre-release) | best effort |
+| 1.0.x | Supported |
+| < 1.0 | Not supported |
 
 ## Reporting a vulnerability
 
