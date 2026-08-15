@@ -32,4 +32,7 @@ pinned compiler and fails on any diff. The frontend build and audit use
 - A tag or GitHub Release must point to a commit already present on `main` whose `Release gates` result succeeded.
 - Do not disable, soften, or bypass a failing check to publish a release.
 
-The later release workflow may add artifact-specific checks such as SBOM generation and digest recording. Those complement these source and image gates; they do not replace them.
+The release workflow additionally re-verifies the successful `Release gates`
+check on its exact commit before it builds or publishes anything. Its digest
+recording and later artifact-specific checks complement these source and image
+gates; they do not replace them. See [`publishing.md`](publishing.md).

@@ -65,6 +65,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/user-guide.md](docs/user-guide.md) | End-user operations |
 | [docs/deployment.md](docs/deployment.md) | Installation, HTTPS, secrets, backup |
 | [docs/supported-configurations.md](docs/supported-configurations.md) | Authoritative supported, experimental, and unsupported v1 configurations |
+| [docs/release/publishing.md](docs/release/publishing.md) | Guarded release dry-run, image publication, and provenance procedure |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
 | [docs/api.md](docs/api.md) | API reference |
