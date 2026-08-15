@@ -126,6 +126,19 @@ class Settings(BaseSettings):
     quarantine_retention_quarantined_days: float = 90.0
     quarantine_retention_interval_seconds: float = 3600.0
 
+    # RBI-POST-002: read-only marker file scripts/setup-network-isolation.sh
+    # writes on the Docker host after applying the DOCKER-USER iptables
+    # blocklist. Bind-mounted read-only into this container
+    # (docker-compose.yml) — the backend has no host privilege to check
+    # iptables state itself, so this presence/freshness check is the whole
+    # mechanism (app/services/health.py::check_network_isolation).
+    network_isolation_marker_file: str = "/etc/openrbi/network-isolation/marker"
+    # How old the marker's timestamp may be before it's no longer trusted
+    # (DEGRADED instead of HEALTHY) — must be set well above
+    # scripts/systemd/openrbi-network-isolation.timer's rerun interval so a
+    # single missed/delayed run doesn't flap the status.
+    network_isolation_max_staleness_seconds: float = 900.0
+
     @field_validator("session_agent_api_token", "totp_secret_encryption_key")
     @classmethod
     def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:

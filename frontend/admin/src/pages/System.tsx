@@ -6,7 +6,7 @@ import { PageHeader } from "@shared/components/PageHeader";
 import type { SystemHealthDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
-const STATUS_PRIORITY: Record<string, number> = { UNAVAILABLE: 0, DEGRADED: 1, HEALTHY: 2 };
+const STATUS_PRIORITY: Record<string, number> = { UNAVAILABLE: 0, NOT_CONFIGURED: 1, DEGRADED: 1, HEALTHY: 2 };
 const POLL_INTERVAL_MS = 15_000;
 
 /**

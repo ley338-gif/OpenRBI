@@ -353,7 +353,7 @@ export const SECURITY_EVENT_TYPES = [
   "ACCOUNT_UNLOCKED",
 ] as const;
 
-export type ComponentStatus = "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
+export type ComponentStatus = "HEALTHY" | "DEGRADED" | "UNAVAILABLE" | "NOT_CONFIGURED";
 
 export interface ComponentHealthDto {
   name: string;

@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Operations
+
+- Added a `network_isolation` component to `/admin` system health, reporting `NOT_CONFIGURED`/`DEGRADED`/`HEALTHY` based on a marker file `scripts/setup-network-isolation.sh` now writes — surfaces a visible warning when the required host-level iptables isolation has never been applied or hasn't been reconfirmed recently, instead of the stack silently appearing fully healthy either way. Provided `scripts/systemd/openrbi-network-isolation.{service,timer}` to reapply it automatically after host reboots (RBI-POST-002).
+
 ## [1.0.0] - 2026-08-15
 
 ### Security
