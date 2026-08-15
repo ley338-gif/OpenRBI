@@ -63,6 +63,27 @@ test.describe("Admin Portal", () => {
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   });
 
+  test("RBI-POST-025: a USER-role account is redirected away from the Admin Portal, never sees its shell", async ({
+    page,
+  }) => {
+    // Found live on real infrastructure: RequireAuth previously only
+    // checked "is someone logged in", not their role, so any authenticated
+    // USER account that navigated to /admin/ directly landed inside the
+    // full admin shell (nav, layout) before every individual page's own
+    // API calls correctly 403'd with a confusing generic error. Login
+    // itself is role-agnostic (the same backend endpoint for every
+    // portal) — only the client-side route guard is what's being tested
+    // here, so USER_USERNAME (no MFA required for that role) is enough.
+    await page.goto("/admin/");
+    await page.getByLabel("Username").fill(USER_USERNAME);
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Log in" }).click();
+
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText("USER PORTAL")).toBeVisible();
+    await expect(page.getByText("ADMIN PORTAL")).not.toBeVisible();
+  });
+
   test("logs in with a real TOTP code and sees a real, non-fabricated dashboard", async ({ page }) => {
     await loginAsAdmin(page);
     // No fabricated data — every stat card must at least render without

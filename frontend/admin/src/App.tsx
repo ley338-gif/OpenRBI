@@ -31,6 +31,19 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingBlock label="Checking your session…" />;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "ADMIN" && user.role !== "SECURITY_REVIEWER") {
+    // A real, authenticated but non-privileged session (e.g. a USER
+    // account navigating here directly) must never see the admin shell at
+    // all -- the backend already correctly 403s every actual admin
+    // endpoint for this role, but leaving the shell itself reachable
+    // exposed the nav structure and produced a confusing generic "could
+    // not load" error instead of a clean redirect. A plain full-page
+    // navigation, not <Navigate>: this router's basename is "/admin/"
+    // (see vite.config.ts), so a client-side "/" would resolve inside
+    // that basename rather than actually leaving to the User Portal.
+    window.location.href = "/";
+    return <LoadingBlock label="Redirecting…" />;
+  }
   return <>{children}</>;
 }
 
