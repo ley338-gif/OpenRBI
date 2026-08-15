@@ -18,7 +18,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=list[str])
-async def list_active_sandboxes() -> list[str]:
+async def list_active_sandboxes(include_stopped: bool = False) -> list[str]:
     """Session IDs of every currently running openrbi.managed container —
     the minimal addition the control plane's orphan reconciliation job
     (app/core/orphan_reconciler.py) needs to compare live containers
@@ -26,6 +26,8 @@ async def list_active_sandboxes() -> list[str]:
     count_active_sessions() (used by /v1/nodes/self), not a change to that
     method's existing int return contract.
     """
+    if include_stopped:
+        return await get_provider().list_managed_session_ids()
     return await get_provider().list_active_session_ids()
 
 

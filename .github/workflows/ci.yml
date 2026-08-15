@@ -25,7 +25,7 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py scripts/fault-injection-probe.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
       - name: Type-check backend
@@ -262,9 +262,17 @@ jobs:
         run: sudo sh scripts/setup-network-isolation.sh
       - name: Run host-level security regression tests
         run: sh scripts/run-security-tests.sh
+      - name: Run destructive fault-injection acceptance
+        # This job owns an isolated ephemeral runner/Compose stack.  The
+        # script deliberately kills and restarts its containers and must
+        # never be pointed at a production deployment.
+        run: sh scripts/run-fault-injection-tests.sh
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs --tail=200
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
 
   # Roadmap Phase B / B1.2-B1.6, closing a gap noted since A5: the LDAP
   # test scripts were deliberately never wired into backend-integration-

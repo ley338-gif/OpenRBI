@@ -15,6 +15,7 @@ from app.models.browser_session import BrowserSession
 from app.models.enums import SecurityEventType, SessionStatus
 from app.models.security_event import SecurityEvent
 from app.services.sessions import create_session as create_session_service
+from app.services import sessions as session_service
 
 from tests.conftest import make_user
 
@@ -134,3 +135,33 @@ async def test_queued_session_without_container_is_not_marked_lost(db):
 
     await db.execute(text("DELETE FROM browser_sessions WHERE id = :id"), {"id": str(session_id)})
     await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_failed_startup_is_audited_and_cleans_up_container(db, monkeypatch):
+    """A failure after the real container has started must not leave either
+    an unaudited FAILED row or a managed container behind.
+    """
+    owner, _ = await make_user(db, role_name="USER")
+
+    async def fail_display_ready(*_args, **_kwargs):
+        raise session_agent_client.SessionAgentError("injected display readiness failure")
+
+    monkeypatch.setattr(session_service, "_wait_for_display_ready", fail_display_ready)
+
+    with pytest.raises(session_service.SessionServiceError):
+        await create_session_service(db, owner)
+    await db.commit()
+
+    session = await db.scalar(
+        select(BrowserSession).where(BrowserSession.user_id == owner.id).order_by(BrowserSession.created_at.desc())
+    )
+    assert session is not None and session.status == SessionStatus.FAILED
+    assert str(session.id) not in await session_agent_client.list_managed_sandboxes()
+    event = await db.scalar(
+        select(SecurityEvent).where(
+            SecurityEvent.session_id == session.id,
+            SecurityEvent.event_type == SecurityEventType.SESSION_START_FAILED,
+        )
+    )
+    assert event is not None

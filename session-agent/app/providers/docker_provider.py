@@ -355,6 +355,25 @@ class DockerSandboxProvider:
             if _SESSION_LABEL in c.labels
         ]
 
+    async def list_managed_session_ids(self) -> list[str]:
+        return await asyncio.to_thread(self._list_managed_session_ids_sync)
+
+    def _list_managed_session_ids_sync(self) -> list[str]:
+        """Every managed container, including exited/dead/created ones.
+
+        Capacity intentionally continues to count running containers only;
+        this broader inventory exists solely so reconciliation cannot miss
+        resources left behind by a hard kill or interrupted startup.
+        """
+        containers = self._client.containers.list(
+            all=True, filters={"label": f"{_MANAGED_LABEL}=true"}
+        )
+        return [
+            c.labels[_SESSION_LABEL]
+            for c in containers
+            if _SESSION_LABEL in c.labels
+        ]
+
     async def runtime_version(self) -> str:
         return await asyncio.to_thread(lambda: self._client.version().get("Version", "unknown"))
 
