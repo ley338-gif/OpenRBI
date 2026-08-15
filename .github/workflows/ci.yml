@@ -361,7 +361,13 @@ jobs:
   frontend-e2e-tests:
     name: Frontend E2E tests (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 minutes was too tight: every setup step (stack build/start,
+    # migrations, browser image, Playwright/Chromium install) completed
+    # well within budget on a real run, but the suite itself -- dozens of
+    # real portal-UI scenarios including a genuine noVNC-connected Secure
+    # Browser session -- got cancelled mid-run by the timeout, not by any
+    # actual test failure (see CI run 31905214589).
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
