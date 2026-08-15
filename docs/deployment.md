@@ -128,23 +128,25 @@ Produces a gzip'd `pg_dump` (built with `--clean --if-exists`, so restoring it i
 
 **Destructive** — overwrites the live database and quarantine storage. Asks for an explicit `yes` before doing anything. Stops `backend`/`session-agent` for the database restore (nothing should be querying mid-restore) and restarts them afterward. If the backup predates the current schema, run the [update procedure](#update-procedure)'s `alembic upgrade head` step afterward.
 
-**Restart `reverse-proxy` after a restore** — the same upstream-IP-caching issue [Troubleshooting](troubleshooting.md#reverse-proxy-returns-502-after-rebuilding-a-service) documents for rebuilds applies here too: `restore.sh` recreates `backend`/`session-agent`, so nginx is left holding their old IPs until it's restarted.
+`restore.sh` validates both compressed artifacts before requesting confirmation,
+stops application writers while replacing the data, restarts stopped services
+even if recovery fails, and restarts `reverse-proxy` after a successful restore
+to clear nginx's cached upstream addresses.
+
+### Automated restore test protocol
+
+Before an RC, run the current-schema recovery gate from a clean clone:
+
 ```bash
-docker compose restart reverse-proxy
+./scripts/run-backup-restore-acceptance.sh
 ```
 
-### Restore test protocol (Roadmap Phase A / A4)
-
-Run end to end against the live stack on 2026-08-12 (PostgreSQL 16.14, `docker-compose.yml`'s Compact profile):
-
-1. Captured baseline row counts: `SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM security_events), (SELECT count(*) FROM policies), (SELECT count(*) FROM quarantine_files);` → `4 | 92 | 0 | 1`.
-2. `./scripts/backup.sh` — produced a real `.sql.gz` + `.tar.gz` pair.
-3. `./scripts/restore.sh <the backup just taken>` — restored it back over the same running stack (a genuine full DROP/CREATE/COPY cycle, not a no-op skip; confirmed from the script's own `psql` output: `COPY 4` for `users`, `COPY 92` for `security_events`, matching step 1 exactly).
-4. Re-ran the same count query post-restore: `4 | 92 | 0 | 1` — unchanged.
-5. `reverse-proxy` needed the restart noted above (`502` until then) — a real, previously-undocumented interaction between this specific procedure and the existing upstream-IP-caching issue, not a new bug.
-6. Functional smoke test, not just row counts: `POST /auth/login` with a wrong password against the restored database returned the correct `{"detail":"invalid credentials"}` — the restored data is actually queryable by the running application, not just present in the table.
-
-This is the reproducible protocol referenced by the Phase A roadmap's A4 acceptance criterion; re-run it (with fresh counts and a fresh date) before treating an old result as still representative of the current schema.
+It records all application-table counts, backs up realistic users, policies,
+security events and quarantine data, deliberately corrupts both database and
+file state, restores them, compares exact records and bytes, then proves login,
+a real browser session, health, reverse proxy and both portals still work. See
+[Backup and restore acceptance](release/backup-restore-acceptance.md) for the
+full evidence contract.
 
 ### Clean-install release acceptance
 

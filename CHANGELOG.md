@@ -14,6 +14,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ### Added
 
+- V1-009 backup/restore acceptance: a required destructive CI gate now records
+  current-schema baseline counts and concrete user, policy, security-event and
+  quarantine evidence; runs the production backup; corrupts rows and bytes;
+  restores them; and proves exact data, login, sandbox lifecycle, health and
+  reverse-proxy behavior. Backups are written atomically and restore validates
+  both artifacts before mutation.
 - V1-008 fresh-install acceptance: a required CI gate now builds a dedicated Compact installation from source with fresh generated secrets and empty volumes, migrates it, builds the browser image, applies/verifies host network isolation, completes console-token ADMIN bootstrap and real TOTP enrollment/login, creates and logs in a USER, starts and terminates a real hardened browser sandbox, and requires all aggregate health components to be healthy. Cleanup removes its Compose project, volumes, generated `.env`, and firewall rules. `docs/release/fresh-install-acceptance.md` maps all 16 roadmap steps to observable criteria.
 - V1-007 release SBOMs: every release build now generates and validates a CycloneDX JSON SBOM for the backend, Session Agent, frontend, and browser sandbox image with pinned Syft tooling. Dry runs retain them as workflow artifacts; real publications attach them to the GitHub Release. Per-image metadata links each SBOM to its image identity/digest, and `SHA256SUMS` covers all JSON release artifacts. `docs/release/sbom.md` documents format, verification, and the explicit non-goal of image signing for v1.0.
 - V1-006 release pipeline: a manually dispatched, fail-closed GitHub workflow builds all four versioned Linux/amd64 images from an exact green `main` commit and records version, commit, build date, and content identity in downloadable release metadata. Dry run is the default and performs no publication. The implemented GHCR/GitHub Release path is additionally locked behind `OPENRBI_RELEASES_ENABLED=true`, publishes explicit version tags (never only `latest`), records registry manifest digests, and marks `-rc.N` releases as prereleases. `docs/release/publishing.md` defines the validation and activation protocol.

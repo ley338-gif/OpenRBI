@@ -14,7 +14,36 @@ fi
 DB_DUMP="$1"
 QUARANTINE_TAR="$2"
 POSTGRES_CONTAINER="${OPENRBI_POSTGRES_CONTAINER:-openrbi-postgres-1}"
-BACKEND_CONTAINER="${OPENRBI_BACKEND_CONTAINER:-openrbi-backend-1}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+APP_STOPPED=0
+
+compose() {
+    docker compose --project-directory "$REPO_ROOT" -f "$REPO_ROOT/docker-compose.yml" "$@"
+}
+
+restart_services() {
+    if [ "$APP_STOPPED" -eq 1 ]; then
+        compose start backend session-agent >/dev/null 2>&1 || true
+    fi
+}
+trap restart_services EXIT HUP INT TERM
+
+for archive in "$DB_DUMP" "$QUARANTINE_TAR"; do
+    if [ ! -r "$archive" ] || [ ! -s "$archive" ]; then
+        echo "backup artifact is missing, unreadable, or empty: $archive" >&2
+        exit 1
+    fi
+done
+gzip -t "$DB_DUMP"
+tar -tzf "$QUARANTINE_TAR" >/dev/null
+if ! tar -tzf "$QUARANTINE_TAR" | awk '
+    /^\// { exit 1 }
+    { count = split($0, parts, "/"); for (i = 1; i <= count; i++) if (parts[i] == "..") exit 1 }
+'; then
+    echo "quarantine archive contains an unsafe path" >&2
+    exit 1
+fi
 
 echo "About to restore:"
 echo "  database  <- $DB_DUMP"
@@ -27,18 +56,15 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 1
 fi
 
-# Quarantine storage is restored first, while the backend container is
-# still up — `docker exec` needs a running container, and stopping the app
-# process (below, for the database step) does not mean stopping the
-# container. The brief window where the app is up but its files are being
-# swapped underneath it is the accepted tradeoff; it's a short tar
-# extraction, not a long-running risk.
-echo "[restore] quarantine storage..."
-MSYS_NO_PATHCONV=1 docker exec -i "$BACKEND_CONTAINER" sh -c 'rm -rf /app/data/* /app/data/.[!.]*' 2>/dev/null || true
-MSYS_NO_PATHCONV=1 docker exec -i "$BACKEND_CONTAINER" tar -xzf - -C /app/data < "$QUARANTINE_TAR"
-
 echo "[restore] stopping backend/session-agent so nothing writes during the database restore..."
-docker compose stop backend session-agent >/dev/null
+compose stop backend session-agent >/dev/null
+APP_STOPPED=1
+
+echo "[restore] quarantine storage..."
+MSYS_NO_PATHCONV=1 compose run --rm --no-deps -T --entrypoint sh backend -c \
+    'find /app/data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
+MSYS_NO_PATHCONV=1 compose run --rm --no-deps -T --entrypoint tar backend \
+    -xzf - -C /app/data < "$QUARANTINE_TAR"
 
 echo "[restore] database..."
 # The dump was produced with --clean --if-exists (scripts/backup.sh), so
@@ -47,6 +73,9 @@ echo "[restore] database..."
 gunzip -c "$DB_DUMP" | docker exec -i "$POSTGRES_CONTAINER" psql -U openrbi -d openrbi
 
 echo "[restore] starting backend/session-agent..."
-docker compose start backend session-agent >/dev/null
+compose start backend session-agent >/dev/null
+APP_STOPPED=0
+compose restart reverse-proxy >/dev/null
+trap - EXIT HUP INT TERM
 
-echo "[restore] done. Run alembic upgrade if this backup predates the current schema (docs/deployment.md#update-procedure)."
+echo "[restore] done; reverse proxy restarted. Run alembic upgrade if this backup predates the current schema (docs/deployment.md#update-procedure)."
