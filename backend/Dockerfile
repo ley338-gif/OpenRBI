@@ -1,6 +1,6 @@
 FROM python:3.11-slim AS base
 
-ARG OPENRBI_VERSION=1.0.0
+ARG OPENRBI_VERSION=1.0.1-rc.1
 ARG OPENRBI_COMMIT_SHA=unknown
 ARG OPENRBI_BUILD_DATE=unknown
 LABEL org.opencontainers.image.title="OpenRBI Backend" \

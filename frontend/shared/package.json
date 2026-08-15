@@ -1,7 +1,7 @@
 {
   "name": "@openrbi/shared",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1-rc.1",
   "type": "module",
   "peerDependencies": {
     "react": "^19.2.8",
