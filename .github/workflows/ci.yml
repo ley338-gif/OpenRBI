@@ -16,10 +16,14 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            backend/pyproject.toml
-            session-agent/pyproject.toml
+            backend/requirements-dev.lock
+            session-agent/requirements-dev.lock
       - name: Install quality tools
-        run: python -m pip install "ruff==0.12.11" "mypy==1.17.1"
+        run: python -m pip install "ruff==0.12.11" "mypy==1.17.1" "uv==0.8.13"
+      - name: Check Python dependency locks are current
+        run: |
+          sh scripts/lock-python-dependencies.sh
+          git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
         run: ruff check backend/app backend/tests backend/migrations session-agent/app
       - name: Check component version synchronization
@@ -44,11 +48,11 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: ${{ matrix.component }}/pyproject.toml
+          cache-dependency-path: ${{ matrix.component }}/requirements.lock
       - name: Install pip-audit
         run: python -m pip install "pip-audit==2.9.0"
       - name: Audit resolved production dependencies
-        run: pip-audit "${{ matrix.component }}" --strict --progress-spinner off
+        run: pip-audit --requirement "${{ matrix.component }}/requirements.lock" --require-hashes --disable-pip --strict --progress-spinner off
 
   # Roadmap Phase A / A5: dependency & image scanning. Builds every image
   # OpenRBI actually ships (backend, session-agent, frontend, the browser

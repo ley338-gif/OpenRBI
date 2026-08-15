@@ -132,7 +132,8 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-docker exec -u root "$BACKEND_CONTAINER" pip install --quiet ".[dev]"
+docker exec -u root "$BACKEND_CONTAINER" \
+    pip install --quiet --require-hashes -r requirements-dev.lock
 # test_ldap_login_flow.py imports `from tests.conftest import ...`, same as
 # every other integration test file — it must live inside the real tests/
 # package structure, not be copied as a standalone file, or that import

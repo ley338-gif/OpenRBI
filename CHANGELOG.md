@@ -8,6 +8,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ### Fixed
 
+- V1-005 reproducible dependencies: backend and Session Agent production/dev dependency graphs are now committed as exact, hash-verified Linux/Python 3.11 lockfiles. Production images, integration runners, and `pip-audit` consume those locks; CI rejects stale Python locks. The frontend image now uses the committed workspace lock through `npm ci`. The pinned regeneration and review procedure is documented in `docs/release/dependencies.md`.
 - V1-001 LDAP CI stability: the HTTP-level LDAP runner no longer rewrites `.env` or invokes `docker compose up -d --build backend` mid-test. The latter was the exact command returning exit 137 in main CI; the available logs do not establish `OOMKilled`, so the failure is not labelled as OOM. The suite now starts a short-lived LDAP-enabled backend from the already-built Compose image, preserves the normal stack, emits backend logs on readiness failure, and removes both throwaway containers on every exit.
 - V1-002 release gates: CI now lint-checks all shipped Python code, tests, and migrations with Ruff; type-checks backend and Session Agent independently with mypy; audits resolved production dependencies for both Python components with `pip-audit`; and exposes a single fail-closed `Release gates` result that succeeds only when every required build, scan, integration, security, LDAP, lint, and type-check job succeeded. The authoritative gate mapping is documented in `docs/release/release-gates.md`.
 

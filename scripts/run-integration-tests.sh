@@ -24,7 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # doesn't change that. tests/ is deliberately not baked into the image
 # (backend/Dockerfile only COPYs app/migrations/alembic.ini) so the
 # production image stays free of test code; copy it in on demand instead.
-docker exec -u root "$BACKEND_CONTAINER" pip install --quiet ".[dev]"
+docker exec -u root "$BACKEND_CONTAINER" \
+    pip install --quiet --require-hashes -r requirements-dev.lock
 # MSYS_NO_PATHCONV avoids Git-Bash-for-Windows rewriting the container-side
 # /app path into a host path before it reaches docker; harmless elsewhere.
 # Copied files land root-owned with the source's normal (world-readable)
