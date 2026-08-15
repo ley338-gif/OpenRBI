@@ -26,6 +26,7 @@ class and its exact connection/bind logic instead of a second LDAP client
 path a real login would.
 """
 
+import os
 from dataclasses import dataclass, field
 
 import ldap
@@ -106,38 +107,41 @@ class LdapAuthProvider:
         self._config = config
 
     def _new_connection(self) -> "ldap.ldapobject.LDAPObject":
+        # RBI-POST-001: certificate verification must be explicit, not an
+        # implicit OpenLDAP-/Debian-default that a differently-configured
+        # host or library upgrade could silently change out from under us.
+        # "demand" fails the handshake (and therefore the whole bind) on
+        # any missing/invalid/untrusted server certificate — there is
+        # deliberately no code path that sets a weaker value. If
+        # ca_cert_file is set, it's an *additional* trust anchor (an
+        # internal/private CA) layered on top of the OS trust store, never
+        # a replacement for it.
+        #
+        # These are set via the LDAPTLS_* environment variables rather than
+        # ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT/CACERTFILE, ...):
+        # those options live in OpenLDAP's process-global TLS context, and
+        # in testing did not reliably apply per-connection even combined
+        # with OPT_X_TLS_NEWCTX (silently fell back to treating a correctly
+        # configured, correctly signed CA as untrusted). The environment
+        # variables are libldap's own documented, reliably-applied
+        # mechanism for the same settings. Safe to set on every call
+        # (not just once) because ca_cert_file is itself a single
+        # deployment-wide value (OPENRBI_LDAP_CA_CERT_FILE) — every
+        # LdapConnectionConfig built anywhere in this process (env path,
+        # DB-backed path, and the admin "test configuration" candidate
+        # path) already resolves to the same value, so there is no
+        # concurrent-request scenario where two different connections
+        # would need two different values here.
+        os.environ["LDAPTLS_REQCERT"] = "demand"
+        if self._config.ca_cert_file:
+            os.environ["LDAPTLS_CACERT"] = self._config.ca_cert_file
+        else:
+            os.environ.pop("LDAPTLS_CACERT", None)
+
         conn = ldap.initialize(self._config.server_uri)
         conn.set_option(ldap.OPT_REFERRALS, 0)
         conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
         conn.set_option(ldap.OPT_TIMEOUT, 5.0)
-
-        # RBI-POST-001: certificate verification must be explicit, not an
-        # implicit OpenLDAP-/Debian-default that a differently-configured
-        # host or library upgrade could silently change out from under us.
-        # OPT_X_TLS_DEMAND fails the handshake (and therefore the whole
-        # bind) on any missing/invalid/untrusted server certificate — there
-        # is deliberately no code path that sets a weaker OPT_X_TLS_*REQUIRE
-        # value. If ca_cert_file is set, it's an *additional* trust anchor
-        # (an internal/private CA) layered on top of the OS trust store,
-        # never a replacement for it.
-        #
-        # These two MUST be set on the ldap *module* (global), not on the
-        # connection object — OpenLDAP's TLS context options live in a
-        # process-global struct, not per-handle; calling conn.set_option()
-        # for them raises "ValueError: option error". This is safe to do
-        # unconditionally here (not just once at import time) because
-        # ca_cert_file is itself a single deployment-wide setting
-        # (OPENRBI_LDAP_CA_CERT_FILE) — every LdapConnectionConfig built
-        # anywhere in this process (env path, DB-backed path, and the
-        # admin "test configuration" candidate path) already resolves to
-        # the same value, so there is no concurrent-request scenario where
-        # two different connections would need two different global values.
-        ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
-        if self._config.ca_cert_file:
-            ldap.set_option(ldap.OPT_X_TLS_CACERTFILE, self._config.ca_cert_file)
-        # Per-handle: forces *this* connection to pick up the global TLS
-        # options just set, rather than whatever context existed before.
-        conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
 
         # Config-load-time validation (app/config.py, and app/services/
         # ldap_config_service.py for the DB-backed path) already refuses a
