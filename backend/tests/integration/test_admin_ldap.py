@@ -17,10 +17,12 @@ import os
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.crypto import decrypt_secret
+from app.models.enums import SecurityEventType
 from app.models.ldap_config import LDAP_CONFIG_ID, LdapConfig
+from app.models.security_event import SecurityEvent
 from tests.conftest import login_with_mfa_enrollment, make_user
 
 LDAP_SERVER_URI = os.environ.get("OPENRBI_LDAP_SERVER_URI", "")
@@ -97,6 +99,24 @@ async def test_admin_can_read_empty_config(db, client):
     assert body["enabled"] is False
     assert body["bind_password_configured"] is False
     assert "bind_password" not in body
+
+
+@pytest.mark.asyncio
+async def test_reading_ldap_config_is_audited(db, client):
+    # RBI-POST-017: GET /admin/ldap/config is a sensitive config
+    # disclosure and must be audited like every other LDAP config action.
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+
+    r = await client.get("/admin/ldap/config", cookies={"openrbi_session": cookie})
+    assert r.status_code == 200, r.text
+
+    result = await db.execute(
+        select(SecurityEvent).where(
+            SecurityEvent.user_id == admin.id, SecurityEvent.event_type == SecurityEventType.LDAP_CONFIG_READ
+        )
+    )
+    assert result.scalars().first() is not None
 
 
 @pytest.mark.asyncio

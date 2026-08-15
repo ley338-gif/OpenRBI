@@ -12,6 +12,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 - Added CSRF protection (signed double-submit cookie) as a second, independent layer alongside `SameSite=Lax` on the session cookie — every state-changing request now requires a matching `X-CSRF-Token` header, enforced by new middleware covering every listener mode and both portals via the shared `ApiClient`. Requires a new `OPENRBI_CSRF_SECRET_KEY` secret (RBI-POST-003).
 - Fixed a check-then-update race in MFA recovery code redemption (`SELECT ... FOR UPDATE`) — two concurrent requests replaying the same single-use recovery code could previously both succeed (RBI-POST-015).
 - Added a Content-Security-Policy header (`default-src 'self'`, no `'unsafe-eval'`, no inline scripts) to both the plain-HTTP and TLS reverse-proxy configs (RBI-POST-022).
+- `GET /admin/ldap/config` (a sensitive config disclosure) is now audited (`LDAP_CONFIG_READ`), matching every other LDAP configuration action (RBI-POST-017).
 
 ### Documentation
 

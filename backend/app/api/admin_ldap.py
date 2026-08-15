@@ -52,8 +52,17 @@ def _test_result_response(result: LdapTestResult) -> LdapTestResponse:
 
 
 @router.get("/config", response_model=LdapConfigResponse)
-async def get_config(db: AsyncSession = Depends(get_db)) -> LdapConfigResponse:
+async def get_config(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> LdapConfigResponse:
+    # RBI-POST-017: reading the LDAP configuration (server URI, base DN,
+    # bind DN, group-role mapping) is a sensitive config disclosure —
+    # audited the same way every other LDAP configuration action already
+    # is (LdapConfigResponse never includes the bind password itself, so
+    # no secret value ever ends up in this event).
     row = await get_ldap_config_row(db)
+    await record_security_event(db, SecurityEventType.LDAP_CONFIG_READ, user_id=current_user.id)
+    await db.commit()
     if row is None:
         return LdapConfigResponse.empty()
     return LdapConfigResponse.from_model(row)
