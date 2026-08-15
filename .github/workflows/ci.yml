@@ -25,7 +25,7 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
       - name: Type-check backend
@@ -154,6 +154,25 @@ jobs:
         run: npm ci
       - working-directory: frontend
         run: npm audit --audit-level=critical
+      - name: Build portals and reject backend secret identifiers in the client bundle
+        working-directory: frontend
+        run: |
+          npm run build --workspace=user
+          npm run build --workspace=admin
+          if grep -R -E 'OPENRBI_(AGENT_API_TOKEN|SESSION_AGENT_API_TOKEN|TOTP_SECRET_ENCRYPTION_KEY|DATABASE_URL)|POSTGRES_PASSWORD' user/dist admin/dist; then
+            echo "A backend-only secret identifier reached the frontend bundle" >&2
+            exit 1
+          fi
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan the complete Git history
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0 git /repo --no-banner --redact=100
 
   # Roadmap Phase A / A3: runs the existing backend/tests/ pytest suite
   # (previously only ever run manually via scripts/run-integration-tests.sh)
@@ -324,6 +343,7 @@ jobs:
       - upgrade-acceptance
       - image-scan
       - dependency-scan-frontend
+      - secret-scan
       - backend-integration-tests
       - ldap-integration-tests
     runs-on: ubuntu-latest
@@ -337,6 +357,7 @@ jobs:
           UPGRADE_ACCEPTANCE: ${{ needs.upgrade-acceptance.result }}
           IMAGE_SCAN: ${{ needs.image-scan.result }}
           FRONTEND_DEPENDENCIES: ${{ needs.dependency-scan-frontend.result }}
+          SECRET_SCAN: ${{ needs.secret-scan.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration-tests.result }}
           LDAP_INTEGRATION: ${{ needs.ldap-integration-tests.result }}
         run: |
@@ -348,6 +369,7 @@ jobs:
             "$UPGRADE_ACCEPTANCE" \
             "$IMAGE_SCAN" \
             "$FRONTEND_DEPENDENCIES" \
+            "$SECRET_SCAN" \
             "$BACKEND_INTEGRATION" \
             "$LDAP_INTEGRATION"; do
             test "$result" = "success"

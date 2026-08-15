@@ -20,7 +20,7 @@ from app.api.schemas.setup import (
     SetupMfaConfirmResponse,
     SetupStatusResponse,
 )
-from app.config import get_settings
+from app.core.session_cookies import set_session_cookie
 from app.core.sessions import create_session, delete_mfa_pending, get_mfa_pending
 from app.db.session import get_db
 from app.models.user import User
@@ -34,7 +34,6 @@ from app.services.setup_service import (
 )
 
 router = APIRouter(prefix="/setup", tags=["setup"])
-settings = get_settings()
 
 
 @router.get("/status", response_model=SetupStatusResponse)
@@ -89,14 +88,7 @@ async def confirm_mfa(
     await delete_mfa_pending(payload.mfa_token)
 
     session_token = await create_session(user.id, "ADMIN")
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.environment != "development",
-        samesite="lax",
-    )
+    set_session_cookie(response, session_token)
 
     await db.commit()
     return SetupMfaConfirmResponse(status="ok", recovery_codes=codes)

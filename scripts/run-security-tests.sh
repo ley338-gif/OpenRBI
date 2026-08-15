@@ -33,8 +33,11 @@ set -eu
 BACKEND_CONTAINER="${OPENRBI_BACKEND_CONTAINER:-openrbi-backend-1}"
 SESSION_AGENT_CONTAINER="${OPENRBI_SESSION_AGENT_CONTAINER:-openrbi-session-agent-1}"
 POSTGRES_CONTAINER="${OPENRBI_POSTGRES_CONTAINER:-openrbi-postgres-1}"
+REDIS_CONTAINER="${OPENRBI_REDIS_CONTAINER:-openrbi-redis-1}"
 CLAMAV_CONTAINER="${OPENRBI_CLAMAV_CONTAINER:-openrbi-clamav-1}"
 BROWSER_PLANE_NETWORK="${OPENRBI_BROWSER_PLANE_NETWORK:-openrbi_browser-plane}"
+CONTROL_PLANE_NETWORK="${OPENRBI_CONTROL_PLANE_NETWORK:-openrbi_control-plane}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 pass=0
 fail=0
@@ -68,6 +71,39 @@ check "browser-plane cannot reach the cloud metadata address" 1 \
 check "browser-plane cannot reach an arbitrary RFC1918 address" 1 \
     docker run --rm --network "$BROWSER_PLANE_NETWORK" curlimages/curl:8.10.1 -sf --max-time 3 -o /dev/null http://10.0.0.1
 
+check "browser-plane loopback remains container-local and cannot reach the host" 1 \
+    docker run --rm --network "$BROWSER_PLANE_NETWORK" curlimages/curl:8.10.1 -sf --max-time 3 -o /dev/null http://127.0.0.1:8080
+
+control_ip() {
+    docker inspect "$1" --format "{{with index .NetworkSettings.Networks \"$CONTROL_PLANE_NETWORK\"}}{{.IPAddress}}{{end}}"
+}
+
+BACKEND_CONTROL_IP=$(control_ip "$BACKEND_CONTAINER")
+AGENT_CONTROL_IP=$(control_ip "$SESSION_AGENT_CONTAINER")
+REDIS_CONTROL_IP=$(control_ip "$REDIS_CONTAINER")
+CLAMAV_CONTROL_IP=$(control_ip "$CLAMAV_CONTAINER")
+for target in \
+    "$BACKEND_CONTROL_IP:8000:backend/admin API" \
+    "$AGENT_CONTROL_IP:8100:Session Agent" \
+    "$REDIS_CONTROL_IP:6379:Redis" \
+    "$CLAMAV_CONTROL_IP:3310:ClamAV"; do
+    address=${target%%:*}
+    rest=${target#*:}
+    port=${rest%%:*}
+    label=${rest#*:}
+    check "browser-plane cannot reach $label" 1 \
+        docker run --rm --network "$BROWSER_PLANE_NETWORK" curlimages/curl:8.10.1 \
+            -s --connect-timeout 2 --max-time 3 "telnet://$address:$port"
+done
+
+if [ "$(docker network inspect "$BROWSER_PLANE_NETWORK" --format '{{.EnableIPv6}}')" = "false" ]; then
+    echo "PASS: browser-plane has IPv6 disabled, so no IPv6 egress bypass exists"
+    pass=$((pass + 1))
+else
+    echo "FAIL: browser-plane unexpectedly has IPv6 enabled"
+    fail=$((fail + 1))
+fi
+
 echo "== 2. Isolate actually removes all Docker networks from the sandbox =="
 
 TEST_SESSION_ID=$(docker exec "$BACKEND_CONTAINER" python -c "import uuid; print(uuid.uuid4())")
@@ -85,11 +121,60 @@ async def main():
     )
     await provider.create_session('$TEST_SESSION_ID', config)
     await provider.start_session('$TEST_SESSION_ID')
-    await provider.isolate_session('$TEST_SESSION_ID')
 
 asyncio.run(main())
 "
 TEST_CONTAINER_NAME="openrbi-session-$TEST_SESSION_ID"
+
+SANDBOX_USER=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{.Config.User}}')
+SANDBOX_MOUNTS=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}')
+SANDBOX_CAPS=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{json .HostConfig.CapDrop}}')
+SANDBOX_SECURITY=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{json .HostConfig.SecurityOpt}}')
+SANDBOX_PRIVILEGED=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{.HostConfig.Privileged}}')
+SANDBOX_READONLY=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{.HostConfig.ReadonlyRootfs}}')
+
+if [ -n "$SANDBOX_USER" ] && [ "$SANDBOX_USER" != "0" ] && [ "$SANDBOX_USER" != "root" ]; then
+    echo "PASS: sandbox runtime user is non-root ($SANDBOX_USER)"
+    pass=$((pass + 1))
+else
+    echo "FAIL: sandbox runtime user is root or unset ($SANDBOX_USER)"
+    fail=$((fail + 1))
+fi
+case "$SANDBOX_MOUNTS" in
+    *docker.sock*|*quarantine*)
+        echo "FAIL: sandbox exposes Docker socket or quarantine storage: $SANDBOX_MOUNTS"
+        fail=$((fail + 1))
+        ;;
+    *)
+        echo "PASS: sandbox exposes neither Docker socket nor quarantine storage"
+        pass=$((pass + 1))
+        ;;
+esac
+if [ "$SANDBOX_PRIVILEGED" = "false" ] && [ "$SANDBOX_READONLY" = "true" ] \
+    && [ "$SANDBOX_CAPS" = '["ALL"]' ]; then
+    echo "PASS: sandbox is unprivileged, read-only, and drops all capabilities"
+    pass=$((pass + 1))
+else
+    echo "FAIL: sandbox hardening mismatch (privileged=$SANDBOX_PRIVILEGED readonly=$SANDBOX_READONLY caps=$SANDBOX_CAPS)"
+    fail=$((fail + 1))
+fi
+case "$SANDBOX_SECURITY" in
+    *no-new-privileges*)
+        echo "PASS: sandbox enforces no-new-privileges"
+        pass=$((pass + 1))
+        ;;
+    *)
+        echo "FAIL: sandbox lacks no-new-privileges: $SANDBOX_SECURITY"
+        fail=$((fail + 1))
+        ;;
+esac
+
+docker exec "$SESSION_AGENT_CONTAINER" python -c "
+import asyncio
+from app.providers.factory import get_provider
+
+asyncio.run(get_provider().isolate_session('$TEST_SESSION_ID'))
+"
 NETWORKS=$(docker inspect "$TEST_CONTAINER_NAME" --format '{{len .NetworkSettings.Networks}}')
 if [ "$NETWORKS" = "0" ]; then
     echo "PASS: isolated sandbox has zero attached networks"
@@ -102,38 +187,42 @@ docker rm -f "$TEST_CONTAINER_NAME" >/dev/null 2>&1 || true
 
 echo "== 3. Fail-closed: scanner outage blocks release =="
 
+docker cp "$SCRIPT_DIR/security-release-review.py" "$BACKEND_CONTAINER:/tmp/security-release-review.py"
+CLEAN_RESULT=$(docker exec -e PYTHONPATH=/app "$BACKEND_CONTAINER" \
+    python /tmp/security-release-review.py clean)
+EICAR_RESULT=$(docker exec -e PYTHONPATH=/app "$BACKEND_CONTAINER" \
+    python /tmp/security-release-review.py eicar)
+echo "$CLEAN_RESULT" | grep -q '"scanner_status": "CLEAN"'
+echo "$CLEAN_RESULT" | grep -q '"status": "RELEASED"'
+echo "$EICAR_RESULT" | grep -q '"scanner_status": "INFECTED"'
+echo "$EICAR_RESULT" | grep -q '"status": "QUARANTINED"'
+echo "PASS: benign file is released only after a real clean scan with SHA-256 evidence"
+pass=$((pass + 1))
+echo "PASS: real EICAR detection quarantines the file and creates malware evidence"
+pass=$((pass + 1))
+
 docker stop "$CLAMAV_CONTAINER" >/dev/null
 # Give clamd's own TCP listener time to actually go away rather than racing
 # the stop.
 sleep 2
 
-SCAN_RESULT=$(docker exec "$BACKEND_CONTAINER" python -c "
-import asyncio
-from app.core import clamav_client
-
-async def main():
-    try:
-        await clamav_client.scan(b'harmless test content, not a real sample')
-        print('SCANNED_OK')
-    except clamav_client.ClamAVError:
-        print('SCANNER_UNAVAILABLE')
-
-asyncio.run(main())
-")
+if SCAN_RESULT=$(docker exec -e PYTHONPATH=/app "$BACKEND_CONTAINER" \
+    python /tmp/security-release-review.py outage); then
+    SCAN_RC=0
+else
+    SCAN_RC=$?
+fi
 docker start "$CLAMAV_CONTAINER" >/dev/null
 sleep 3
-if [ "$SCAN_RESULT" = "SCANNER_UNAVAILABLE" ]; then
-    echo "PASS: scanner outage is detected as an error, never a silent clean result"
+if [ "$SCAN_RC" -eq 0 ] \
+    && echo "$SCAN_RESULT" | grep -q '"scanner_status": "ERROR"' \
+    && echo "$SCAN_RESULT" | grep -q '"status": "QUARANTINED"'; then
+    echo "PASS: scanner outage keeps AUTO_RELEASE content quarantined and audited"
     pass=$((pass + 1))
 else
-    echo "FAIL: expected SCANNER_UNAVAILABLE, got: $SCAN_RESULT"
+    echo "FAIL: scanner-outage pipeline probe failed (exit=$SCAN_RC): $SCAN_RESULT"
     fail=$((fail + 1))
 fi
-# app/services/scanning.py's scan_and_finalize maps exactly this
-# ClamAVError into QUARANTINED/ERROR regardless of the file's policy verdict
-# (verified directly against ClamAV in Phase 14 with a real EICAR string,
-# see CHANGELOG.md) — this script re-verifies the outage-detection
-# precondition that guarantee depends on.
 
 echo "== 4. Sandbox-to-sandbox isolation =="
 

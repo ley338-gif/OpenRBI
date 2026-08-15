@@ -9,6 +9,11 @@ import pyotp
 import pytest
 from sqlalchemy import select, text
 
+from fastapi import Response
+
+from app.config import Settings
+from app.core.redis import get_redis
+from app.core.session_cookies import set_session_cookie
 from app.core.sessions import clear_login_failures
 from app.models.enums import SecurityEventType
 from app.models.mfa import RecoveryCode
@@ -62,6 +67,36 @@ async def test_admin_full_mfa_enrollment_grants_real_session(db, client):
     assert r.status_code == 200
     assert r.json()["username"] == user.username
     assert r.json()["role"] == "ADMIN"
+
+
+@pytest.mark.asyncio
+async def test_production_session_cookie_has_required_security_attributes():
+    response = Response()
+    config = Settings.model_construct(
+        environment="production",
+        session_cookie_name="openrbi_session",
+        session_ttl_seconds=28800,
+    )
+    set_session_cookie(response, "opaque-test-token", config)
+
+    set_cookie = response.headers["set-cookie"].lower()
+    assert "httponly" in set_cookie
+    assert "secure" in set_cookie
+    assert "samesite=lax" in set_cookie
+    assert "path=/" in set_cookie
+    assert "max-age=28800" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_expired_server_side_session_is_rejected(db, client):
+    user, password = await make_user(db, role_name="USER")
+    r = await client.post("/auth/login", json={"username": user.username, "password": password})
+    cookie = r.cookies["openrbi_session"]
+    await get_redis().expire(f"session:{cookie}", 0)
+
+    r = await client.get("/auth/me", cookies={"openrbi_session": cookie})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "session expired or invalid"
 
 
 @pytest.mark.asyncio

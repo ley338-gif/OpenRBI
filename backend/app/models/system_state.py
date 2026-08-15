@@ -48,3 +48,4 @@ class SystemState(Base):
     # access. Never the plaintext token, never reused as a session or MFA
     # token.
     setup_token_hash: Mapped[str | None] = mapped_column(String(255))
+    setup_token_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

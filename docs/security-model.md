@@ -50,6 +50,10 @@ Frontend-specific rules enforced by both portals: no secrets, Session Agent toke
 
 `POST /auth/login` now enforces a per-username lockout (`app/core/sessions.py`: `is_login_locked`/`record_login_failure`/`clear_login_failures`, Redis-backed, 15-minute window, 10 attempts) distinct from the Phase 4 MFA-challenge attempt cap — that one only ever engages *after* a password has already been guessed correctly. Keyed by username rather than IP, since an attacker behind NAT or a botnet defeats a per-IP limit trivially, but the account being guessed at is fixed. A lockout hit returns a generic `429` (not a distinct error shape that would leak whether the username exists) and records a `LOGIN_LOCKED` security event, separate from the per-attempt `USER_LOGIN_FAILED` events, so a reviewer can see an actual lockout rather than inferring one from a burst of failures. Verified end-to-end: 10 wrong-password attempts against a real account, then an 11th attempt with the *correct* password still returns 429 until the window clears.
 
+Password-bearing local identities are authoritative for their exact username. A wrong local password never falls through to LDAP, because a same-named directory identity must not inherit a locally configured role. LDAP is attempted only for unknown usernames or rows explicitly provisioned as LDAP-only (`password_hash IS NULL`). Disabled identities fail closed after either provider and never receive a session.
+
+The unauthenticated first-run setup token is console-only, stored as an Argon2 hash with its issuance timestamp, and expires after 30 minutes by default (`OPENRBI_SETUP_TOKEN_TTL_SECONDS`). Backend restart before initialization invalidates it and issues a fresh token; successful initialization clears it permanently.
+
 ## Network isolation
 
 ### Topology

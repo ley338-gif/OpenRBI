@@ -6,6 +6,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ## [Unreleased]
 
+### Security
+
+- Made password-bearing local identities authoritative over same-named LDAP identities, closing a collision path that could otherwise authenticate a local privileged role with a directory password.
+- Added a persisted, configurable 30-minute expiry for the console-issued first-run setup token.
+- Centralized session-cookie issuance/removal and added coverage for `Secure`, `HttpOnly`, `SameSite=Lax`, path, max-age, and server-side expiry.
+- Expanded the live security gate across sandbox hardening, control-plane reachability, IPv6 bypass prevention, benign/EICAR/outage file outcomes, upload fail-closed behavior, complete-history secret scanning, and frontend bundle secret checks.
+
 ### Fixed
 
 - V1-005 reproducible dependencies: backend and Session Agent production/dev dependency graphs are now committed as exact, hash-verified Linux/Python 3.11 lockfiles. Production images, integration runners, and `pip-audit` consume those locks; CI rejects stale Python locks. The frontend image now uses the committed workspace lock through `npm ci`. The pinned regeneration and review procedure is documented in `docs/release/dependencies.md`.

@@ -23,6 +23,7 @@ from app.core.sessions import (
     revoke_other_sessions_for_user,
 )
 from app.core.security import hash_password, verify_password
+from app.core.session_cookies import clear_session_cookie, set_session_cookie
 from app.db.session import get_db
 from app.models.enums import MFA_MANDATORY_ROLES, SecurityEventType
 from app.models.role import Role
@@ -78,7 +79,18 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
     if auth_result.success:
         user = await db.get(User, auth_result.matched_user_id)
     else:
-        ldap_config = await get_effective_ldap_config(db)
+        matched_user = (
+            await db.get(User, auth_result.matched_user_id)
+            if auth_result.matched_user_id is not None
+            else None
+        )
+        # A password-bearing local identity is authoritative for its exact
+        # username. Falling through to LDAP on a wrong local password would
+        # let a same-named directory identity inherit the local account's
+        # configured role (including ADMIN). LDAP-only rows have no local
+        # hash and continue through the directory path as intended.
+        local_identity_is_authoritative = matched_user is not None and matched_user.password_hash is not None
+        ldap_config = None if local_identity_is_authoritative else await get_effective_ldap_config(db)
         if ldap_config is not None:
             ldap_result: AuthResult = await LdapAuthProvider(ldap_config).authenticate(
                 db, payload.username, payload.password
@@ -89,7 +101,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
                     db, payload.username, ldap_result.ldap_group_dns or [], group_role_mapping
                 )
 
-    if user is None:
+    if user is None or not user.is_active:
         await record_login_failure(payload.username)
         await record_security_event(
             db,
@@ -128,14 +140,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         return LoginResponse(status="mfa_enrollment_required", mfa_token=mfa_token)
 
     session_token = await create_session(user.id, role.name)
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.environment != "development",
-        samesite="lax",
-    )
+    set_session_cookie(response, session_token)
 
     await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
     await db.commit()
@@ -150,7 +155,7 @@ async def logout(
 ) -> dict[str, str]:
     if session_token is not None:
         await delete_session(session_token)
-    response.delete_cookie(settings.session_cookie_name)
+    clear_session_cookie(response)
     return {"status": "ok"}
 
 
@@ -222,14 +227,7 @@ async def mfa_verify(
 
     role = await db.get(Role, user.role_id)
     session_token = await create_session(user.id, role.name)
-    response.set_cookie(
-        settings.session_cookie_name,
-        session_token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.environment != "development",
-        samesite="lax",
-    )
+    set_session_cookie(response, session_token)
 
     await record_security_event(db, SecurityEventType.USER_LOGIN, user_id=user.id)
     await db.commit()
