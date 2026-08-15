@@ -38,6 +38,20 @@ pytestmark = pytest.mark.skipif(
 
 
 def _config_from_env(**overrides) -> LdapConnectionConfig:
+    # RBI-POST-001: unlike every other setting here, TLS trust
+    # (OPENRBI_LDAP_CA_CERT_FILE) is NOT part of LdapConnectionConfig and
+    # can't be varied per-test via an override — app/core/auth_providers/
+    # ldap.py reads it once, at module-import time, into the
+    # LDAPTLS_CACERT environment variable, because python-ldap's
+    # underlying OpenLDAP C library only honors that variable if it's set
+    # before the library is first loaded/used in the process; a later
+    # os.environ mutation (even before the first connection) is silently
+    # ignored. That's why this file's CA-trust scenarios
+    # (test_untrusted_certificate_is_rejected_without_a_configured_ca,
+    # test_wrong_ca_cert_is_rejected) are each run as their own separate
+    # `pytest -k` invocation with a different OPENRBI_LDAP_CA_CERT_FILE set
+    # on the process from the start (scripts/run-ldap-tests.sh) rather
+    # than as ordinary test functions sharing this process's config.
     config = LdapConnectionConfig(
         server_uri=os.environ["OPENRBI_LDAP_SERVER_URI"],
         use_starttls=os.environ.get("OPENRBI_LDAP_USE_STARTTLS", "true").lower() == "true",
@@ -54,6 +68,10 @@ def _config_from_env(**overrides) -> LdapConnectionConfig:
 
 @pytest.mark.asyncio
 async def test_correct_credentials_succeed():
+    # Also the RBI-POST-001 "correctly configured internal CA succeeds"
+    # acceptance case — this whole file's default process env
+    # (scripts/run-ldap-tests.sh) has OPENRBI_LDAP_CA_CERT_FILE pointed at
+    # the throwaway server's actual issuing CA.
     provider = LdapAuthProvider(_config_from_env())
     result = await provider.authenticate(None, TEST_USERNAME, TEST_PASSWORD)
     assert result.success is True
@@ -128,6 +146,38 @@ async def test_test_connection_reports_each_step_and_discovers_groups():
     assert "Group resolution" in step_names
     assert all(s.ok for s in result.steps)
     assert result.groups_discovered is not None
+
+
+@pytest.mark.asyncio
+async def test_untrusted_certificate_is_rejected_without_a_configured_ca():
+    # RBI-POST-001 acceptance: this throwaway server's certificate is
+    # self-signed and not in the OS trust store — run via scripts/
+    # run-ldap-tests.sh as its own process with OPENRBI_LDAP_CA_CERT_FILE
+    # deliberately left unset (the same as a real deployment that never
+    # configured one), so the TLS handshake must fail closed exactly like
+    # any other connection failure, never silently succeed because "it's
+    # just a test server". See _config_from_env's docstring for why this
+    # can't be expressed as a per-test override instead.
+    if os.environ.get("OPENRBI_LDAP_CA_CERT_FILE"):
+        pytest.skip("this process has a CA configured — run via scripts/run-ldap-tests.sh's dedicated invocation")
+    provider = LdapAuthProvider(_config_from_env())
+    result = await provider.authenticate(None, TEST_USERNAME, TEST_PASSWORD)
+    assert result.success is False
+
+
+@pytest.mark.asyncio
+async def test_wrong_ca_cert_is_rejected():
+    # RBI-POST-001 acceptance: configuring *a* CA file is not the same as
+    # configuring the *right* CA file — run via scripts/run-ldap-tests.sh
+    # as its own process with OPENRBI_LDAP_CA_CERT_FILE pointed at a CA
+    # unrelated to the server's actual issuing CA, proving the configured
+    # CA is verified, not merely present-checked.
+    expected_wrong_ca = os.environ.get("OPENRBI_LDAP_WRONG_CA_CERT_FILE", "")
+    if not expected_wrong_ca or os.environ.get("OPENRBI_LDAP_CA_CERT_FILE") != expected_wrong_ca:
+        pytest.skip("this process isn't configured with the wrong-CA scenario — run via scripts/run-ldap-tests.sh")
+    provider = LdapAuthProvider(_config_from_env())
+    result = await provider.authenticate(None, TEST_USERNAME, TEST_PASSWORD)
+    assert result.success is False
 
 
 @pytest.mark.asyncio

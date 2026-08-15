@@ -32,6 +32,12 @@ def config_from_settings(settings: Settings) -> LdapConnectionConfig:
 
 
 def config_from_row(row: LdapConfig, bind_password: str) -> LdapConnectionConfig:
+    # No ca_cert_file field here: TLS trust (RBI-POST-001,
+    # OPENRBI_LDAP_CA_CERT_FILE) is a deployment-level, process-wide
+    # setting applied once at import time in app/core/auth_providers/
+    # ldap.py, not admin-portal-editable per-row state — it applies
+    # identically regardless of whether the DB row or the env path is the
+    # effective config.
     return LdapConnectionConfig(
         server_uri=row.server_uri,
         use_starttls=row.use_starttls,

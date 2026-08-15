@@ -26,12 +26,31 @@ class and its exact connection/bind logic instead of a second LDAP client
 path a real login would.
 """
 
+import os
 from dataclasses import dataclass, field
 
-import ldap
-import ldap.filter
+from app.config import get_settings
 
-from app.core.auth_providers.base import AuthResult
+# RBI-POST-001: these must be set before `import ldap` below, not merely
+# before any connection is opened. In testing, python-ldap's underlying
+# OpenLDAP C library reads LDAPTLS_REQCERT/LDAPTLS_CACERT once, at import/
+# first-load time — an os.environ mutation made later at connection time
+# (even before ldap.initialize()) was silently ignored, with TLS
+# certificate verification falling back to whatever was in the
+# environment at import instead. "demand" is a fixed, unconditional
+# policy — there is no setting anywhere that weakens it. ca_cert_file is
+# itself a single deployment-wide value (OPENRBI_LDAP_CA_CERT_FILE) fixed
+# for the lifetime of this process, so reading it once here, at the only
+# point that's actually reliable, is correct — not merely a workaround.
+os.environ["LDAPTLS_REQCERT"] = "demand"
+_ca_cert_file = get_settings().ldap_ca_cert_file
+if _ca_cert_file:
+    os.environ["LDAPTLS_CACERT"] = _ca_cert_file
+
+import ldap  # noqa: E402 - see comment above; must follow the LDAPTLS_* env setup
+import ldap.filter  # noqa: E402
+
+from app.core.auth_providers.base import AuthResult  # noqa: E402
 
 
 @dataclass
@@ -102,10 +121,25 @@ class LdapAuthProvider:
         self._config = config
 
     def _new_connection(self) -> "ldap.ldapobject.LDAPObject":
+        # RBI-POST-001: certificate verification must be explicit, not an
+        # implicit OpenLDAP-/Debian-default that a differently-configured
+        # host or library upgrade could silently change out from under us.
+        # "demand" fails the handshake (and therefore the whole bind) on
+        # any missing/invalid/untrusted server certificate — there is
+        # deliberately no code path that sets a weaker value. If
+        # ca_cert_file is set, it's an *additional* trust anchor (an
+        # internal/private CA) layered on top of the OS trust store, never
+        # a replacement for it.
+        #
+        # Actual enforcement is the module-level LDAPTLS_REQCERT/
+        # LDAPTLS_CACERT setup above, applied once at import time — see
+        # that comment for why it can't be done reliably here, per
+        # connection, at all.
         conn = ldap.initialize(self._config.server_uri)
         conn.set_option(ldap.OPT_REFERRALS, 0)
         conn.set_option(ldap.OPT_NETWORK_TIMEOUT, 5.0)
         conn.set_option(ldap.OPT_TIMEOUT, 5.0)
+
         # Config-load-time validation (app/config.py, and app/services/
         # ldap_config_service.py for the DB-backed path) already refuses a
         # plain ldap:// URI with StartTLS disabled — this is the

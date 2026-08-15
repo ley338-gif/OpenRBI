@@ -23,10 +23,15 @@ LDAP_ADMIN_PASSWORD="test-admin-password-throwaway"
 TEST_USER_USERNAME="pytest_ldapadmin"
 TEST_USER_PASSWORD="PytestLdapAdmin2026!"
 
+TEST_CA_FILE="$SCRIPT_DIR/../test-ldap-ca.crt"
+CERT_DIR="$SCRIPT_DIR/../.ldap-test-certs-integration"
+
 cleanup() {
     echo "[ldap-integration-tests] removing throwaway containers..."
     docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
     docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
+    rm -f "$TEST_CA_FILE"
+    rm -rf "$CERT_DIR"
 }
 trap cleanup EXIT
 
@@ -53,14 +58,43 @@ wait_for_ldap() {
 
 echo "[ldap-integration-tests] starting throwaway LDAPS server..."
 docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$LDAP_CONTAINER" \
+# See scripts/run-ldap-tests.sh's comment on this same block: osixia/
+# openldap:1.5.0's own built-in cert generation signs against a CA baked
+# into the image at build time (2021), which has since expired — relying
+# on it here would fail every run with a real (correctly rejected)
+# expired-certificate error. Generate our own short-lived CA + server cert
+# on the runner and hand it to the container via LDAP_TLS_*_FILENAME
+# before first start instead. --hostname must still agree with the
+# cert's CN/SAN and with the ldaps:// URI used to connect below.
+rm -rf "$CERT_DIR"
+mkdir -p "$CERT_DIR"
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
+    -keyout "$CERT_DIR/ca.key" -out "$CERT_DIR/ca.crt" \
+    -subj "/CN=OpenRBI Test CA" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes \
+    -keyout "$CERT_DIR/ldap.key" -out "$CERT_DIR/ldap.csr" \
+    -subj "/CN=$LDAP_CONTAINER" >/dev/null 2>&1
+printf 'subjectAltName=DNS:%s\n' "$LDAP_CONTAINER" > "$CERT_DIR/ldap.ext"
+openssl x509 -req -in "$CERT_DIR/ldap.csr" -CA "$CERT_DIR/ca.crt" -CAkey "$CERT_DIR/ca.key" \
+    -CAcreateserial -out "$CERT_DIR/ldap.crt" -days 30 -extfile "$CERT_DIR/ldap.ext" >/dev/null 2>&1
+chmod 644 "$CERT_DIR/ca.crt" "$CERT_DIR/ldap.crt"
+chmod 600 "$CERT_DIR/ldap.key"
+
+docker create --name "$LDAP_CONTAINER" --hostname "$LDAP_CONTAINER" \
     --network openrbi_control-plane \
     -e LDAP_ORGANISATION="OpenRBI Test" \
     -e LDAP_DOMAIN="example.org" \
     -e LDAP_ADMIN_PASSWORD="$LDAP_ADMIN_PASSWORD" \
     -e LDAP_TLS=true \
     -e LDAP_TLS_VERIFY_CLIENT=never \
+    -e LDAP_TLS_CRT_FILENAME=ldap.crt \
+    -e LDAP_TLS_KEY_FILENAME=ldap.key \
+    -e LDAP_TLS_CA_CRT_FILENAME=ca.crt \
     osixia/openldap:1.5.0 >/dev/null
+docker cp "$CERT_DIR/ca.crt" "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ca.crt"
+docker cp "$CERT_DIR/ldap.crt" "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ldap.crt"
+docker cp "$CERT_DIR/ldap.key" "$LDAP_CONTAINER:/container/service/slapd/assets/certs/ldap.key"
+docker start "$LDAP_CONTAINER" >/dev/null
 
 wait_for_ldap "container startup"
 
@@ -118,6 +152,15 @@ cn: openrbi-admins
 member: uid=$TEST_USER_USERNAME,ou=people,dc=example,dc=org
 EOF
 
+# RBI-POST-001: hand the throwaway backend (a real uvicorn process, whose
+# TLS handshake happens inside app/core/auth_providers/ldap.py, not in
+# this pytest process) the CA we generated above so it can trust it via
+# OPENRBI_LDAP_CA_CERT_FILE — the same mechanism a real deployment uses
+# for an internal CA — instead of the previous LDAPTLS_REQCERT=never
+# blanket bypass. Bind-mounted read-only since the file must exist before
+# the backend process's Settings() validation runs at startup.
+cp "$CERT_DIR/ca.crt" "$TEST_CA_FILE"
+
 echo "[ldap-integration-tests] starting throwaway LDAP-enabled backend..."
 BACKEND_IMAGE="$(cd "$REPO_ROOT" && docker compose images -q backend)"
 if [ -z "$BACKEND_IMAGE" ]; then
@@ -125,7 +168,7 @@ if [ -z "$BACKEND_IMAGE" ]; then
     exit 1
 fi
 docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$BACKEND_CONTAINER" \
+MSYS_NO_PATHCONV=1 docker run -d --name "$BACKEND_CONTAINER" \
     --network openrbi_control-plane \
     --env-file "$REPO_ROOT/.env" \
     -e OPENRBI_LDAP_ENABLED=true \
@@ -137,7 +180,8 @@ docker run -d --name "$BACKEND_CONTAINER" \
     -e 'OPENRBI_LDAP_USER_SEARCH_FILTER=(uid={username})' \
     -e OPENRBI_LDAP_GROUP_ATTRIBUTE=memberOf \
     -e 'OPENRBI_LDAP_GROUP_ROLE_MAPPING={"cn=openrbi-admins,ou=groups,dc=example,dc=org":"ADMIN"}' \
-    -e LDAPTLS_REQCERT=never \
+    -e OPENRBI_LDAP_CA_CERT_FILE=/etc/openrbi/ldap-ca.pem \
+    -v "$TEST_CA_FILE:/etc/openrbi/ldap-ca.pem:ro" \
     "$BACKEND_IMAGE" >/dev/null
 
 echo "[ldap-integration-tests] waiting for backend to come back up..."
@@ -176,8 +220,8 @@ MSYS_NO_PATHCONV=1 docker exec \
 # run-ldap-tests.sh (which talks to LdapAuthProvider in-process, inside the
 # pytest process itself), the admin API's TLS handshake happens inside the
 # uvicorn process, so it needs the backend container's own
-# LDAPTLS_REQCERT=never (set on the throwaway backend above) to trust this
-# self-signed cert — that's exactly why this file only runs here, not from
+# OPENRBI_LDAP_CA_CERT_FILE (set on the throwaway backend above) to trust
+# this self-signed cert — that's exactly why this file only runs here, not from
 # run-ldap-tests.sh. OPENRBI_LDAP_SERVER_URI/BIND_DN/BASE_DN/etc. are
 # are already present in this exec's environment because the throwaway
 # backend was started with --env-file plus explicit LDAP overrides, which
