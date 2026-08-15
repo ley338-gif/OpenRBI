@@ -30,6 +30,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wait_for_ldap() {
+    phase="$1"
+    for i in $(seq 1 30); do
+        if docker exec "$LDAP_CONTAINER" ldapsearch -x -H ldap://localhost \
+            -b "dc=example,dc=org" \
+            -D "cn=admin,dc=example,dc=org" \
+            -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1; then
+            return 0
+        fi
+        if [ "$(docker inspect -f '{{.State.Running}}' "$LDAP_CONTAINER" 2>/dev/null || true)" != "true" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    echo "[ldap-integration-tests] LDAP did not become ready after $phase" >&2
+    docker inspect -f '{{json .State}}' "$LDAP_CONTAINER" >&2 || true
+    docker logs "$LDAP_CONTAINER" >&2 || true
+    return 1
+}
+
 echo "[ldap-integration-tests] starting throwaway LDAPS server..."
 docker rm -f "$LDAP_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$LDAP_CONTAINER" \
@@ -41,12 +62,7 @@ docker run -d --name "$LDAP_CONTAINER" \
     -e LDAP_TLS_VERIFY_CLIENT=never \
     osixia/openldap:1.5.0 >/dev/null
 
-for i in $(seq 1 30); do
-    if docker exec "$LDAP_CONTAINER" ldapsearch -x -H ldap://localhost -b "dc=example,dc=org" -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1; then
-        break
-    fi
-    sleep 1
-done
+wait_for_ldap "container startup"
 
 # memberOf is not maintained automatically by plain OpenLDAP without this
 # overlay — real AD computes it natively, but this throwaway test server
@@ -67,6 +83,11 @@ objectClass: olcOverlayConfig
 objectClass: olcMemberOf
 olcOverlay: memberof
 EOF
+
+# Runtime cn=config changes can briefly interrupt the TCP listener even
+# though the local ldapi:/// modification has already returned success.
+# Do not race the directory seeding against that transition.
+wait_for_ldap "memberOf overlay configuration"
 
 docker exec -i "$LDAP_CONTAINER" ldapadd -x -H ldap://localhost -D "cn=admin,dc=example,dc=org" -w "$LDAP_ADMIN_PASSWORD" <<EOF
 dn: ou=people,dc=example,dc=org
