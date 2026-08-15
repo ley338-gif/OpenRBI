@@ -121,8 +121,26 @@ docker exec "$LDAP_CONTAINER" cat /container/service/slapd/assets/certs/ca.crt \
     > "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
 echo "[ldap-tests] extracted CA cert:"
 openssl x509 -in "$SCRIPT_DIR/../backend/test_ldap_ca.crt" -noout -subject -issuer -dates -ext subjectAltName || true
+echo "[ldap-tests] DEBUG: server leaf cert (ldap.crt):"
+docker exec "$LDAP_CONTAINER" cat /container/service/slapd/assets/certs/ldap.crt \
+    | openssl x509 -noout -subject -issuer -ext subjectAltName || true
 docker cp "$SCRIPT_DIR/../backend/test_ldap_ca.crt" "$BACKEND_CONTAINER:/app/test_ldap_ca.crt"
 rm -f "$SCRIPT_DIR/../backend/test_ldap_ca.crt"
+echo "[ldap-tests] DEBUG: raw python-ldap TLS error:"
+docker exec \
+    -e OPENRBI_LDAP_CA_CERT_FILE=/app/test_ldap_ca.crt \
+    "$BACKEND_CONTAINER" python3 -c "
+import ldap, os
+ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
+ldap.set_option(ldap.OPT_X_TLS_CACERTFILE, os.environ['OPENRBI_LDAP_CA_CERT_FILE'])
+c = ldap.initialize('ldaps://$LDAP_CONTAINER:636')
+c.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
+try:
+    c.simple_bind_s('cn=admin,dc=example,dc=org', '$LDAP_ADMIN_PASSWORD')
+    print('BIND OK')
+except Exception as e:
+    print('BIND FAILED:', repr(e))
+" || true
 
 # A CA bundle unrelated to the test server's real CA — used to prove that
 # a *wrong* CA is rejected exactly like no CA at all, never silently
