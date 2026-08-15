@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/), 
 
 ## [Unreleased]
 
+### Fixed
+
+- V1-001 LDAP CI stability: the HTTP-level LDAP runner no longer rewrites `.env` or invokes `docker compose up -d --build backend` mid-test. The latter was the exact command returning exit 137 in main CI; the available logs do not establish `OOMKilled`, so the failure is not labelled as OOM. The suite now starts a short-lived LDAP-enabled backend from the already-built Compose image, preserves the normal stack, emits backend logs on readiness failure, and removes both throwaway containers on every exit.
+
 ### Added
 
 - Project foundation: repository layout, initial documentation set, ADRs for the core architectural decisions, docker-compose skeleton, backend/session-agent/frontend scaffolding.

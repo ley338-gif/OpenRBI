@@ -170,7 +170,7 @@ jobs:
   # up. A separate job on its own fresh runner VM (GitHub Actions gives
   # every job an isolated environment by default, no shared containers or
   # filesystem with backend-integration-tests) sidesteps that entirely: a
-  # backend restart here can't affect anything else.
+  # LDAP-specific backend here can't affect anything else.
   ldap-integration-tests:
     name: LDAP integration tests
     runs-on: ubuntu-latest
@@ -213,7 +213,7 @@ jobs:
         run: docker compose exec -T backend alembic upgrade head
       - name: Run LdapAuthProvider tests (real throwaway LDAP server, no backend restart)
         run: sh scripts/run-ldap-tests.sh
-      - name: Run HTTP-level LDAP login/admin-config tests (restarts backend with real throwaway LDAP)
+      - name: Run HTTP-level LDAP login/admin-config tests (isolated backend with real throwaway LDAP)
         run: sh scripts/run-ldap-integration-tests.sh
       - name: Dump logs on failure
         if: failure()
