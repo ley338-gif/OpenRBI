@@ -744,6 +744,8 @@ table.data-table a:hover { text-decoration: underline; }
   padding: var(--space-6);
   max-width: 480px;
   width: 90%;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
 }
 
 .modal h2 {
@@ -954,7 +956,7 @@ table.data-table a:hover { text-decoration: underline; }
   .stat-grid { grid-template-columns: 1fr; }
   .table-toolbar, .table-toolbar-controls { align-items: stretch; flex-direction: column; }
   .table-toolbar-search, .table-toolbar select { width: 100%; min-width: 0; min-height: 40px; }
-  .modal { max-height: calc(100vh - 32px); overflow-y: auto; padding: var(--space-5); }
+  .modal { padding: var(--space-5); }
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions .btn { width: 100%; }
   .login-card { padding: var(--space-6); }

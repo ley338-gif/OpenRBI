@@ -21,6 +21,17 @@ const USER_USERNAME = "e2e_user";
 const PASSWORD = "E2E-Test-Password!2026";
 const ADMIN_TOTP_SECRET = process.env.E2E_ADMIN_TOTP_SECRET || "";
 
+// page.request (not the standalone `request` fixture, which is an
+// isolated context with no cookies of its own) shares the page's cookie
+// jar, but not its JS runtime — it never reads shared/api/client.ts's
+// ensureCsrfCookie()/X-CSRF-Token logic, so a raw page.request.post()
+// here needs to replicate that double-submit header by hand or every
+// mutating call 403s (RBI-POST-003).
+async function csrfHeader(page: Page): Promise<Record<string, string>> {
+  const cookie = (await page.context().cookies()).find((c) => c.name === "csrf_token");
+  return cookie ? { "X-CSRF-Token": cookie.value } : {};
+}
+
 async function loginAsAdmin(page: Page) {
   await page.goto("/admin/");
   await page.getByLabel("Username").fill(ADMIN_USERNAME);
@@ -80,8 +91,8 @@ test.describe("Admin Portal", () => {
     await page.getByRole("button", { name: "Log in" }).click();
 
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByText("USER PORTAL")).toBeVisible();
-    await expect(page.getByText("ADMIN PORTAL")).not.toBeVisible();
+    await expect(page.getByText("USER PORTAL", { exact: true })).toBeVisible();
+    await expect(page.getByText("ADMIN PORTAL", { exact: true })).not.toBeVisible();
   });
 
   test("logs in with a real TOTP code and sees a real, non-fabricated dashboard", async ({ page }) => {
@@ -100,16 +111,18 @@ test.describe("Admin Portal", () => {
     // KPI cards backed by GET /admin/dashboard, not the old client-side
     // aggregation — "Workers healthy" only exists on the new endpoint.
     await expect(page.getByText(/workers healthy/i)).toBeVisible();
-    await expect(page.getByText(/avg cpu/i)).toBeVisible();
-    await expect(page.getByText(/avg ram/i)).toBeVisible();
-    await expect(page.getByText(/last updated \d{1,2}:\d{2}:\d{2}/i)).toBeVisible();
+    await expect(page.getByText(/cpu usage.*avg/i)).toBeVisible();
+    await expect(page.getByText(/memory usage.*avg/i)).toBeVisible();
+    // Dashboard's own "Last updated" line is a full date+time (formatDateTime),
+    // unlike System's plain toLocaleTimeString() — no seconds guaranteed.
+    await expect(page.getByText(/last updated:.*\d{1,2}:\d{2}\s*(AM|PM)/i)).toBeVisible();
 
     // Session history chart renders as a real SVG, not a placeholder box.
     await expect(page.getByRole("img", { name: /active sessions over time/i })).toBeVisible();
 
-    // Worker load section lists the real seeded session-agent node.
-    await expect(page.getByText(/worker load/i)).toBeVisible();
-    await expect(page.locator(".load-bar-row")).toHaveCount(1);
+    // Worker pool table lists the real seeded session-agent node.
+    await expect(page.getByRole("heading", { name: "Worker pool" })).toBeVisible();
+    await expect(page.locator(".table-shell tbody tr")).toHaveCount(1);
 
     // Range selector actually triggers a new fetch against the backend.
     const historyResponse = page.waitForResponse((r) => r.url().includes("/admin/dashboard?range=7d") && r.ok());
@@ -121,7 +134,7 @@ test.describe("Admin Portal", () => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Users", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-    await expect(page.getByRole("link", { name: USER_USERNAME })).toBeVisible();
+    await expect(page.getByRole("link", { name: USER_USERNAME, exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: ADMIN_USERNAME, exact: true })).toBeVisible();
   });
 
@@ -135,15 +148,15 @@ test.describe("Admin Portal", () => {
     // from this suite would duplicate that coverage at much higher cost.
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Users", exact: true }).click();
-    await page.getByRole("link", { name: USER_USERNAME }).click();
+    await page.getByRole("link", { name: USER_USERNAME, exact: true }).click();
     await expect(page.getByRole("heading", { name: USER_USERNAME })).toBeVisible();
     await expect(page.getByRole("button", { name: "Terminate all sessions" })).toHaveCount(0);
   });
 
-  test("User Detail (B1.10.5) Lock/Unlock account really blocks and restores login", async ({ page, request }) => {
+  test("User Detail (B1.10.5) Lock/Unlock account really blocks and restores login", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "Users", exact: true }).click();
-    await page.getByRole("link", { name: USER_USERNAME }).click();
+    await page.getByRole("link", { name: USER_USERNAME, exact: true }).click();
 
     await expect(page.getByText(/not locked/i)).toBeVisible();
     await page.getByRole("button", { name: "Lock account", exact: true }).click();
@@ -152,8 +165,9 @@ test.describe("Admin Portal", () => {
 
     // Real backend round-trip, not just a UI state flip: the actual login
     // endpoint now rejects the account's real, correct password.
-    const lockedLogin = await request.post("/api/auth/login", {
+    const lockedLogin = await page.request.post("/api/auth/login", {
       data: { username: USER_USERNAME, password: PASSWORD },
+      headers: await csrfHeader(page),
     });
     expect(lockedLogin.status()).toBe(429);
 
@@ -161,15 +175,16 @@ test.describe("Admin Portal", () => {
     await page.getByRole("button", { name: "Unlock account", exact: true }).last().click();
     await expect(page.getByText(/not locked/i)).toBeVisible();
 
-    const unlockedLogin = await request.post("/api/auth/login", {
+    const unlockedLogin = await page.request.post("/api/auth/login", {
       data: { username: USER_USERNAME, password: PASSWORD },
+      headers: await csrfHeader(page),
     });
     expect(unlockedLogin.status()).toBe(200);
   });
 
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.getByRole("link", { name: "System" }).click();
+    await page.getByRole("navigation").getByRole("link", { name: "System health", exact: true }).click();
     // Every component the real /admin/health check covers must show some
     // real status text — never silently blank, never a fixed green check
     // baked into markup regardless of backend state. Matched against the
@@ -212,7 +227,7 @@ test.describe("Admin Portal", () => {
 
   test("Workers page (B1.10.3) lists real workers and drilling into one shows drain/maintenance controls and history charts", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.getByRole("link", { name: "Workers" }).click();
+    await page.getByRole("link", { name: "Workers", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Workers" })).toBeVisible();
 
     const workerLink = page.locator(".data-table tbody tr td a").first();
@@ -240,16 +255,20 @@ test.describe("Admin Portal", () => {
 
   test("Quarantine page shows a real, honest empty state with no fake file preview", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.getByRole("link", { name: "Quarantine" }).click();
+    await page.getByRole("link", { name: "Quarantine", exact: true }).click();
     await expect(page.locator("iframe")).toHaveCount(0);
+    // Scoped to this page's own container (identified by its own heading),
+    // not a bare global class selector — .empty-state also matches several
+    // Dashboard widgets, which a loose selector can ambiguously pick up.
+    const quarantinePage = page.locator(".page").filter({ has: page.getByRole("heading", { name: "Quarantine", level: 1 }) });
     // Either a real empty state or a real table — never a placeholder row.
     // Wait for the page to actually finish loading (not a non-retrying
     // isVisible() snapshot, which can race the initial fetch and mistake
     // "still loading" for "empty") before deciding which case applies.
-    await expect(page.locator(".table-wrap, .empty-state")).toBeVisible();
-    const hasTable = (await page.locator(".data-table").count()) > 0;
+    await expect(quarantinePage.locator(".table-wrap, .empty-state")).toBeVisible();
+    const hasTable = (await quarantinePage.locator(".data-table").count()) > 0;
     if (!hasTable) {
-      await expect(page.getByText(/no.*quarantine/i)).toBeVisible();
+      await expect(quarantinePage.getByText(/no.*quarantine/i)).toBeVisible();
     }
   });
 
@@ -290,8 +309,8 @@ test.describe("Admin Portal", () => {
     const groupName = `e2e-polish-${Date.now()}`;
     await page.getByRole("button", { name: "Create Group" }).click();
     await page.getByLabel("Name").fill(groupName);
-    await page.getByRole("button", { name: "Create", exact: true }).click();
-    await expect(page.getByRole("cell", { name: groupName })).toBeVisible();
+    await page.getByRole("button", { name: "Create group", exact: true }).click();
+    await expect(page.getByRole("cell", { name: groupName, exact: true })).toBeVisible();
 
     const row = page.locator("tr", { hasText: groupName });
     await row.getByRole("button", { name: "Delete" }).click();
@@ -300,8 +319,8 @@ test.describe("Admin Portal", () => {
     // window.confirm() (which Playwright would auto-dismiss/never see as
     // a page element at all) and not a generic "Are you sure?".
     await expect(page.getByText(`Delete group "${groupName}"?`)).toBeVisible();
-    await page.getByRole("button", { name: "Delete", exact: true }).last().click();
-    await expect(page.getByRole("cell", { name: groupName })).toHaveCount(0);
+    await page.getByRole("button", { name: "Delete group", exact: true }).click();
+    await expect(page.getByRole("cell", { name: groupName, exact: true })).toHaveCount(0);
   });
 
   test("SESSION policy resolution: create, set, publish, and see it reflected in the policy list", async ({ page }) => {
@@ -565,7 +584,7 @@ test.describe("Admin Portal", () => {
     // field must never be pre-filled with anything, ever.
     await loginAsAdmin(page);
     await page.getByRole("link", { name: "LDAP" }).click();
-    await expect(page.getByRole("heading", { name: "Settings — Authentication — LDAP" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "LDAP / Active Directory", level: 1 })).toBeVisible();
     await expect(page.getByLabel("Server URI")).toBeVisible();
     await expect(page.getByLabel("Bind password")).toHaveValue("");
     await expect(page.getByRole("button", { name: "Test connection" })).toBeVisible();
