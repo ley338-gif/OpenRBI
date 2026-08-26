@@ -108,13 +108,16 @@ Two separate Vite/React/TypeScript single-page apps, `frontend/user/` and `front
 
 ## Multi-node readiness
 
-MVP 1 runs on a single Linux host, but:
+MVP 1 runs on a single Linux host, but Roadmap B2 (`docs/roadmap-b2-multinode.md`)
+is actively extending this to real N-node deployments:
 
 - The Session Agent is addressed over the network, not assumed co-located with the backend.
-- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version, and — Roadmap B1.10.1 — host-wide `cpu_percent`/`ram_total_mb`/`ram_used_mb`/`node_started_at`) even though only one node exists in MVP 1.
-- The scheduler has an abstract `select_node()` seam, trivially returning the single node today, but built so real multi-node scheduling can replace it later without changing callers.
+- `BrowserNode` is a first-class entity (UUID, hostname, status, capacity, active_sessions, last_heartbeat, runtime, version, and — Roadmap B1.10.1 — host-wide `cpu_percent`/`ram_total_mb`/`ram_used_mb`/`node_started_at`), plus — Roadmap B2.1 — `enrollment_status` (`PENDING`/`APPROVED`/`REVOKED`), `endpoint_url`, and a per-node encrypted `agent_token_encrypted`.
+- Every Session-Agent-bound call resolves a per-node `NodeConnection` (Roadmap B2.2) rather than one hardcoded agent address/token.
+- `select_node()` (Roadmap B2.3) does real cross-node scheduling: every `APPROVED` node is refreshed from its own agent and scored by free capacity (`capacity - active_sessions`, least-loaded wins), ties broken deterministically by lowest hostname. `DRAINING`/`MAINTENANCE` nodes and a node whose own agent is unreachable this round are excluded from the round, not from the whole registry — one bad node never blocks scheduling onto the others. **Sessions are sticky to whichever node they're scheduled onto for their entire lifetime — there is no live migration between nodes.** A node going down mid-session is a documented, tested failure case (Roadmap B2.5), not a migration trigger.
+- Per-node capacity is real deploy-time config (`OPENRBI_AGENT_CAPACITY` on the Session Agent, default 10) — host-resource-aware auto-sizing remains an explicit non-goal of B2.
 
-Real multi-node scheduling, HA, and Kubernetes orchestration are explicitly out of MVP 1 scope (see README "Scope").
+HA and Kubernetes orchestration remain explicitly out of scope (see README "Scope").
 
 ### Worker telemetry and health (Roadmap B1.10.1)
 
