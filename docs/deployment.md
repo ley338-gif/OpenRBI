@@ -326,6 +326,30 @@ OPENRBI_ADMIN_BASE_PATH=/        # served at its own origin's root, not /admin/
 
 This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and operator-managed firewall/VLAN policy still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point.
 
+## Multi-node — **experimental / technology preview**, not a complete production guide
+
+See [docs/roadmap-b2-multinode.md](roadmap-b2-multinode.md) for the full phase-by-phase design and [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)/[ADR 0024](adr/0024-cross-host-display-relay.md) for the enrollment/trust and cross-host display-relay decisions. Same honesty pattern as Segmented above: this has been verified against a second Session Agent standing in for a second node on the *same* Docker host (every B2 phase's own test suite uses this technique), never against genuinely separate hardware — treat it as a real, working starting point, not a finished multi-host guide.
+
+**Adding a second (or Nth) node:**
+
+1. On the control plane, an ADMIN generates a single-use enrollment token: **Workers → Register node** in the Admin Portal (or `POST /admin/nodes/enrollment-tokens`).
+2. On the new host, check out this repository and set up `.env` (same steps as [Installation](#installation) above), plus:
+   ```bash
+   # Session Agent section of .env
+   OPENRBI_AGENT_API_TOKEN=<a real generated secret, distinct from every other node's>
+   OPENRBI_AGENT_NODE_NAME=<a stable, distinct name for this node>
+   OPENRBI_AGENT_ENROLLMENT_TOKEN=<the token from step 1>
+   OPENRBI_AGENT_CONTROL_PLANE_URL=<how this host reaches the control plane>
+   OPENRBI_DOCKER_SOCKET_GID=<this host's own docker socket GID>
+   ```
+3. `docker compose -f docker-compose.node.yml up -d` — this brings up *only* a Session Agent and its own local `browser-plane`, nothing else. It self-enrolls automatically on startup and appears in the Admin Portal's Workers page as `PENDING`.
+4. Run `sudo ./scripts/setup-network-isolation.sh` on this host (same as any single-node deployment — see [Network isolation](#network-isolation) above; install the systemd timer too).
+5. Back on the control plane, an ADMIN approves the pending node in the Admin Portal (**Workers → Approve**, setting its externally-reachable `endpoint_url`) or revokes it if it shouldn't be trusted. An approved node is immediately schedulable; sessions land on it the same as any other node from that point on.
+
+**What this genuinely requires that no script here automates**, per the roadmap's own explicit "cross-host transport" decision: a private overlay network between the control-plane host and every node host (WireGuard recommended) so `OPENRBI_AGENT_CONTROL_PLANE_URL`/a node's `endpoint_url` are actually reachable. This project validates that a configured endpoint answers and authenticates every call to it — it does not set up or manage that host-to-host connectivity itself, the same boundary already drawn around firewall/VLAN enforcement for Segmented above.
+
+**Removing a node:** revoke it in the Admin Portal (clears its stored token immediately; existing sessions on it are unaffected until they end or fail, per [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)'s and Roadmap B2.5's documented behavior), then `docker compose -f docker-compose.node.yml down` on that host whenever convenient.
+
 ## Sizing
 
-MVP 1 has no host-resource-aware scheduler (see [architecture.md#multi-node-readiness](architecture.md#multi-node-readiness)) — capacity is a fixed ceiling (`session-agent`'s `default_cpu_limit`/`default_ram_limit_mb`, currently 2 CPUs / 2 GB per sandbox), not something this document can size for every deployment. As a starting point: plan for (number of concurrent sessions you want to support) × (per-sandbox CPU/RAM limit), plus headroom for Postgres/Redis/ClamAV/backend, which are comparatively light.
+MVP 1 has no host-resource-aware scheduler (see [architecture.md#multi-node-readiness](architecture.md#multi-node-readiness)) — capacity is a fixed ceiling (`session-agent`'s `default_cpu_limit`/`default_ram_limit_mb`, currently 2 CPUs / 2 GB per sandbox, and `OPENRBI_AGENT_CAPACITY`, default 10 concurrent sandboxes), not something this document can size for every deployment. Single-node: plan for (number of concurrent sessions you want to support) × (per-sandbox CPU/RAM limit), plus headroom for Postgres/Redis/ClamAV/backend, which are comparatively light. Multi-node: the same per-node math applies independently to each node — `select_node()` (Roadmap B2.3) spreads sessions across nodes by free capacity, so total capacity is simply the sum of every `APPROVED` node's own `OPENRBI_AGENT_CAPACITY`, with no cross-node coordination needed when sizing an individual host.

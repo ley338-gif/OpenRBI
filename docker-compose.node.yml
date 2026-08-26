@@ -1,0 +1,91 @@
+# Roadmap B2.6 (docs/roadmap-b2-multinode.md) — a standalone compose file
+# for a *second* (or Nth) host that runs only a Session Agent and its own
+# `browser-plane`, cleanly separate from the control plane's own
+# docker-compose.yml. Unlike docker-compose.segmented.yml (an *additive
+# overlay* on top of docker-compose.yml, run together with `-f`), this file
+# is self-contained — a node host has none of the control-plane services
+# (postgres/redis/clamav/backend/frontend/reverse-proxy) at all:
+#
+#   docker compose -f docker-compose.node.yml up -d
+#
+# On a genuinely separate host this needs no project-name override — each
+# host has its own Docker daemon and namespace. Evaluating a second node
+# on the *same* host as the primary docker-compose.yml stack (this file
+# defaults to project name "openrbi", same as docker-compose.yml, from
+# the checkout directory's basename) needs an explicit distinct name to
+# avoid colliding with the primary stack's own "session-agent" container
+# and "browser-plane" network:
+#   docker compose -p openrbi-node2 -f docker-compose.node.yml up -d
+#
+# Prerequisites, none of which this file can automate (see
+# docs/deployment.md#multi-node):
+#   - An admin has generated a node enrollment token in the Admin Portal
+#     (POST /admin/nodes/enrollment-tokens) and this host's .env has
+#     OPENRBI_AGENT_ENROLLMENT_TOKEN and a freshly generated, distinct
+#     OPENRBI_AGENT_API_TOKEN set (never reused from another node) — see
+#     .env.example's "Session Agent" section.
+#   - OPENRBI_AGENT_CONTROL_PLANE_URL points at an address this host can
+#     actually reach the control plane through — an operator-managed
+#     private overlay network (WireGuard recommended; see
+#     docs/roadmap-b2-multinode.md's "Cross-host transport" decision) is
+#     this project's documented boundary for that connectivity, not
+#     something this compose file or any script here sets up.
+#   - OPENRBI_DOCKER_SOCKET_GID set to *this* host's docker socket group
+#     (docs/deployment.md#installation) — always host-specific, never
+#     copied from another machine's value.
+#   - scripts/setup-network-isolation.sh run on *this* host after `up -d`
+#     (and kept current via its systemd timer, same as any single-node
+#     deployment — see docs/deployment.md#network-isolation). The
+#     browser-plane egress blocklist is enforced per-host; a node host
+#     that skips this step has an unfiltered sandbox network.
+#   - Only if you run this under a non-default Compose project name (`-p`)
+#     — e.g. evaluating a second node on the same host as the primary
+#     stack, as this repo's own tests do — session-agent's
+#     sandbox_network_name must be told the real resulting network name
+#     (OPENRBI_AGENT_SANDBOX_NETWORK_NAME=<project>_browser-plane), since
+#     its own hardcoded default only matches docker-compose.yml's default
+#     project name. A real second host, run with the default project
+#     name, needs no such override — verified locally with exactly this
+#     override during this phase's own testing (see docs/adr/0024's
+#     verification-gap note for why full cross-host testing still isn't
+#     possible in this environment).
+#
+# **Status: experimental / technology preview**, same honesty pattern
+# already used for docker-compose.segmented.yml — this has been verified
+# against a second Session Agent container on the same Docker host
+# standing in for a second node (docs/adr/0024's stated verification gap
+# applies here too), not yet against genuinely separate hardware.
+services:
+  session-agent:
+    build: ./session-agent
+    restart: unless-stopped
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # See docker-compose.yml's session-agent service for the full
+    # explanation of why this is required on every real (non-CI) host.
+    group_add:
+      - "${OPENRBI_DOCKER_SOCKET_GID:?set this to the docker socket's group ID on this host — run: stat -c '%g' /var/run/docker.sock — see docs/deployment.md#installation}"
+    # No control-plane network here at all — this host doesn't run any of
+    # those services. Reaching OPENRBI_AGENT_CONTROL_PLANE_URL is an
+    # operator-managed routing concern (see the prerequisites above), not
+    # a docker network this compose file defines.
+    networks:
+      browser-plane:
+        ipv4_address: ${OPENRBI_AGENT_BROWSER_PLANE_IP:-172.30.0.2}
+
+networks:
+  # Deliberately the same name/default subnet shape as docker-compose.yml's
+  # own browser-plane — each host's is entirely independent (docker
+  # bridge networks are host-local), so there is no collision to avoid by
+  # default. Override OPENRBI_BROWSER_PLANE_SUBNET only if this host
+  # itself runs more than one browser-plane (e.g. evaluating multiple
+  # nodes on one machine) or already uses this range for something else.
+  browser-plane:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${OPENRBI_BROWSER_PLANE_SUBNET:-172.30.0.0/24}
