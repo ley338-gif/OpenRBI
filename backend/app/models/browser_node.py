@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, Integer, String
+from sqlalchemy import DateTime, Enum, Float, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.enums import BrowserNodeStatus
+from app.models.enums import BrowserNodeStatus, NodeEnrollmentStatus
 from app.models.mixins import CreatedAtMixin, UUIDPKMixin
 
 
@@ -46,3 +46,30 @@ class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
     # at read time rather than stored as a duration that would need
     # constant re-writing to stay accurate.
     node_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) —
+    # multi-node trust gate, distinct from `status` above: `status` is a
+    # *trusted* node's scheduling flag; `enrollment_status` decides
+    # whether the node is trusted at all. Defaults to APPROVED so the
+    # existing single-node auto-creation path (refresh_node_from_agent(),
+    # driven by the operator's own trusted .env config) is completely
+    # unaffected — only a node created via the new enroll_node() call
+    # explicitly starts PENDING.
+    enrollment_status: Mapped[NodeEnrollmentStatus] = mapped_column(
+        Enum(NodeEnrollmentStatus, name="node_enrollment_status"), nullable=False,
+        default=NodeEnrollmentStatus.APPROVED,
+    )
+    # The externally-reachable address the control plane will dial once
+    # B2.2 lands per-node client plumbing. Deliberately operator-supplied
+    # at approval time, not self-reported by the agent — a self-reported
+    # address is unreliable behind NAT/port-mapping, and only the
+    # operator who placed the host actually knows its real address.
+    endpoint_url: Mapped[str | None] = mapped_column(String(512))
+    # This node's own operational API token (what the control plane must
+    # send as X-Openrbi-Agent-Token to authenticate to *this* node's
+    # agent — see docs/adr/0023), encrypted at rest with the same
+    # app/core/crypto.py encrypt_secret() already used for TOTP secrets.
+    # Never returned by any API response. Not yet read anywhere as of
+    # B2.1 — B2.2 is what starts using it instead of the single shared
+    # OPENRBI_SESSION_AGENT_API_TOKEN.
+    agent_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)

@@ -162,6 +162,16 @@ export function WorkerDetail() {
             <dd><StatusBadge value={node.status} /></dd>
           </div>
           <div>
+            <dt>Enrollment</dt>
+            <dd><StatusBadge value={node.enrollment_status} /></dd>
+          </div>
+          {node.endpoint_url && (
+            <div>
+              <dt>Endpoint</dt>
+              <dd className="mono">{node.endpoint_url}</dd>
+            </div>
+          )}
+          <div>
             <dt>CPU</dt>
             <dd>{node.cpu_percent !== null ? `${node.cpu_percent.toFixed(0)}%` : "not yet reported"}</dd>
           </div>

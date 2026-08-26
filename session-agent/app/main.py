@@ -1,14 +1,24 @@
 import os
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import psutil
 from fastapi import Depends, FastAPI
 
+from app import enrollment
 from app.api.sandboxes import router as sandboxes_router
 from app.auth import require_control_plane_token
 from app.build_info import BUILD_INFO
 from app.config import get_settings
 from app.providers.factory import get_provider
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    enrollment.start()
+    yield
+    enrollment.stop()
+
 
 app = FastAPI(
     title="OpenRBI Session Agent",
@@ -17,6 +27,7 @@ app = FastAPI(
         "Internal-only privileged service for browser sandbox lifecycle. "
         "Not exposed publicly; see docs/adr/0004 and 0005."
     ),
+    lifespan=_lifespan,
 )
 
 app.include_router(sandboxes_router)

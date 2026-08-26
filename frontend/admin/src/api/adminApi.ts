@@ -14,6 +14,7 @@ import type {
   AdminSessionDto,
   AdminSessionListDto,
   BrowserNodeDto,
+  NodeEnrollmentTokenDto,
   DashboardRange,
   DashboardResponseDto,
   EnrollResponse,
@@ -146,6 +147,11 @@ export const adminApi = {
   undrainNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/undrain`),
   maintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/maintenance`),
   unmaintenanceNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/unmaintenance`),
+  // Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md)
+  createNodeEnrollmentToken: () => api.post<NodeEnrollmentTokenDto>("/admin/nodes/enrollment-tokens"),
+  approveNode: (id: string, endpointUrl: string) =>
+    api.post<BrowserNodeDto>(`/admin/nodes/${id}/approve`, { endpoint_url: endpointUrl }),
+  revokeNode: (id: string) => api.post<BrowserNodeDto>(`/admin/nodes/${id}/revoke`),
 
   // Operations dashboard (app/api/admin_dashboard.py — B1.10.2)
   getDashboard: (range: DashboardRange) => api.get<DashboardResponseDto>(`/admin/dashboard?range=${range}`),

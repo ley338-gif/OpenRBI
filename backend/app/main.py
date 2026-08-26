@@ -18,6 +18,7 @@ from app.api.display import router as display_router
 from app.api.files import router as files_router
 from app.api.health import router as health_router
 from app.api.mfa import router as mfa_router
+from app.api.node_enrollment import router as node_enrollment_router
 from app.api.policies import router as policies_router
 from app.api.sessions import router as sessions_router
 from app.api.setup import router as setup_router
@@ -151,6 +152,11 @@ def _register_admin_routes(app: FastAPI) -> None:
     app.include_router(policies_router)
     app.include_router(admin_mfa_router)
     app.include_router(setup_router)
+    # Roadmap B2.1 — unauthenticated (a new node's own call has no admin
+    # session), like setup_router, and for the same reason: only
+    # meaningful on an admin-capable listener, closed by its own token +
+    # rate limit instead of require_role (docs/adr/0023).
+    app.include_router(node_enrollment_router)
 
 
 # Single, central decision point for which API surface this process

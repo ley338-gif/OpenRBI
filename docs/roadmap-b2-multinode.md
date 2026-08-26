@@ -40,7 +40,13 @@ schema/code.
 Each phase: one-line goal, files/services touched, Definition-of-Done, ADR
 requirement, and a security-scrutiny flag where relevant.
 
-### B2.1 — Node registry & enrollment
+### B2.1 — Node registry & enrollment — **done**
+
+See [ADR 0023](adr/0023-node-enrollment-and-trust-model.md) for the
+as-built decision record (token-based self-enrollment + mandatory admin
+approval, per-node encrypted tokens). Verified end to end against a real
+docker-compose stack, including a second real Session Agent container
+self-enrolling and being approved through the Admin Portal UI.
 
 **Goal**: Replace "one node, implicitly trusted" with a real registry that
 distinguishes an enrolled, approved node from an unknown one.
@@ -93,8 +99,8 @@ every caller in `backend/app/services/sessions.py`, `app/api/files.py`,
 **Definition of Done**:
 - No function in `session_agent_client.py` reads a module-level/settings
   base URL directly; every call site resolves it from
-  `BrowserSession.node_id` → `BrowserNode.endpoint_url` (already exists as
-  a column, currently unused for this).
+  `BrowserSession.node_id` → `BrowserNode.endpoint_url` (added by B2.1,
+  written at approval time but not yet read anywhere before this phase).
 - Existing single-node integration tests still pass unchanged (this phase
   is plumbing, not behavior change, for the single-node case).
 - New test: two nodes configured, a session created against one, its

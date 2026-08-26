@@ -70,6 +70,19 @@ class BrowserNodeStatus(str, enum.Enum):
     MAINTENANCE = "MAINTENANCE"
 
 
+class NodeEnrollmentStatus(str, enum.Enum):
+    """Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) —
+    distinct from BrowserNodeStatus above: `status` is the scheduling
+    flag a *trusted* node's health toggles between; this is the trust
+    gate that decides whether a node is trusted at all. A PENDING node is
+    never considered by select_node(), regardless of `status`.
+    """
+
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REVOKED = "REVOKED"
+
+
 class SessionStatus(str, enum.Enum):
     QUEUED = "QUEUED"
     STARTING = "STARTING"
@@ -243,3 +256,13 @@ class SecurityEventType(str, enum.Enum):
     # (already a documented terminal state, docs/quarantine.md), not
     # removed outright, so file-history/statistics views keep working.
     QUARANTINE_FILE_RETENTION_EXPIRED = "QUARANTINE_FILE_RETENTION_EXPIRED"
+
+    # Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) —
+    # multi-node enrollment. A new Session Agent presenting a valid,
+    # single-use enrollment token registers a BrowserNode row in PENDING
+    # (never schedulable) until a second, separately audited admin action
+    # approves or revokes it — a leaked enrollment token alone is not
+    # enough to receive real session traffic.
+    NODE_ENROLLMENT_REQUESTED = "NODE_ENROLLMENT_REQUESTED"
+    NODE_APPROVED = "NODE_APPROVED"
+    NODE_REVOKED = "NODE_REVOKED"

@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     # only permits ESTABLISHED/RELATED traffic back across that boundary.
     sandbox_network_name: str = "openrbi_browser-plane"
 
+    # Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) —
+    # both empty by default, matching the single-node case exactly as it
+    # works today: the enrollment background task (app/main.py) only ever
+    # runs when an operator deliberately sets enrollment_token, adding a
+    # second/Nth node. control_plane_url is the *inverse* direction from
+    # session_agent_base_url in backend/app/config.py — this is where
+    # *this* agent calls *out* to the control plane, once, at startup.
+    enrollment_token: str = ""
+    control_plane_url: str = "http://backend:8000"
+
     # Defaults per the project brief §24; overridable per session by the
     # control plane's request payload.
     default_cpu_limit: float = 2.0

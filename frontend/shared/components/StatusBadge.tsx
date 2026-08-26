@@ -15,6 +15,7 @@ const CRITICAL = new Set([
   "LOCKED",
   "BLOCKED",
   "DENIED",
+  "REVOKED",
 ]);
 const WARNING = new Set([
   "DEGRADED",

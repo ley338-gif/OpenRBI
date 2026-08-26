@@ -368,10 +368,17 @@ export interface SystemHealthDto {
 
 export type BrowserNodeStatus = "ONLINE" | "DRAINING" | "OFFLINE" | "DEGRADED" | "MAINTENANCE";
 
+// Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) — the
+// multi-node trust gate, distinct from BrowserNodeStatus above.
+export type NodeEnrollmentStatus = "PENDING" | "APPROVED" | "REVOKED";
+
 export interface BrowserNodeDto {
   id: string;
   hostname: string;
   status: BrowserNodeStatus;
+  // Roadmap B2.1 — never derived from `health` below.
+  enrollment_status: NodeEnrollmentStatus;
+  endpoint_url: string | null;
   // Roadmap B1.10.1 — the centrally-computed label; read this for display,
   // not `status` (the raw scheduling flag).
   health: WorkerHealthLabel;
@@ -392,6 +399,13 @@ export interface WorkerOverviewDto {
   offset: number;
   limit: number;
   stats: { total: number; healthy: number; needs_attention: number; active_sessions: number; total_capacity: number; average_cpu_percent: number | null; average_ram_percent: number | null; latest_heartbeat: string | null };
+}
+
+// Roadmap B2.1 — returned exactly once, at generation time; never
+// retrievable again (same "shown once" rule as MFA recovery codes).
+export interface NodeEnrollmentTokenDto {
+  enrollment_token: string;
+  expires_in_seconds: number;
 }
 
 // Roadmap B1.10.3 — per-worker bucketed metric history (Worker Detail view)
