@@ -116,6 +116,7 @@ is actively extending this to real N-node deployments:
 - Every Session-Agent-bound call resolves a per-node `NodeConnection` (Roadmap B2.2) rather than one hardcoded agent address/token.
 - `select_node()` (Roadmap B2.3) does real cross-node scheduling: every `APPROVED` node is refreshed from its own agent and scored by free capacity (`capacity - active_sessions`, least-loaded wins), ties broken deterministically by lowest hostname. `DRAINING`/`MAINTENANCE` nodes and a node whose own agent is unreachable this round are excluded from the round, not from the whole registry — one bad node never blocks scheduling onto the others. **Sessions are sticky to whichever node they're scheduled onto for their entire lifetime — there is no live migration between nodes.** A node going down mid-session is a documented, tested failure case (Roadmap B2.5), not a migration trigger.
 - Per-node capacity is real deploy-time config (`OPENRBI_AGENT_CAPACITY` on the Session Agent, default 10) — host-resource-aware auto-sizing remains an explicit non-goal of B2.
+- `app/core/orphan_reconciler.py` (Roadmap B2.5) reconciles every `APPROVED` node's own inventory independently — a node whose agent is unreachable doesn't block reconciling the others, and its own plausibly-active sessions become `FAILED` (no migration attempted) once past the reconciliation grace period, exactly the documented node-down behavior above.
 
 HA and Kubernetes orchestration remain explicitly out of scope (see README "Scope").
 

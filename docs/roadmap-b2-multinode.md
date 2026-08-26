@@ -218,7 +218,42 @@ display of a remote-controlled browser). Review should confirm the
 per-node relay enforces the same origin/auth checks `app/api/display.py`
 already does today, not a weakened copy.
 
-### B2.5 — Reconciliation & node-down handling
+### B2.5 — Reconciliation & node-down handling — **done**
+
+`orphan_reconciler.py` now walks every `APPROVED` node's own inventory
+(via `connection_for_node()`, B2.2) instead of the single legacy default
+agent. Both directions (container-with-no-row, row-with-no-container) are
+scoped per node, and the per-cycle grace-period tracking dicts (shared
+across nodes, since session ids are globally unique) are only touched for
+sessions that actually belong to the node being reconciled that cycle —
+one node's cycle can no longer clear another node's grace-period count.
+A node whose agent is unreachable this cycle doesn't abort the whole
+reconciliation run (one bad node never blocks reconciling the others,
+same principle as `select_node()`); its forward (container-vs-row) check
+is simply skipped for the cycle, and every one of its plausibly-active
+sessions becomes a lost candidate for the reverse direction, since
+liveness can't be confirmed — this is the "node goes OFFLINE mid-session"
+case. No migration is attempted (sessions are sticky to their node,
+B2.3); once past the grace period the session transitions to `FAILED`
+(`SESSION_LOST_RECONCILED`, tagged `node_unreachable: true` to distinguish
+it from the pre-existing single-container-vanished case) and becomes
+eligible for forced termination — the best-effort `terminate_sandbox()`
+cleanup call is skipped specifically for an unreachable node (it would
+only ever fail while the node stays down, and would otherwise block the
+session from ever reaching `FAILED`), but is still attempted normally
+when the node answered this cycle and only that one cleanup call failed.
+`download_poller.py` and `worker_health.py`/`dashboard.py` needed no
+changes — both already iterate every `BrowserSession`/`BrowserNode` row
+without a single-node assumption (`download_poller.py` already resolves
+its own per-node connection via `app/services/downloads.py`, wired in
+B2.2; `worker_health.py`/`dashboard.py` already `select(BrowserNode)`
+with no node filtering, per their original B1.10.1 multi-node-shaped
+design). Verified against the real docker-compose stack: the existing
+single-node orphan-reconciliation suite passes unchanged, plus two new
+tests (`test_orphan_reconciler_multinode.py`) proving a session on an
+unreachable node reaches `FAILED` after the grace period with the right
+audit metadata, and that reconciling a real session on a healthy node is
+unaffected by another node being down in the very same cycles.
 
 **Goal**: Orphan reconciliation and health computation iterate every
 registered node, and a node going OFFLINE mid-session has a documented,
