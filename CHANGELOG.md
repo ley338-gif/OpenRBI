@@ -9,6 +9,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 ### Added
 
 - Multi-node deployment, Phase B2.1 (node registry & enrollment): a new Session Agent host can now self-enroll via a single-use, admin-generated token (`POST /admin/nodes/enrollment-tokens` → `POST /admin/nodes/enroll`) and registers `PENDING` — never schedulable — until an admin explicitly approves (`POST /admin/nodes/{id}/approve`, setting its externally-reachable endpoint) or revokes it. Each node's own API token is now stored per-node, encrypted at rest, rather than the single shared secret every node previously relied on. Existing single-node deployments are completely unaffected. See [docs/adr/0023-node-enrollment-and-trust-model.md](docs/adr/0023-node-enrollment-and-trust-model.md) and [docs/roadmap-b2-multinode.md](docs/roadmap-b2-multinode.md).
+- Multi-node deployment, Phase B2.2 (per-node client plumbing): every Session-Agent-bound backend call (session create/isolate/restore/terminate, the display relay, downloads, uploads) now resolves and targets the specific node a session actually lives on, using that node's own decrypted per-node token, instead of a single hardcoded agent address. A node with no per-node endpoint configured (every existing single-node deployment) falls back to the previous shared-settings behavior unchanged.
 
 ## [1.0.1] - 2026-08-15
 

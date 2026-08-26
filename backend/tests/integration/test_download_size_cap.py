@@ -30,15 +30,15 @@ async def test_oversized_download_is_quarantined_without_ever_being_fetched(db, 
     max_size = get_settings().download_max_size_bytes
     oversized_entry = DownloadedFile(filename="huge-file.bin", size_bytes=max_size + 1)
 
-    async def fake_list_downloads(session_id: str):
+    async def fake_list_downloads(session_id: str, **_kwargs):
         return [oversized_entry]
 
-    async def fake_fetch_download(session_id: str, filename: str):
+    async def fake_fetch_download(session_id: str, filename: str, **_kwargs):
         raise AssertionError("fetch_download must never be called for an oversized file")
 
     deleted = []
 
-    async def fake_delete_download(session_id: str, filename: str) -> None:
+    async def fake_delete_download(session_id: str, filename: str, **_kwargs) -> None:
         deleted.append(filename)
 
     monkeypatch.setattr(session_agent_client, "list_downloads", fake_list_downloads)

@@ -11,6 +11,7 @@ from app.core.source_matching import normalize_hostname
 from app.models.browser_session import BrowserSession
 from app.models.enums import QuarantineStatus, ScannerStatus, SecurityEventType
 from app.models.quarantine import QuarantineFile
+from app.services.nodes import connection_for_node, get_node
 from app.services.policy_engine import FileDecisionInput, evaluate_file_action
 from app.services.scanning import scan_and_finalize
 from app.services.security_events import record_security_event
@@ -43,8 +44,9 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
     single-use download token for user retrieval of a RELEASED file, and
     the admin release/reject workflow for a QUARANTINED one, are Phase 15.
     """
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        files = await session_agent_client.list_downloads(str(session.id))
+        files = await session_agent_client.list_downloads(str(session.id), connection=connection)
     except SessionAgentError:
         return []  # sandbox not reachable right now; try again next poll
 
@@ -104,13 +106,13 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
             )
             created.append(quarantine_file)
             try:
-                await session_agent_client.delete_download(str(session.id), entry.filename)
+                await session_agent_client.delete_download(str(session.id), entry.filename, connection=connection)
             except SessionAgentError:
                 pass
             continue
 
         try:
-            data, origin_url = await session_agent_client.fetch_download(str(session.id), entry.filename)
+            data, origin_url = await session_agent_client.fetch_download(str(session.id), entry.filename, connection=connection)
         except SessionAgentError:
             continue  # transient fetch failure; file stays in the sandbox, retried next poll
 
@@ -126,7 +128,7 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
         )
         if existing.scalar_one_or_none() is not None:
             try:
-                await session_agent_client.delete_download(str(session.id), entry.filename)
+                await session_agent_client.delete_download(str(session.id), entry.filename, connection=connection)
             except SessionAgentError:
                 pass
             continue
@@ -184,7 +186,7 @@ async def process_new_downloads(db, session: BrowserSession) -> list[QuarantineF
         created.append(quarantine_file)
 
         try:
-            await session_agent_client.delete_download(str(session.id), entry.filename)
+            await session_agent_client.delete_download(str(session.id), entry.filename, connection=connection)
         except SessionAgentError:
             pass  # best-effort cleanup; a leftover file is just re-processed (deduped by sha256) next poll
 

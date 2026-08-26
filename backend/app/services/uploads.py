@@ -10,6 +10,7 @@ from app.models.browser_session import BrowserSession
 from app.models.enums import FileAction, IncidentSeverity, IncidentStatus, SecurityEventType
 from app.models.incident import Incident
 from app.services.incidents import check_repeated_policy_violations
+from app.services.nodes import connection_for_node, get_node
 from app.services.policy_engine import FileDecisionInput, evaluate_file_action
 from app.services.security_events import record_security_event
 
@@ -90,8 +91,9 @@ async def process_upload(db, session: BrowserSession, filename: str, data: bytes
         await db.commit()
         raise UploadBlockedError(f"infected: {result.signature}")
 
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        await session_agent_client.write_upload(str(session.id), filename, data)
+        await session_agent_client.write_upload(str(session.id), filename, data, connection=connection)
     except SessionAgentError as exc:
         raise UploadBlockedError(f"failed to place file in sandbox: {exc}") from exc
 

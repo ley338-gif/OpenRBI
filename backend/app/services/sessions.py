@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import download_poller, session_agent_client
-from app.core.session_agent_client import SessionAgentError
+from app.core.session_agent_client import NodeConnection, SessionAgentError
 from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
 from app.models.enums import (
@@ -19,6 +19,7 @@ from app.models.enums import (
 )
 from app.models.incident import Incident
 from app.models.user import User
+from app.services.nodes import connection_for_node, get_node
 from app.services.policy_engine import resolve_clipboard_policy, resolve_session_resolution
 from app.services.security_events import record_security_event
 
@@ -36,7 +37,11 @@ class QuotaExceededError(SessionServiceError):
 
 
 async def _wait_for_display_ready(
-    session_id: str, *, attempts: int = 15, delay_seconds: float = 0.5
+    session_id: str,
+    *,
+    connection: NodeConnection | None = None,
+    attempts: int = 15,
+    delay_seconds: float = 0.5,
 ) -> None:
     """The container starting (docker's container.start()) and its VNC
     server actually accepting connections (Xvfb -> x11vnc booting inside
@@ -48,7 +53,7 @@ async def _wait_for_display_ready(
     last_error: Exception | None = None
     for _ in range(attempts):
         try:
-            info = await session_agent_client.get_display_info(session_id)
+            info = await session_agent_client.get_display_info(session_id, connection=connection)
             _, writer = await asyncio.wait_for(
                 asyncio.open_connection(info.host, info.port), timeout=delay_seconds
             )
@@ -150,6 +155,7 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
         )
 
     node = await select_node(db)  # raises NoCapacityError, propagates as 503
+    connection = connection_for_node(node)
     resolution = await resolve_session_resolution(db, user.id)
     clipboard_mode = await resolve_clipboard_policy(db, user.id)
 
@@ -176,9 +182,10 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
             disk_limit_mb=session.disk_limit_mb,
             screen_width=session.screen_width,
             screen_height=session.screen_height,
+            connection=connection,
         )
-        await session_agent_client.start_sandbox(str(session.id))
-        await _wait_for_display_ready(str(session.id))
+        await session_agent_client.start_sandbox(str(session.id), connection=connection)
+        await _wait_for_display_ready(str(session.id), connection=connection)
     except SessionAgentError as exc:
         session.status = SessionStatus.FAILED
         cleanup_detail = ""
@@ -188,7 +195,7 @@ async def create_session(db: AsyncSession, user: User) -> BrowserSession:
             # container was created; when cleanup itself is temporarily
             # unavailable, the reconciler's all-managed-container inventory
             # retries it after the agent recovers.
-            await session_agent_client.terminate_sandbox(str(session.id))
+            await session_agent_client.terminate_sandbox(str(session.id), connection=connection)
         except SessionAgentError as cleanup_exc:
             cleanup_detail = f"; cleanup deferred: {cleanup_exc}"
         await record_security_event(
@@ -222,8 +229,9 @@ async def terminate_session(db: AsyncSession, session: BrowserSession, *, actor_
     await db.flush()
     download_poller.stop_polling(session.id)
 
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        await session_agent_client.terminate_sandbox(str(session.id))
+        await session_agent_client.terminate_sandbox(str(session.id), connection=connection)
     except SessionAgentError as exc:
         session.status = SessionStatus.FAILED
         await db.flush()
@@ -300,8 +308,9 @@ async def isolate_session(db: AsyncSession, session: BrowserSession, *, actor_id
     session.status = SessionStatus.ISOLATING
     await db.flush()
 
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        await session_agent_client.isolate_sandbox(str(session.id))
+        await session_agent_client.isolate_sandbox(str(session.id), connection=connection)
     except SessionAgentError as exc:
         session.status = SessionStatus.FAILED
         await db.flush()
@@ -336,8 +345,9 @@ async def restore_session(db: AsyncSession, session: BrowserSession, *, actor_id
     if session.status != SessionStatus.ISOLATED:
         raise SessionServiceError(f"cannot restore a session in status {session.status.value}")
 
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        await session_agent_client.restore_sandbox(str(session.id))
+        await session_agent_client.restore_sandbox(str(session.id), connection=connection)
     except SessionAgentError as exc:
         session.status = SessionStatus.FAILED
         await db.flush()
