@@ -75,7 +75,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now openrbi-network-isolation.timer
 ```
 
-Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_BACKEND_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
+Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_AGENT_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
 
 ## Local build version metadata (RBI-POST-014)
 
@@ -297,11 +297,7 @@ What this **does** give you today: a `backend-user` process where `/admin/*` gen
 - **Separate Postgres roles** — both instances still connect with the same DB credentials/grants today. A `user-api` role with no access to admin-only tables/columns (role assignments, other users' TOTP secrets) is a documented, not-yet-implemented hardening option.
 - **Session Agent token scoping** — both instances hold the same shared `OPENRBI_SESSION_AGENT_API_TOKEN`. Per-listener tokens/scopes (so a compromised `backend-user` can't issue `isolate`/`terminate` on arbitrary sessions) are documented, not implemented.
 - **Firewall/VLAN enforcement** — entirely an operator decision once real separate origins exist; nothing in this repository automates it, on purpose (see the Productization v0.1.1 analysis's explicit anti-overengineering guardrail).
-- **The display relay's `browser-plane` exemption defaults to the base `backend` service only.** `scripts/setup-network-isolation.sh` now accepts `OPENRBI_BACKEND_BROWSER_PLANE_IP` as a space-separated list, so a Segmented deployment can exempt `backend-user`'s own pinned address (`172.30.0.4`, the process that actually terminates `/display/*/ws` in this profile) instead of Compact's default:
-  ```bash
-  OPENRBI_BACKEND_BROWSER_PLANE_IP="172.30.0.4" sudo -E ./scripts/setup-network-isolation.sh
-  ```
-  `backend-admin` deliberately has no `browser-plane` network attachment and gets no exemption — it never terminates the display route, so it never needs one. See [architecture.md#user-portal-and-admin-portal-productization-v011](architecture.md#user-portal-and-admin-portal-productization-v011).
+- **The display relay no longer runs through the backend at all** (Roadmap B2.4, [ADR 0024](adr/0024-cross-host-display-relay.md)) — it terminates at the Session Agent, which is neither `backend-user` nor `backend-admin`. `scripts/setup-network-isolation.sh`'s exemption (`OPENRBI_AGENT_BROWSER_PLANE_IP`, default `172.30.0.2`) is the same in Compact and Segmented alike; nothing about it changes between the two profiles. See [architecture.md#user-portal-and-admin-portal-productization-v011](architecture.md#user-portal-and-admin-portal-productization-v011).
 
 ### User Portal and Admin Portal origins
 
@@ -328,7 +324,7 @@ VITE_API_BASE_URL=https://admin.openrbi.local/api
 OPENRBI_ADMIN_BASE_PATH=/        # served at its own origin's root, not /admin/
 ```
 
-This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and operator-managed firewall/VLAN policy still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point. The display relay's browser-plane address can already be selected explicitly with `OPENRBI_BACKEND_BROWSER_PLANE_IP`, as shown above.
+This requires: two reverse-proxy vhosts (one per origin, each with its own TLS certificate), `browser.openrbi.local` pointed at whatever fronts `backend-user`, `admin.openrbi.local` pointed at whatever fronts `backend-admin` (DNS or, for local evaluation, `/etc/hosts` entries on the client machine), and — per the gaps listed above — this is not yet a complete guide: separate DB roles, Session Agent token scoping, and operator-managed firewall/VLAN policy still need to be addressed before treating this as production-grade segmentation rather than a logical/process-level starting point.
 
 ## Sizing
 

@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Accepted. Note: [ADR 0024](0024-cross-host-display-relay.md) (Roadmap B2.4)
+moved the single pinned address permitted to initiate a connection into
+`browser-plane` from the backend to session-agent — the boundary this ADR
+describes (a dedicated, isolated network for sandbox containers) is
+otherwise unaffected and still accurate.
 
 ## Context
 

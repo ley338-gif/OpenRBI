@@ -50,19 +50,25 @@ async def _wait_for_display_ready(
     session creation intermittently failed with a real race condition
     caught during end-to-end testing. Don't report a session ACTIVE until
     the display path is actually usable.
+
+    Roadmap B2.4 (docs/adr/0024) — this used to dial the sandbox's VNC
+    port directly from here, which only worked because the backend was
+    multi-homed onto the same host-local browser-plane bridge every
+    sandbox lives on. That's no longer true for a node on a different
+    host, so the actual TCP-connect probe now runs on that node's own
+    agent (session_agent_client.check_display_ready()); this function
+    keeps its exact retry/backoff shape, just polling a REST call instead
+    of dialing a socket itself.
     """
     last_error: Exception | None = None
     for _ in range(attempts):
         try:
-            info = await session_agent_client.get_display_info(session_id, connection=connection)
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(info.host, info.port), timeout=delay_seconds
-            )
-            writer.close()
-            return
-        except (SessionAgentError, OSError, asyncio.TimeoutError) as exc:
+            if await session_agent_client.check_display_ready(session_id, connection=connection):
+                return
+            last_error = SessionAgentError("display not ready yet")
+        except SessionAgentError as exc:
             last_error = exc
-            await asyncio.sleep(delay_seconds)
+        await asyncio.sleep(delay_seconds)
     raise SessionAgentError(f"display never became ready: {last_error}")
 
 

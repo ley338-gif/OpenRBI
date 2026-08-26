@@ -48,18 +48,14 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     depends_on: [postgres, redis]
-    # Multi-homed deliberately: backend needs a route to a sandbox's VNC
-    # port for the Phase 8 display relay. Pinned to a static address on
-    # browser-plane because scripts/setup-network-isolation.sh must be able
-    # to tell "backend's own leg on this network" apart from an actual
-    # sandbox by IP alone — both otherwise live in the same subnet. The
-    # script exempts exactly this address for NEW connections; every other
-    # address on browser-plane (i.e. every real sandbox) still cannot open
-    # a NEW connection into the control plane, only backend can initiate.
-    networks:
-      control-plane:
-      browser-plane:
-        ipv4_address: 172.30.0.2
+    # Roadmap B2.4 (docs/adr/0024-cross-host-display-relay.md) — backend no
+    # longer needs a route to a sandbox's VNC port at all: the display relay
+    # now terminates at each node's own Session Agent (see that service's
+    # own browser-plane membership below), reachable over control-plane like
+    # every other Session Agent call. Backend previously multi-homed onto
+    # browser-plane specifically for this; it has no remaining reason to be
+    # on that network.
+    networks: [control-plane]
     volumes:
       # Interim local staging for intercepted downloads (Phase 13) —
       # replaced by a real quarantine-storage abstraction in Phase 15.
@@ -112,7 +108,26 @@ services:
     # docs/deployment.md#installation for how to determine and set it.
     group_add:
       - "${OPENRBI_DOCKER_SOCKET_GID:?set this to the docker socket's group ID on this host — run: stat -c '%g' /var/run/docker.sock — see docs/deployment.md#installation}"
-    networks: [control-plane]
+    # Roadmap B2.4 (docs/adr/0024-cross-host-display-relay.md) — multi-homed
+    # onto browser-plane, taking over the role backend used to hold: this
+    # process is the one that now dials a sandbox's VNC port (the new
+    # /v1/sandboxes/{id}/display/ws relay and /display/ready probe), and it
+    # genuinely lives on this node's own local browser-plane bridge, unlike
+    # the control plane once a node is on a different host. Pinned to a
+    # static address for the same reason backend's used to be pinned:
+    # scripts/setup-network-isolation.sh must be able to tell "this node's
+    # own relay leg" apart from an actual sandbox by IP alone. Same numeric
+    # default as the address it replaces (172.30.0.2) — an un-overridden
+    # single-node deployment needs no operator action on upgrade.
+    networks:
+      control-plane:
+      browser-plane:
+        # Same variable scripts/setup-network-isolation.sh reads for its
+        # exemption default — one source of truth for "this node's relay
+        # address" between the two. Override together with
+        # OPENRBI_BROWSER_PLANE_SUBNET if you change that subnet; the
+        # address must fall inside it.
+        ipv4_address: ${OPENRBI_AGENT_BROWSER_PLANE_IP:-172.30.0.2}
 
   frontend:
     build:
@@ -170,7 +185,12 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        # Roadmap B2.4 — a documented per-deployment override, not a
+        # hardcoded value, so a second host's own compose file (Roadmap
+        # B2.6) can pick a distinct, non-colliding range for its own
+        # local browser-plane (e.g. 172.30.1.0/24, 172.30.2.0/24, ...).
+        # Unset, this is the same 172.30.0.0/24 every prior release used.
+        - subnet: ${OPENRBI_BROWSER_PLANE_SUBNET:-172.30.0.0/24}
 
 volumes:
   postgres-data:
