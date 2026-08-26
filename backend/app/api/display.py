@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.models.browser_session import BrowserSession
 from app.models.enums import SecurityEventType, SessionStatus
 from app.models.user import User
+from app.services.nodes import connection_for_node, get_node
 from app.services.security_events import record_security_event
 
 router = APIRouter(prefix="/display", tags=["display"])
@@ -95,8 +96,9 @@ async def display_ws(
         await websocket.close(code=_CLOSE_NOT_FOUND)
         return
 
+    connection = connection_for_node(await get_node(db, session.node_id))
     try:
-        info = await get_display_info(str(session_id))
+        info = await get_display_info(str(session_id), connection=connection)
     except SessionAgentError:
         await websocket.close(code=_CLOSE_SANDBOX_UNREACHABLE)
         return

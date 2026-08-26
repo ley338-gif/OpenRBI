@@ -81,7 +81,23 @@ control. Review should specifically try to break the PENDING→APPROVED
 transition (race conditions, replay of a used enrollment token, a
 REVOKED node's in-flight requests).
 
-### B2.2 — Per-node config & client plumbing
+### B2.2 — Per-node config & client plumbing — **done**
+
+Every `app/core/session_agent_client.py` function now accepts an optional
+`connection: NodeConnection` (base_url/token); `app/services/nodes.py`'s
+`connection_for_node()` resolves one from a real `BrowserNode` (decrypting
+`agent_token_encrypted`) or falls back to the legacy shared settings for
+a node with no `endpoint_url` (every existing single-node case,
+unaffected). Wired through every session-lifecycle call site:
+`create_session`/`terminate_session`/`isolate_session`/`restore_session`
+(`app/services/sessions.py`), the display relay
+(`app/api/display.py`), and the download/upload pipelines
+(`app/services/downloads.py`/`uploads.py`). Verified with a real second
+HTTP listener standing in for a second node (not the full Docker-backed
+Session Agent — this phase is about routing, not sandbox lifecycle,
+which the existing single-node suite already covers against the real
+agent): isolate/restore/terminate all reached the second node's own
+endpoint with its own decrypted token, never the default node's.
 
 **Goal**: Every Session-Agent-bound call resolves the node it's actually
 targeting instead of one hardcoded `session_agent_base_url`.

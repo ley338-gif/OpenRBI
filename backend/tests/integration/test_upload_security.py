@@ -44,7 +44,7 @@ async def test_clean_upload_is_hashed_scanned_and_written(db, monkeypatch):
     async def clean(_data):
         return ScanResult(infected=False, signature=None)
 
-    async def write(session_id, filename, data):
+    async def write(session_id, filename, data, **_kwargs):
         written.update(session_id=session_id, filename=filename, data=data)
 
     monkeypatch.setattr(uploads, "evaluate_file_action", allow)
