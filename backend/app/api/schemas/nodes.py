@@ -10,6 +10,11 @@ class BrowserNodeResponse(BaseModel):
     id: uuid.UUID
     hostname: str
     status: str
+    # Roadmap B2.1 — never derived from `health` below: a PENDING/REVOKED
+    # node's `enrollment_status` is what an admin needs to act on, and
+    # should never be inferred from OFFLINE/DEGRADED-style health noise.
+    enrollment_status: str
+    endpoint_url: str | None
     # Roadmap B1.10.1 — the centrally-computed label (HEALTHY/DEGRADED/
     # DRAINING/MAINTENANCE/OFFLINE), distinct from `status`: `status` is the
     # raw scheduling flag (ONLINE/DRAINING/OFFLINE/DEGRADED/MAINTENANCE)
@@ -31,6 +36,8 @@ class BrowserNodeResponse(BaseModel):
             id=node.id,
             hostname=node.hostname,
             status=node.status.value,
+            enrollment_status=node.enrollment_status.value,
+            endpoint_url=node.endpoint_url,
             health=compute_worker_health(node).value,
             capacity=node.capacity,
             active_sessions=node.active_sessions,
@@ -71,3 +78,23 @@ class WorkerOverviewResponse(BaseModel):
     offset: int
     limit: int
     stats: WorkerOverviewStats
+
+
+class NodeEnrollmentTokenResponse(BaseModel):
+    """Returned exactly once, at generation time — same "shown once" rule
+    as MFA recovery codes; the token itself is never persisted in
+    Postgres or retrievable again (see app/core/node_enrollment_tokens.py).
+    """
+
+    enrollment_token: str
+    expires_in_seconds: int
+
+
+class NodeEnrollRequest(BaseModel):
+    enrollment_token: str
+    hostname: str
+    api_token: str
+
+
+class NodeApproveRequest(BaseModel):
+    endpoint_url: str

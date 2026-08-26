@@ -307,7 +307,7 @@ test.describe("Admin Portal", () => {
     await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible();
 
     const groupName = `e2e-polish-${Date.now()}`;
-    await page.getByRole("button", { name: "Create Group" }).click();
+    await page.getByRole("button", { name: "Create Group" }).first().click();
     await page.getByLabel("Name").fill(groupName);
     await page.getByRole("button", { name: "Create group", exact: true }).click();
     await expect(page.getByRole("cell", { name: groupName, exact: true })).toBeVisible();
@@ -535,7 +535,7 @@ test.describe("Admin Portal", () => {
 
     await page.getByRole("link", { name: "Groups" }).click();
     const groupName = `e2e-assign-group-${Date.now()}`;
-    await page.getByRole("button", { name: "Create Group" }).click();
+    await page.getByRole("button", { name: "Create Group" }).first().click();
     await page.getByLabel("Name").fill(groupName);
     await page.getByRole("button", { name: "Create group", exact: true }).click();
     await expect(page.getByRole("button", { name: groupName, exact: true })).toBeVisible();

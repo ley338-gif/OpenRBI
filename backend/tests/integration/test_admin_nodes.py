@@ -7,11 +7,13 @@ coverage for all four state-changing actions (including undrain, which
 previously had no audit event at all).
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import select
 
 from app.models.browser_node import BrowserNode
-from app.models.enums import BrowserNodeStatus
+from app.models.enums import BrowserNodeStatus, NodeEnrollmentStatus
 from app.models.security_event import SecurityEvent
 from tests.conftest import login_with_mfa_enrollment, make_user
 
@@ -241,3 +243,218 @@ async def test_maintenance_is_not_undone_by_a_heartbeat_refresh(db, client):
         await db.refresh(node)
         if node.status == BrowserNodeStatus.MAINTENANCE:
             await client.post(f"/admin/nodes/{node.id}/unmaintenance", cookies={"openrbi_session": cookie})
+
+
+# Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md)
+
+
+async def _delete_test_node(db, node_id: uuid.UUID) -> None:
+    """Cleanup for a real BrowserNode row an enrollment test created —
+    same FK-child-before-parent ordering scripts/e2e-seed.py's own
+    cleanup uses.
+    """
+    from sqlalchemy import delete
+
+    await db.execute(delete(SecurityEvent).where(SecurityEvent.metadata_json["node_id"].astext == str(node_id)))
+    await db.execute(delete(BrowserNode).where(BrowserNode.id == node_id))
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_generate_enrollment_tokens_or_approve_or_revoke(db, client):
+    reviewer, password = await make_user(db, role_name="SECURITY_REVIEWER")
+    cookie = await login_with_mfa_enrollment(client, reviewer.username, password)
+    node = await _get_the_node(db)
+
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    assert r.status_code == 403
+    r = await client.post(
+        f"/admin/nodes/{node.id}/approve", json={"endpoint_url": "https://x"}, cookies={"openrbi_session": cookie}
+    )
+    assert r.status_code == 403
+    r = await client.post(f"/admin/nodes/{node.id}/revoke", cookies={"openrbi_session": cookie})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_enroll_approve_revoke_round_trip_is_audited(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    hostname = f"pytest-node-{uuid.uuid4().hex[:8]}"
+
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    assert r.status_code == 200, r.text
+    token = r.json()["enrollment_token"]
+    assert r.json()["expires_in_seconds"] > 0
+
+    node_id = None
+    try:
+        # Deliberately no auth on this call — it's the new node's own
+        # unauthenticated registration path, closed by the token itself.
+        r = await client.post(
+            "/admin/nodes/enroll", json={"enrollment_token": token, "hostname": hostname, "api_token": "irrelevant"}
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        node_id = body["id"]
+        assert body["enrollment_status"] == "PENDING"
+        assert body["endpoint_url"] is None
+
+        result = await db.execute(select(SecurityEvent).where(SecurityEvent.event_type == "NODE_ENROLLMENT_REQUESTED"))
+        assert result.scalars().first() is not None
+
+        # A single-use token cannot be replayed, even against a different hostname.
+        r = await client.post(
+            "/admin/nodes/enroll",
+            json={"enrollment_token": token, "hostname": f"{hostname}-2", "api_token": "irrelevant"},
+        )
+        assert r.status_code == 400
+
+        r = await client.post(
+            f"/admin/nodes/{node_id}/approve",
+            json={"endpoint_url": "https://node.example.internal:8100"},
+            cookies={"openrbi_session": cookie},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["enrollment_status"] == "APPROVED"
+        assert r.json()["endpoint_url"] == "https://node.example.internal:8100"
+
+        result = await db.execute(select(SecurityEvent).where(SecurityEvent.event_type == "NODE_APPROVED"))
+        assert result.scalars().first() is not None
+
+        node = await db.get(BrowserNode, uuid.UUID(node_id))
+        assert node.agent_token_encrypted is not None
+
+        r = await client.post(f"/admin/nodes/{node_id}/revoke", cookies={"openrbi_session": cookie})
+        assert r.status_code == 200, r.text
+        assert r.json()["enrollment_status"] == "REVOKED"
+
+        result = await db.execute(select(SecurityEvent).where(SecurityEvent.event_type == "NODE_REVOKED"))
+        assert result.scalars().first() is not None
+
+        await db.refresh(node)
+        assert node.agent_token_encrypted is None
+        assert node.status == BrowserNodeStatus.OFFLINE
+    finally:
+        if node_id:
+            await _delete_test_node(db, uuid.UUID(node_id))
+
+
+@pytest.mark.asyncio
+async def test_invalid_enrollment_token_is_rejected(db, client):
+    r = await client.post(
+        "/admin/nodes/enroll",
+        json={"enrollment_token": "not-a-real-token", "hostname": "irrelevant", "api_token": "irrelevant"},
+    )
+    assert r.status_code == 400
+    assert "Traceback" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_enrolling_an_active_hostname_conflicts(db, client):
+    """Re-enrolling a PENDING/APPROVED hostname must not let a second,
+    possibly different agent silently take over that identity.
+    """
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    hostname = f"pytest-node-{uuid.uuid4().hex[:8]}"
+
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    token = r.json()["enrollment_token"]
+    r = await client.post(
+        "/admin/nodes/enroll", json={"enrollment_token": token, "hostname": hostname, "api_token": "x"}
+    )
+    node_id = r.json()["id"]
+
+    try:
+        r2 = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+        token2 = r2.json()["enrollment_token"]
+        r3 = await client.post(
+            "/admin/nodes/enroll", json={"enrollment_token": token2, "hostname": hostname, "api_token": "y"}
+        )
+        assert r3.status_code == 409
+    finally:
+        await _delete_test_node(db, uuid.UUID(node_id))
+
+
+@pytest.mark.asyncio
+async def test_reenrolling_a_revoked_hostname_resets_it_to_pending(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    hostname = f"pytest-node-{uuid.uuid4().hex[:8]}"
+
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    token = r.json()["enrollment_token"]
+    r = await client.post(
+        "/admin/nodes/enroll", json={"enrollment_token": token, "hostname": hostname, "api_token": "x"}
+    )
+    node_id = r.json()["id"]
+
+    try:
+        await client.post(
+            f"/admin/nodes/{node_id}/approve",
+            json={"endpoint_url": "https://x"},
+            cookies={"openrbi_session": cookie},
+        )
+        await client.post(f"/admin/nodes/{node_id}/revoke", cookies={"openrbi_session": cookie})
+
+        r2 = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+        token2 = r2.json()["enrollment_token"]
+        r3 = await client.post(
+            "/admin/nodes/enroll", json={"enrollment_token": token2, "hostname": hostname, "api_token": "z"}
+        )
+        assert r3.status_code == 200, r3.text
+        assert r3.json()["id"] == node_id  # same row, reused
+        assert r3.json()["enrollment_status"] == "PENDING"
+        assert r3.json()["endpoint_url"] is None
+    finally:
+        await _delete_test_node(db, uuid.UUID(node_id))
+
+
+@pytest.mark.asyncio
+async def test_approving_a_revoked_node_is_rejected(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    hostname = f"pytest-node-{uuid.uuid4().hex[:8]}"
+
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    token = r.json()["enrollment_token"]
+    r = await client.post(
+        "/admin/nodes/enroll", json={"enrollment_token": token, "hostname": hostname, "api_token": "x"}
+    )
+    node_id = r.json()["id"]
+
+    try:
+        await client.post(f"/admin/nodes/{node_id}/revoke", cookies={"openrbi_session": cookie})
+        r2 = await client.post(
+            f"/admin/nodes/{node_id}/approve",
+            json={"endpoint_url": "https://x"},
+            cookies={"openrbi_session": cookie},
+        )
+        assert r2.status_code == 409
+    finally:
+        await _delete_test_node(db, uuid.UUID(node_id))
+
+
+@pytest.mark.asyncio
+async def test_new_node_defaults_to_offline_status_and_not_matching_default_node(db, client):
+    """A PENDING node must never be confused with the real single-node
+    dev stack's own APPROVED row other tests in this file rely on.
+    """
+    admin, password = await make_user(db, role_name="ADMIN")
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    the_real_node = await _get_the_node(db)
+    assert the_real_node.enrollment_status == NodeEnrollmentStatus.APPROVED
+
+    hostname = f"pytest-node-{uuid.uuid4().hex[:8]}"
+    r = await client.post("/admin/nodes/enrollment-tokens", cookies={"openrbi_session": cookie})
+    token = r.json()["enrollment_token"]
+    r = await client.post(
+        "/admin/nodes/enroll", json={"enrollment_token": token, "hostname": hostname, "api_token": "x"}
+    )
+    node_id = r.json()["id"]
+    try:
+        assert node_id != str(the_real_node.id)
+        assert r.json()["status"] == "OFFLINE"
+    finally:
+        await _delete_test_node(db, uuid.UUID(node_id))

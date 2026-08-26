@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Added
+
+- Multi-node deployment, Phase B2.1 (node registry & enrollment): a new Session Agent host can now self-enroll via a single-use, admin-generated token (`POST /admin/nodes/enrollment-tokens` → `POST /admin/nodes/enroll`) and registers `PENDING` — never schedulable — until an admin explicitly approves (`POST /admin/nodes/{id}/approve`, setting its externally-reachable endpoint) or revokes it. Each node's own API token is now stored per-node, encrypted at rest, rather than the single shared secret every node previously relied on. Existing single-node deployments are completely unaffected. See [docs/adr/0023-node-enrollment-and-trust-model.md](docs/adr/0023-node-enrollment-and-trust-model.md) and [docs/roadmap-b2-multinode.md](docs/roadmap-b2-multinode.md).
+
 ## [1.0.1] - 2026-08-15
 
 Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record.

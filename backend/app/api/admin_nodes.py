@@ -7,11 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.nodes import (
     BrowserNodeResponse,
+    NodeApproveRequest,
+    NodeEnrollmentTokenResponse,
     NodeHistoryPointResponse,
     WorkerOverviewResponse,
     WorkerOverviewStats,
 )
 from app.core.deps import get_current_user, require_role
+from app.core.node_enrollment_tokens import TTL_SECONDS as ENROLLMENT_TOKEN_TTL_SECONDS
+from app.core.node_enrollment_tokens import create_token as create_enrollment_token
 from app.db.session import get_db
 from app.models.browser_node import BrowserNode
 from app.models.user import User
@@ -19,8 +23,10 @@ from app.services import metrics_history
 from app.services.metrics_history import RANGE_CONFIG
 from app.services.nodes import (
     NodeServiceError,
+    approve_node,
     drain_node,
     maintenance_node,
+    revoke_node,
     undrain_node,
     unmaintenance_node,
 )
@@ -176,6 +182,47 @@ async def unmaintenance_node_endpoint(
     except NodeServiceError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(node)
+    return BrowserNodeResponse.from_model(node)
+
+
+# Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) — ADMIN
+# only, matching drain/maintenance above: generating a credential that
+# lets a new host register at all is at least as sensitive as pausing an
+# existing one.
+@router.post(
+    "/enrollment-tokens", response_model=NodeEnrollmentTokenResponse, dependencies=[Depends(require_role("ADMIN"))]
+)
+async def create_enrollment_token_endpoint() -> NodeEnrollmentTokenResponse:
+    token = await create_enrollment_token()
+    return NodeEnrollmentTokenResponse(enrollment_token=token, expires_in_seconds=ENROLLMENT_TOKEN_TTL_SECONDS)
+
+
+@router.post("/{node_id}/approve", response_model=BrowserNodeResponse, dependencies=[Depends(require_role("ADMIN"))])
+async def approve_node_endpoint(
+    node_id: uuid.UUID,
+    payload: NodeApproveRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BrowserNodeResponse:
+    node = await _get_or_404(db, node_id)
+    try:
+        await approve_node(db, node, endpoint_url=payload.endpoint_url, actor_id=current_user.id)
+    except NodeServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(node)
+    return BrowserNodeResponse.from_model(node)
+
+
+@router.post("/{node_id}/revoke", response_model=BrowserNodeResponse, dependencies=[Depends(require_role("ADMIN"))])
+async def revoke_node_endpoint(
+    node_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> BrowserNodeResponse:
+    node = await _get_or_404(db, node_id)
+    await revoke_node(db, node, actor_id=current_user.id)
     await db.commit()
     await db.refresh(node)
     return BrowserNodeResponse.from_model(node)
