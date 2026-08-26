@@ -20,7 +20,7 @@ function RegisterNodeModal({ onClose }: { onClose: () => void }) {
   return <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={(e) => e.stopPropagation()}>
     <h2>Register a new node</h2>
     {error ? <p className="text-danger">{error}</p> : !token ? <p>Generating…</p> : <>
-      <p>Copy this token into the new host's session-agent <code>.env</code> as <code>OPENRBI_AGENT_ENROLLMENT_TOKEN</code>, alongside a freshly generated <code>OPENRBI_AGENT_API_TOKEN</code>. Start the agent — it registers itself automatically and appears below as Pending until you approve it.</p>
+      <p>Copy this token into the new host's session-agent <code>.env</code> as <code>OPENRBI_AGENT_ENROLLMENT_TOKEN</code>, alongside a freshly generated agent API token (see <code>.env.example</code> for the exact variable name). Start the agent — it registers itself automatically and appears below as Pending until you approve it.</p>
       <p className="mono" style={{ wordBreak: "break-all", padding: "8px", background: "var(--color-bg-subtle)", borderRadius: "4px" }}>{token}</p>
       <p><strong>This token is shown once and expires in an hour.</strong> Generate a new one if you lose it.</p>
     </>}
