@@ -14,6 +14,7 @@ from app.models.enums import (
     BrowserNodeStatus,
     IncidentSeverity,
     IncidentStatus,
+    NodeEnrollmentStatus,
     SecurityEventType,
     SessionStatus,
 )
@@ -65,25 +66,7 @@ async def _wait_for_display_ready(
     raise SessionAgentError(f"display never became ready: {last_error}")
 
 
-async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
-    """Refreshes the (single, in MVP 1) BrowserNode row from the Session
-    Agent's live self-report (status/capacity/active_sessions/runtime/
-    version/CPU/RAM — Roadmap B1.10.1) and returns it, without judging
-    whether it's usable for scheduling — that's select_node()'s job below.
-    Shared by select_node() (refreshed on every session creation) and
-    app/core/node_poller.py (refreshed on a fixed interval regardless of
-    session traffic, so telemetry doesn't go stale between creations).
-    Raises SessionAgentError, not NoCapacityError — callers that care about
-    scheduling wrap this; the poller doesn't.
-    """
-    status = await session_agent_client.get_node_status()
-
-    result = await db.execute(select(BrowserNode).where(BrowserNode.hostname == status.hostname))
-    node = result.scalar_one_or_none()
-    if node is None:
-        node = BrowserNode(hostname=status.hostname)
-        db.add(node)
-
+def _apply_node_status(node: BrowserNode, status: session_agent_client.NodeStatus) -> None:
     # DRAINING/MAINTENANCE are admin-set scheduling gates (project brief
     # §23, extended by Roadmap B1.10.1), not something the Session Agent
     # itself knows about or reports — it will always self-report ONLINE.
@@ -100,27 +83,100 @@ async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
     node.ram_used_mb = status.ram_used_mb
     node.node_started_at = status.node_started_at
     node.last_heartbeat = datetime.now(UTC)
+
+
+async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
+    """Legacy single-node path: refreshes (auto-creating on first call) THE
+    node reachable at the shared settings.session_agent_base_url, keyed by
+    the hostname its own self-report gives. Still exactly what
+    app/core/node_poller.py polls on a fixed interval, and still what
+    select_node() below falls back to when no BrowserNode row exists at
+    all yet (a fresh install, before an admin has enrolled any second
+    node — see B2.1) so the very first session ever created doesn't
+    require an admin action first.
+    Raises SessionAgentError, not NoCapacityError — callers that care about
+    scheduling wrap this; the poller doesn't.
+    """
+    status = await session_agent_client.get_node_status()
+
+    result = await db.execute(select(BrowserNode).where(BrowserNode.hostname == status.hostname))
+    node = result.scalar_one_or_none()
+    if node is None:
+        node = BrowserNode(hostname=status.hostname)
+        db.add(node)
+
+    _apply_node_status(node, status)
+    await db.flush()
+    return node
+
+
+async def _refresh_enrolled_node(db: AsyncSession, node: BrowserNode) -> BrowserNode:
+    """Roadmap B2.3 — refreshes an already-persisted, admin-approved
+    BrowserNode from its own Session Agent, using its own per-node
+    connection (app/services/nodes.py's connection_for_node(), which
+    decrypts this node's own agent_token_encrypted). Unlike
+    refresh_node_from_agent() above, this never auto-creates a row — every
+    node this is called for was already enrolled+approved (B2.1) before
+    this runs.
+    """
+    connection = connection_for_node(node)
+    status = await session_agent_client.get_node_status(connection=connection)
+    _apply_node_status(node, status)
     await db.flush()
     return node
 
 
 async def select_node(db: AsyncSession) -> BrowserNode:
-    """The abstract scheduling seam docs/architecture.md describes —
-    trivial today, but callers never assume a specific node, so real
-    multi-node selection can replace this body later without changing
-    callers.
+    """Roadmap B2.3 — real cross-node scheduling. Queries every APPROVED
+    node (B2.1's trust gate — a PENDING/REVOKED node is never a scheduling
+    candidate regardless of how healthy it might claim to be), refreshes
+    each from its own agent, and picks the least-loaded ONLINE node with
+    free capacity (highest capacity - active_sessions), ties broken
+    deterministically by lowest hostname.
+
+    A node whose own agent is unreachable this round is excluded rather
+    than failing the whole selection — one bad node must never block
+    scheduling onto the others. Fails closed with NoCapacityError only
+    when literally no node is usable, same as the pre-B2.3 single-node
+    behavior when the one node was unusable.
+
+    Sessions are sticky to whichever node they're scheduled onto for their
+    entire lifetime — there is no live migration between nodes in B2 (see
+    docs/roadmap-b2-multinode.md#b23--real-scheduling and
+    docs/architecture.md#multi-node-readiness).
     """
-    try:
-        node = await refresh_node_from_agent(db)
-    except SessionAgentError as exc:
-        raise NoCapacityError(f"session agent unavailable: {exc}") from exc
+    result = await db.execute(
+        select(BrowserNode).where(BrowserNode.enrollment_status == NodeEnrollmentStatus.APPROVED)
+    )
+    nodes = list(result.scalars().all())
 
-    if node.status != BrowserNodeStatus.ONLINE:
-        raise NoCapacityError(f"node {node.hostname} is {node.status.value}, not accepting new sessions")
-    if node.active_sessions >= node.capacity:
-        raise NoCapacityError(f"node {node.hostname} is at capacity ({node.active_sessions}/{node.capacity})")
+    if not nodes:
+        # Bootstrap: no BrowserNode row exists at all yet (fresh install,
+        # node_poller.py hasn't ticked, nothing has been enrolled). Fall
+        # back to the legacy single-node auto-creation path.
+        try:
+            nodes = [await refresh_node_from_agent(db)]
+        except SessionAgentError as exc:
+            raise NoCapacityError(f"session agent unavailable: {exc}") from exc
+    else:
+        refreshed = []
+        for node in nodes:
+            try:
+                refreshed.append(await _refresh_enrolled_node(db, node))
+            except SessionAgentError:
+                continue  # unreachable this round — try the remaining nodes
+        nodes = refreshed
 
-    return node
+    candidates = [
+        node for node in nodes if node.status == BrowserNodeStatus.ONLINE and node.active_sessions < node.capacity
+    ]
+    if not candidates:
+        raise NoCapacityError("no enrolled node is online with free capacity")
+
+    # Least-loaded wins: largest free capacity (capacity - active_sessions)
+    # first, lowest hostname breaks a tie deterministically.
+    candidates.sort(key=lambda n: (-(n.capacity - n.active_sessions), n.hostname))
+    return candidates[0]
 
 
 async def count_active_sessions_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:

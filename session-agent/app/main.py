@@ -83,8 +83,8 @@ async def node_status() -> dict[str, str | int | float | bool]:
 
 
 def _capacity_from_settings(settings) -> int:
-    # Placeholder capacity model: MVP 1 has no host-resource-aware scheduler
-    # yet (Phase 23 note in docs/architecture.md); a fixed ceiling keeps
-    # get_status() honest about "no free slots" without pretending to know
-    # real host headroom.
-    return 10
+    # Roadmap B2.3 — real per-node deploy-time config (OPENRBI_AGENT_CAPACITY),
+    # not a hardcoded ceiling. Host-resource-aware auto-sizing is still out of
+    # scope for B2 (docs/roadmap-b2-multinode.md); this is the "minimum
+    # viable version" that roadmap phase explicitly calls for.
+    return settings.capacity

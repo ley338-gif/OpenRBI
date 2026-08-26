@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # or engine later needs no provider-logic change.
     sandbox_image: str = "openrbi-browser:latest"
     sandbox_command: list[str] | None = None
+
+    # Roadmap B2.3 (docs/roadmap-b2-multinode.md) — real per-node scheduling
+    # needs a real per-node capacity value; 10 matches the previous hardcoded
+    # placeholder exactly, so an operator who never sets this sees no change.
+    # Host-resource-aware auto-sizing is an explicit non-goal of B2 (see that
+    # roadmap's "what this deliberately does not cover" section).
+    capacity: int = 10
     # Dedicated, egress-filtered network (docker-compose.yml, scripts/
     # setup-network-isolation.sh) — sandboxes are never on the same network
     # as postgres/redis/session-agent. The backend is multi-homed onto this

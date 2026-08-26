@@ -126,7 +126,27 @@ every caller in `backend/app/services/sessions.py`, `app/api/files.py`,
 **ADR required**: no (mechanical, confined to the client/caller layer per
 the brief's own §8-equivalent finding for the listener split).
 
-### B2.3 — Real scheduling
+### B2.3 — Real scheduling — **done**
+
+`select_node()` now queries every `APPROVED` node, refreshes each from its
+own agent (via `connection_for_node()`, B2.2), and scores by free capacity
+(`capacity - active_sessions`; least-loaded wins), ties broken
+deterministically by lowest hostname. A node that's `DRAINING`/
+`MAINTENANCE`, self-reports non-`ONLINE`, or whose agent is unreachable
+this round is excluded from that round only — one bad node never blocks
+scheduling onto the others. When no `BrowserNode` row exists at all yet
+(a fresh install before any admin enrollment), it falls back to the
+legacy single-node auto-creation path unchanged, so the very first
+session ever created still needs no prior admin action. Fails closed
+with the same `NoCapacityError` as before when every candidate is
+excluded or full. Session Agent capacity is now real per-node deploy-time
+config (`OPENRBI_AGENT_CAPACITY`, default 10 — unchanged from the
+previous hardcoded value). Sessions remain sticky to their node for their
+whole lifetime; no live migration (see `docs/architecture.md#multi-node-readiness`).
+Verified with real HTTP listeners standing in for multiple nodes
+(`test_scheduling.py`): least-loaded selection, deterministic tie-break,
+fail-closed when every node is full, and one unreachable node not
+blocking scheduling onto a healthy one.
 
 **Goal**: `select_node()` stops being a single-node stub and does real
 cross-node selection.
