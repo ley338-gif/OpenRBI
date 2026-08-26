@@ -53,7 +53,7 @@ The Admin Portal → Workers view uses the same backend health classification as
 First check the browser console/network tab for a WebSocket attempt to `/api/display/{id}/ws` at all:
 
 - **No WebSocket attempt is made**: this was a real, since-fixed frontend bug (a React ref-timing race — the display connection was attempted before the viewer's container `<div>` had actually mounted). If seen on a build predating the fix in [ADR 0014](adr/0014-separate-user-and-admin-portal-frontends.md), rebuild the User Portal from current `main`.
-- **A WebSocket attempt is made but fails/closes immediately**: see "Secure Browser session fails to connect right after starting" above — the sandbox's VNC server may not have bound its port yet; also confirm the backend's `browser-plane` leg is actually exempted by `scripts/setup-network-isolation.sh` (Compact: the default `172.30.0.2`; Segmented: see [deployment.md#user-portal-and-admin-portal-origins](deployment.md#user-portal-and-admin-portal-origins) for the `OPENRBI_BACKEND_BROWSER_PLANE_IP` override needed when running `backend-user`).
+- **A WebSocket attempt is made but fails/closes immediately**: see "Secure Browser session fails to connect right after starting" above — the sandbox's VNC server may not have bound its port yet; also confirm the Session Agent's `browser-plane` leg (not the backend's — see [ADR 0024](adr/0024-cross-host-display-relay.md)) is actually exempted by `scripts/setup-network-isolation.sh` (default `172.30.0.2`, override with `OPENRBI_AGENT_BROWSER_PLANE_IP` if you changed it).
 
 ## Portal: "End Session" shows Terminated but the session later reappears as Disconnected
 

@@ -1,4 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import asyncio
+import logging
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
 from app.auth import require_control_plane_token
 from app.config import get_settings
@@ -11,6 +23,15 @@ from app.schemas import (
     MetricsResponse,
     StatusResponse,
 )
+
+logger = logging.getLogger("openrbi.sandboxes")
+
+_CHUNK_SIZE = 65536
+# Roadmap B2.4 close code for "couldn't reach the sandbox's display" —
+# distinct from a plain protocol-level close so the control plane's own
+# relay client (app/api/display.py) can tell "this node is fine but the
+# sandbox inside it isn't" apart from any other WebSocket failure.
+_CLOSE_DISPLAY_UNREACHABLE = 4502
 
 router = APIRouter(
     prefix="/v1/sandboxes", tags=["sandboxes"], dependencies=[Depends(require_control_plane_token)]
@@ -108,6 +129,93 @@ async def sandbox_display_info(session_id: str) -> DisplayInfoResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return DisplayInfoResponse(host=info.host, port=info.port)
+
+
+@router.get("/{session_id}/display/ready")
+async def sandbox_display_ready(session_id: str) -> dict[str, str]:
+    """Roadmap B2.4 (docs/adr/0024) — the local liveness probe
+    app/services/sessions.py's _wait_for_display_ready() used to perform
+    itself, from the backend, by dialing the sandbox's VNC port directly.
+    That only worked because the backend used to be multi-homed onto the
+    same browser-plane bridge every sandbox lives on; once a node can be
+    on a different host entirely, only this process (which genuinely is
+    on that bridge) can still make that connection. Returns 200 once a
+    real TCP handshake to the sandbox's VNC port succeeds, 502 otherwise
+    — the backend polls this with its own retry/backoff loop, unchanged
+    from before.
+    """
+    try:
+        info = await get_provider().get_display_info(session_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(info.host, info.port), timeout=2.0)
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"display not ready: {exc}") from exc
+    writer.close()
+    return {"status": "ready"}
+
+
+@router.websocket("/{session_id}/display/ws")
+async def sandbox_display_relay(
+    websocket: WebSocket, session_id: str, _: None = Depends(require_control_plane_token)
+) -> None:
+    """Roadmap B2.4 (docs/adr/0024) — the control plane no longer dials a
+    sandbox's VNC port directly (impossible once the sandbox lives on a
+    different host's private browser-plane bridge than the backend); it
+    dials this relay instead, authenticated exactly like every other
+    route on this router. This process resolves the sandbox's real
+    host:port locally (same provider call the REST /display endpoint
+    above uses) and pumps raw bytes between the two — a dumb byte pipe.
+    Clipboard-policy filtering and every other access-control decision
+    stay entirely on the control-plane side (app/api/display.py); this
+    relay never inspects or modifies the stream, only carries it.
+    """
+    try:
+        info = await get_provider().get_display_info(session_id)
+    except Exception:
+        logger.exception("display relay: could not resolve display info for session %s", session_id)
+        await websocket.close(code=_CLOSE_DISPLAY_UNREACHABLE)
+        return
+
+    await websocket.accept()
+
+    try:
+        reader, writer = await asyncio.open_connection(info.host, info.port)
+    except OSError:
+        await websocket.close(code=_CLOSE_DISPLAY_UNREACHABLE)
+        return
+
+    async def pump_ws_to_tcp() -> None:
+        try:
+            while True:
+                data = await websocket.receive_bytes()
+                writer.write(data)
+                await writer.drain()
+        except (WebSocketDisconnect, OSError):
+            pass
+
+    async def pump_tcp_to_ws() -> None:
+        try:
+            while True:
+                data = await reader.read(_CHUNK_SIZE)
+                if not data:
+                    break
+                await websocket.send_bytes(data)
+        except (WebSocketDisconnect, OSError, RuntimeError):
+            pass
+
+    tasks = [asyncio.create_task(pump_ws_to_tcp()), asyncio.create_task(pump_tcp_to_ws())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for task in tasks:
+            task.cancel()
+        writer.close()
+        try:
+            await websocket.close()
+        except (RuntimeError, WebSocketDisconnect):
+            pass
 
 
 @router.get("/{session_id}/downloads", response_model=list[DownloadedFileResponse])

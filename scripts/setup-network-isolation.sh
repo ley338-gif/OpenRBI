@@ -40,25 +40,26 @@ BROWSER_PLANE_NETWORK="${OPENRBI_BROWSER_PLANE_NETWORK:-openrbi_browser-plane}"
 # minimal-privilege reasoning extends here).
 MARKER_DIR="${OPENRBI_NETWORK_ISOLATION_MARKER_DIR:-/var/lib/openrbi/network-isolation}"
 MARKER_FILE="$MARKER_DIR/marker"
-# Address(es) on browser-plane allowed to *initiate* connections into it —
-# i.e. whichever process actually terminates /display/*/ws and therefore
-# needs to open the noVNC/VNC relay connection to a sandbox. Space-separated,
-# so a Segmented deployment can exempt exactly the listener that owns the
-# display relay (today: the User listener) without granting the same
-# exemption to a process that has no reason to open connections here (e.g.
-# an Admin listener, which never terminates /display/*/ws and should get NO
-# browser-plane exemption at all — see docker-compose.segmented.yml, where
-# backend-admin isn't even attached to browser-plane).
+# Address(es) on browser-plane allowed to *initiate* connections into it.
+# Roadmap B2.4 (docs/adr/0024-cross-host-display-relay.md) moved the
+# noVNC/VNC relay connection from the backend to each node's own Session
+# Agent — it's the only process that still needs to open a *new* connection
+# into browser-plane, and the only one this script exempts. Space-separated,
+# so a deployment with more than one node's isolation applied from the same
+# place could list more than one address, though the normal case (one host,
+# one agent) needs only the default.
 #
-# Default covers only Compact's single "backend" service (172.30.0.2). A
-# Segmented deployment running the display relay from backend-user instead
-# must override this explicitly, e.g.:
-#   OPENRBI_BACKEND_BROWSER_PLANE_IP="172.30.0.4" ./setup-network-isolation.sh
-# This is a per-deployment decision, not something this script guesses —
-# there is deliberately no default that includes both, since Compact and
-# Segmented are never expected to run their display relay from two
-# addresses simultaneously.
-BACKEND_BROWSER_PLANE_IP="${OPENRBI_BACKEND_BROWSER_PLANE_IP:-172.30.0.2}"
+# Renamed from OPENRBI_BACKEND_BROWSER_PLANE_IP as of Roadmap B2.4 — this is
+# a deliberate breaking rename, not a silent repoint: the backend no longer
+# has any browser-plane presence to exempt at all, so continuing to honor
+# the old variable name would let an operator's existing override silently
+# stop applying to anything (see docs/adr/0024's Consequences). Default
+# covers Compact's single "session-agent" service (172.30.0.2, the same
+# numeric address the backend used to hold) — an un-overridden single-node
+# deployment needs no operator action on upgrade. A multi-node deployment
+# (Roadmap B2.6) runs this script once per host, each exempting only that
+# host's own local agent address.
+AGENT_BROWSER_PLANE_IP="${OPENRBI_AGENT_BROWSER_PLANE_IP:-172.30.0.2}"
 
 log() { echo "[setup-network-isolation] $*"; }
 
@@ -147,9 +148,10 @@ done
 log "dynamic host-IP blocklist applied"
 
 # --- Allow return traffic for control-plane-initiated connections (the
-# backend's own outbound connection to a sandbox's VNC port, Phase 8) before
-# the rules above would otherwise catch it — conntrack state, not a blanket
-# hole: sandboxes still cannot open NEW connections into the control plane. ---
+# session agent's own outbound connection to a sandbox's VNC port, Roadmap
+# B2.4) before the rules above would otherwise catch it — conntrack state,
+# not a blanket hole: sandboxes still cannot open NEW connections into the
+# control plane. ---
 iptables -I DOCKER-USER 1 -s "$BROWSER_SUBNET" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT -m comment --comment "$MARKER"
 
 # --- Exactly the address(es) that own the display relay must additionally
@@ -157,10 +159,8 @@ iptables -I DOCKER-USER 1 -s "$BROWSER_SUBNET" -m conntrack --ctstate ESTABLISHE
 # point of the relay) — placed last so each ends up topmost, ahead of every
 # DROP rule above, including the peer-isolation rule that would otherwise
 # catch it too (it shares the same subnet as real sandboxes). No other
-# address gets this — in particular, an Admin-listener process is never
-# added here, since it has no legitimate reason to open a browser-plane
-# connection at all. ---
-for ip in $BACKEND_BROWSER_PLANE_IP; do
+# address gets this. ---
+for ip in $AGENT_BROWSER_PLANE_IP; do
     iptables -I DOCKER-USER 1 -s "$ip" -j ACCEPT -m comment --comment "$MARKER"
 done
 

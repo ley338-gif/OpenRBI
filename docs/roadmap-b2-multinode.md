@@ -174,7 +174,41 @@ cross-node selection.
 **ADR required**: no — extends an already-documented seam
 (`docs/architecture.md#multi-node-readiness`).
 
-### B2.4 — Cross-host networking & display relay redesign
+### B2.4 — Cross-host networking & display relay redesign — **done (single-host verified only — see caveat below)**
+
+See [ADR 0024](adr/0024-cross-host-display-relay.md) for the full
+as-built decision record. Summary: the noVNC relay now terminates at
+each node's own Session Agent (`WS /v1/sandboxes/{id}/display/ws`,
+authenticated with the same per-node token every other Session-Agent
+call uses) instead of the backend dialing a sandbox's VNC port directly
+— `app/api/display.py`'s `display_ws()` keeps every existing check
+(ownership, session status, Origin validation, real-time clipboard
+filtering) completely unchanged and simply relays through a second,
+per-node WebSocket instead of a raw TCP socket. The session-readiness
+probe (`_wait_for_display_ready()`) moved the same way, onto a new
+`GET /v1/sandboxes/{id}/display/ready` REST endpoint. The backend lost
+its `browser-plane` network membership entirely; the Session Agent
+gained it (a net narrowing of the control plane's own network
+footprint, not just a like-for-like swap — see the ADR's Decision §4).
+`browser-plane`'s subnet (`OPENRBI_BROWSER_PLANE_SUBNET`) and the
+Session Agent's pinned relay address (`OPENRBI_AGENT_BROWSER_PLANE_IP`,
+replacing the removed `OPENRBI_BACKEND_BROWSER_PLANE_IP` — a deliberate
+breaking rename, see the ADR's Consequences) are both now per-deployment
+overrides instead of hardcoded values.
+
+**Verification caveat, stated plainly**: this phase's own Definition of
+Done below calls for proving the relay round-trips through a genuinely
+separate second host. That has **not** been done — everything here was
+verified against the existing single-host `docker-compose` stack (a
+second, independently-addressed Session Agent container standing in for
+a second node, the same technique every earlier B2 phase's tests use),
+including the full existing `test_display_websocket_origin.py` suite and
+a real noVNC session end to end via the Admin/User Portals. The design
+deliberately avoids any same-host assumption (no code path checks or
+relies on IP adjacency between the control plane and a node), but that
+remains a design claim, not a proven one, until it's exercised against
+real separate hardware — tracked as an open item for Roadmap B2.6/B2.7,
+where a real second-host deployment is first exercised at all.
 
 **Goal**: Make the noVNC display path work when the sandbox is not on the
 same Docker bridge as the backend, and give each node its own

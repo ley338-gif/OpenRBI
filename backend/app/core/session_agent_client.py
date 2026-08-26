@@ -94,6 +94,28 @@ async def get_node_status(*, connection: NodeConnection | None = None) -> NodeSt
     )
 
 
+async def check_display_ready(session_id: str, *, connection: NodeConnection | None = None) -> bool:
+    """Roadmap B2.4 (docs/adr/0024) — the control plane can't TCP-dial a
+    sandbox's VNC port itself any more (it's only reachable from the node
+    it's actually on), so it asks that node's own agent to check instead.
+    Returns False rather than raising for the specific "not ready yet"
+    case (a 502 from the agent's own probe) so app/services/sessions.py's
+    retry loop can treat it identically to how it always treated a failed
+    direct TCP connect; any other failure (the node itself unreachable)
+    still raises SessionAgentError like every other call here.
+    """
+    async with _client(connection) as client:
+        try:
+            response = await client.get(f"/v1/sandboxes/{session_id}/display/ready")
+        except httpx.HTTPError as exc:
+            raise SessionAgentError(f"session agent unreachable: {exc}") from exc
+    if response.status_code == 502:
+        return False
+    if response.status_code >= 400:
+        raise SessionAgentError(f"session agent returned {response.status_code}: {response.text}")
+    return True
+
+
 async def list_active_sandboxes(*, connection: NodeConnection | None = None) -> list[str]:
     """Session IDs of every currently running openrbi.managed container on
     the node — used by app/core/orphan_reconciler.py to reconcile against

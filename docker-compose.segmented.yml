@@ -30,22 +30,15 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     depends_on: [postgres, redis]
-    # This is the process that actually terminates /display/*/ws (the User
-    # listener owns display.py's routes — see docs/architecture.md#user-
-    # portal-and-admin-portal-productization-v011), so it's the one that
-    # needs to open a *new* connection into browser-plane for the noVNC
-    # relay. scripts/setup-network-isolation.sh's exemption defaults to the
-    # Compact "backend" service's address (172.30.0.2) only; a real
-    # Segmented deployment running backend-user must override it to this
-    # service's own pinned address instead:
-    #   OPENRBI_BACKEND_BROWSER_PLANE_IP="172.30.0.4" ./scripts/setup-network-isolation.sh
-    # backend-admin below deliberately gets no browser-plane network at
-    # all — it never terminates /display/*/ws and has no legitimate reason
-    # to open a connection here, so it gets no exemption and no attachment.
-    networks:
-      control-plane:
-      browser-plane:
-        ipv4_address: 172.30.0.4
+    # Roadmap B2.4 (docs/adr/0024-cross-host-display-relay.md) — backend-user
+    # no longer needs browser-plane at all: it still owns /display/*/ws (the
+    # User listener — see docs/architecture.md#user-portal-and-admin-portal-
+    # productization-v011), but that handler now relays through the node's
+    # own Session Agent over control-plane instead of dialing a sandbox's
+    # VNC port directly. Identical to backend-admin below in this respect
+    # now — neither backend instance touches browser-plane in Segmented
+    # mode; only session-agent does (docker-compose.yml).
+    networks: [control-plane]
     volumes:
       - quarantine-staging:/app/data
 

@@ -2,12 +2,13 @@ import asyncio
 import uuid
 from datetime import UTC, datetime
 
+import websockets
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from app.core.deps import get_current_user
 from app.core.rfb_clipboard_filter import RfbProtocolError, build_filters
-from app.core.session_agent_client import SessionAgentError, get_display_info
 from app.db.session import get_db
 from app.models.browser_session import BrowserSession
 from app.models.enums import SecurityEventType, SessionStatus
@@ -16,8 +17,6 @@ from app.services.nodes import connection_for_node, get_node
 from app.services.security_events import record_security_event
 
 router = APIRouter(prefix="/display", tags=["display"])
-
-_CHUNK_SIZE = 65536
 
 # Policy close codes (RFC 6455 §7.4.1 private-use range) so the frontend can
 # distinguish "you're not allowed" from "the sandbox isn't reachable" rather
@@ -96,10 +95,28 @@ async def display_ws(
         await websocket.close(code=_CLOSE_NOT_FOUND)
         return
 
+    # Roadmap B2.4 (docs/adr/0024) — the backend no longer dials the
+    # sandbox's VNC port directly (it can't, once the sandbox is on a
+    # different host's private browser-plane bridge); it dials that
+    # node's own Session Agent relay instead, over a second WebSocket
+    # authenticated with the node's own per-node token. Every check above
+    # (ownership, status, Origin) and every filter below is completely
+    # unchanged — the relay hop only ever carries bytes this handler has
+    # already decided are allowed to cross it.
     connection = connection_for_node(await get_node(db, session.node_id))
+    relay_url = connection.base_url.rstrip("/") + f"/v1/sandboxes/{session_id}/display/ws"
+    if relay_url.startswith("https://"):
+        relay_url = "wss://" + relay_url[len("https://") :]
+    elif relay_url.startswith("http://"):
+        relay_url = "ws://" + relay_url[len("http://") :]
+
     try:
-        info = await get_display_info(str(session_id), connection=connection)
-    except SessionAgentError:
+        agent_ws = await websockets.connect(
+            relay_url,
+            additional_headers={"X-Openrbi-Agent-Token": connection.token},
+            open_timeout=10,
+        )
+    except (OSError, WebSocketException):
         await websocket.close(code=_CLOSE_SANDBOX_UNREACHABLE)
         return
 
@@ -108,12 +125,6 @@ async def display_ws(
     # offered is an invalid handshake response and makes browsers abort the
     # connection immediately despite the HTTP-level 101 succeeding.
     await websocket.accept()
-
-    try:
-        reader, writer = await asyncio.open_connection(info.host, info.port)
-    except OSError:
-        await websocket.close(code=_CLOSE_SANDBOX_UNREACHABLE)
-        return
 
     session.status = SessionStatus.ACTIVE
     session.last_activity_at = datetime.now(UTC)
@@ -128,7 +139,7 @@ async def display_ws(
     # passthrough with no parsing overhead.
     client_filter, server_filter = build_filters(session.clipboard_mode)
 
-    async def pump_ws_to_tcp() -> None:
+    async def pump_ws_to_agent() -> None:
         try:
             while True:
                 data = await websocket.receive_bytes()
@@ -141,34 +152,33 @@ async def display_ws(
                     # down instead.
                     break
                 if forward:
-                    writer.write(forward)
-                    await writer.drain()
-        except (WebSocketDisconnect, OSError):
+                    await agent_ws.send(forward)
+        except (WebSocketDisconnect, OSError, ConnectionClosed):
             pass
 
-    async def pump_tcp_to_ws() -> None:
+    async def pump_agent_to_ws() -> None:
         try:
             while True:
-                data = await reader.read(_CHUNK_SIZE)
-                if not data:
-                    break
+                data = await agent_ws.recv()
+                if isinstance(data, str):
+                    data = data.encode()  # the relay only ever sends bytes; defensive only
                 try:
                     forward = server_filter.feed(data)
                 except RfbProtocolError:
                     break
                 if forward:
                     await websocket.send_bytes(forward)
-        except (WebSocketDisconnect, OSError, RuntimeError):
+        except (WebSocketDisconnect, OSError, RuntimeError, ConnectionClosed):
             pass
 
-    tasks = [asyncio.create_task(pump_ws_to_tcp()), asyncio.create_task(pump_tcp_to_ws())]
+    tasks = [asyncio.create_task(pump_ws_to_agent()), asyncio.create_task(pump_agent_to_ws())]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         _active_connections.pop(session_id, None)
         for task in tasks:
             task.cancel()
-        writer.close()
+        await agent_ws.close()
         try:
             await websocket.close()
         except (RuntimeError, WebSocketDisconnect):
