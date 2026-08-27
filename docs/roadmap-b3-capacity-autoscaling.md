@@ -11,9 +11,10 @@
 > `ram_used_mb`, Roadmap B1.10.1) — there's no open design question this
 > roadmap needs a separate brief to resolve first.
 >
-> **Status: roadmap only, nothing below is implemented.** Matches this
-> project's existing convention (see Roadmap B2's own header) of
-> separating "what should we do" from "doing it."
+> **Status: done (B3.1–B3.4 of 4).** Matches this project's existing
+> convention (see Roadmap B2's own header) of separating "what should we
+> do" from "doing it" — each phase below records its own as-built notes
+> once implemented and verified against the real live stack.
 
 ## Goal
 
@@ -300,7 +301,7 @@ firing for 3 real sustained `"cpu"`-bound samples and staying silent for
 Worker Detail page rendering the breakdown correctly in a real logged-in
 browser session. 9 new backend tests, 2 new session-agent unit tests.
 
-### B3.4 — Documentation & real acceptance evidence
+### B3.4 — Documentation & real acceptance evidence — done
 
 **Goal**: `docs/deployment.md#sizing` stops describing a fixed-ceiling
 model and documents the real auto-sizing behavior; the Definition of Done
@@ -322,6 +323,37 @@ or an extension of an existing one.
   clears — end to end, not simulated at the unit level.
 
 **ADR required**: no.
+
+**As-built**: `docs/deployment.md#sizing` rewritten to explain the real
+reservation model (`OPENRBI_AGENT_DEFAULT_CPU_LIMIT`/
+`DEFAULT_RAM_LIMIT_MB` as the per-sandbox unit, `RESERVED_RAM_MB` held
+back for the host itself, `CAPACITY_RECOVERY_POLLS` smoothing only
+recovery, `OPENRBI_AGENT_CAPACITY` surviving as an optional ceiling for
+operators who want the old fixed-number behavior). `docs/roadmap-b2-multinode.md`'s
+and `docs/architecture.md`'s stale "host-resource-aware auto-sizing is
+a non-goal" notes updated to point here.
+
+`scripts/fault-injection-probe.py` gained
+`capacity-exhausted-rejects-session` (asserts real capacity is
+genuinely 0, then confirms a real `create_session()` call is actually
+rejected with `NoCapacityError` — not just that the reported number is
+smaller — with no ghost row left behind) and `capacity-snapshot` now
+also reports the B3.3 breakdown. `scripts/run-fault-injection-tests.sh`'s
+Fault 14 calls it once real pressure has driven capacity to genuine 0.
+
+Verified against the real live stack (targeted per-command
+verification — the full script's `json_field` helper needs a host
+`python`, unavailable on this Windows dev machine; CI's Linux runner is
+the full script's authoritative run, same established pattern as this
+roadmap's earlier phases): capacity dropped `12 → 0` under 16 real
+cores pinned busy, a real session creation was rejected with
+`NoCapacityError` and no row left behind, capacity held at 0 for one
+more poll after clearing pressure, then recovered. The same pressure
+window, watched live in a real logged-in Admin Portal browser session:
+Workers page showed `CPU 100%`, `Sessions 0 / 0`, health `DEGRADED`,
+and the real "CPU-bound" tag — read from the rendered page, not the API
+directly. See `docs/release/fault-injection-acceptance.md`'s Fault 14
+row and Evidence section for the full detail.
 
 ## Suggested implementation order
 
