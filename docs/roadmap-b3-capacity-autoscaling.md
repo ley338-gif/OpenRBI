@@ -48,7 +48,55 @@ like a healthy one.
 
 ## Phases
 
-### B3.1 — Real per-node dynamic capacity computation
+### B3.1 — Real per-node dynamic capacity computation — **done**
+
+`_capacity_from_settings()` is now `_compute_capacity()`
+(`session-agent/app/main.py`) — real capacity derived from actual free
+CPU/RAM headroom at the instant `GET /v1/nodes/self` is called, using
+`default_ram_limit_mb`/`default_cpu_limit` (the same per-sandbox
+reservation Docker itself already enforces) as the unit; whichever
+resource is scarcer wins. `OPENRBI_AGENT_CAPACITY` (`capacity` in
+`session-agent/app/config.py`) is now a *ceiling* on that computed value
+— `None` by default (uncapped), so an un-overridden node reports the
+real computed number, not a flat 10; setting it caps the result but
+never raises it above real headroom. A new `OPENRBI_AGENT_RESERVED_RAM_MB`
+(default 512) is held back from the computation for the host OS/Docker
+daemon/this agent process itself. Every host reading is passed into
+`_compute_capacity()` as a plain argument rather than read via a live
+`psutil` call inside the function, keeping it pure and deterministic for
+`session-agent/tests/test_capacity.py` — the Session Agent's first pytest
+suite, now run in CI (`.github/workflows/ci.yml`'s `python-quality` job)
+alongside its existing ruff/mypy checks.
+
+**Real-world interaction found while verifying this**: the backend's own
+integration-test suite relies on a session-scoped cleanup fixture
+(`tests/conftest.py`) that sweeps up DB rows once at the very end of a
+run rather than terminating each session's real sandbox container
+immediately — a deliberate, already-documented tradeoff (see ADR 0021).
+Under the old flat `capacity=10`, the real containers this leaves running
+mid-suite never mattered; under real headroom-based capacity, this
+genuinely exhausted a real GitHub Actions runner's own free RAM,
+confirmed by an actual CI run — not just a theoretical concern.
+`OPENRBI_AGENT_CAPACITY=20` alone (`scripts/run-fresh-install-acceptance.sh`,
+`scripts/run-backup-restore-acceptance.sh`,
+`scripts/run-upgrade-acceptance.sh`, and every `.env`-generating step in
+`.github/workflows/ci.yml`) turned out to be insufficient by itself — a
+ceiling can only ever *lower* an already-higher computed value, so it
+does nothing when the computed value itself is the binding constraint.
+The same four places also now set `OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024`
+— shrinking the per-sandbox reservation the RAM computation divides by,
+which both raises computed capacity *and* reduces what each test sandbox
+actually uses. That alone still wasn't enough — a second real CI run
+failed identically, revealing CPU, not RAM, as the actual binding
+constraint on that runner (`default_cpu_limit=2.0`'s 200%-per-sandbox
+divisor is large against a real runner's host-wide CPU load from
+Postgres/Redis/ClamAV/the browser image build/Docker itself all running
+concurrently). The same four places now also set
+`OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5`. Verified both changes together
+don't just move the failure elsewhere: 1024 MB / 0.5 vCPU is still
+enough for a real, working Firefox+Xvfb+x11vnc sandbox in the existing
+noVNC/canvas E2E test, run locally against the real stack with both
+settings applied.
 
 **Goal**: `_capacity_from_settings()` stops being a flat number and
 reflects actual free host headroom, bounded by the existing
