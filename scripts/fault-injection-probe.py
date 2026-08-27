@@ -444,11 +444,35 @@ async def node2_verify_survivor_unaffected(session_id: str) -> None:
 
 
 async def node2_verify_reschedules_onto_survivor(expected_hostname: str) -> None:
-    async with async_session_factory() as db:
-        node = await session_service.select_node(db)
-        await db.commit()
-        assert node.hostname == expected_hostname, f"expected {expected_hostname}, got {node.hostname}"
-        emit(scheduled_node=node.hostname)
+    """This assertion is about *which* node select_node() picks (the
+    survivor, not the just-killed one), not about capacity/scheduling
+    correctness itself (that's test_scheduling.py's job, with a stub
+    agent giving it a deterministic, isolated capacity reading). By this
+    point in a long, real destructive run, this CI runner's own
+    accumulated load (real containers from every earlier fault, plus
+    just having spun up a whole second node's compose stack a few
+    seconds ago) can genuinely, transiently drive real host CPU/RAM
+    headroom on the default node to momentary zero -- the same class of
+    real-not-simulated capacity dip already tolerated in
+    backend/tests/conftest.py's create_session_tolerating_transient_capacity()
+    for the same reason. Retry only on NoCapacityError; anything else
+    (including a wrong node being chosen) propagates immediately.
+    """
+    attempts = 8
+    for attempt in range(attempts):
+        async with async_session_factory() as db:
+            try:
+                node = await session_service.select_node(db)
+            except session_service.NoCapacityError:
+                await db.rollback()
+                if attempt == attempts - 1:
+                    raise
+                await asyncio.sleep(0.5)
+                continue
+            await db.commit()
+            assert node.hostname == expected_hostname, f"expected {expected_hostname}, got {node.hostname}"
+            emit(scheduled_node=node.hostname)
+            return
 
 
 async def main() -> None:
