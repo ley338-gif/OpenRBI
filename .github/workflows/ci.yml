@@ -303,27 +303,8 @@ jobs:
         # sandbox, and test_isolate_disconnect_kill_are_audited_and_kill_
         # is_admin_only does exactly that.
         run: docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
-      - name: Monitor real node capacity during integration tests (temporary diagnostic)
-        # Roadmap B3.2: NoCapacityError failures in this job persisted after
-        # two real CPU-reservation retunes. Rather than keep guessing at a
-        # constant, capture this runner's own real cpu_percent/cpu_count/
-        # ram readings while the suite actually runs, so the next retune is
-        # based on real numbers. Removed once the real fix lands.
-        run: |
-          (
-            while true; do
-              docker compose exec -T backend python -c "import httpx, os, datetime; r = httpx.get('http://session-agent:8100/v1/nodes/self', headers={'X-Openrbi-Agent-Token': os.environ['OPENRBI_SESSION_AGENT_API_TOKEN']}); print(datetime.datetime.now(datetime.UTC).isoformat(), r.json())" >> /tmp/capacity_monitor.log 2>&1
-              sleep 2
-            done
-          ) &
-          echo $! > /tmp/capacity_monitor.pid
       - name: Run integration tests
         run: sh scripts/run-integration-tests.sh
-      - name: Dump capacity monitor log (temporary diagnostic)
-        if: always()
-        run: |
-          kill "$(cat /tmp/capacity_monitor.pid)" 2>/dev/null || true
-          cat /tmp/capacity_monitor.log || true
       - name: Apply network isolation rules
         # GitHub-hosted ubuntu-latest runners run real Docker with a real
         # DOCKER-USER iptables chain (not nested/rootless), same as the

@@ -193,6 +193,25 @@ recover. Observed live via repeated manual polling during development
 `0` for one more poll after clearing it, recovered to `11` shortly
 after).
 
+A real CI run with a temporary diagnostic (polling `/v1/nodes/self`
+every 2s during the actual test run and logging every reading) then
+surfaced a second, independent bug: reported `capacity` oscillated
+wildly poll to poll (e.g. `12 → 5 → 2 → 0 → 12` inside seconds) even
+though real sustained load wasn't changing nearly that fast.
+`psutil.cpu_percent(interval=None)` measures the delta since psutil's
+*previous* call, process-wide — and `/v1/nodes/self` is polled
+concurrently and rapidly from several callers (`node_poller.py`,
+`select_node()` on every session creation, admin dashboard refreshes),
+so that interval can shrink to a few milliseconds, and a momentary
+blip in that tiny window reads as a misleading near-100% spike. Fixed
+by switching to a fixed `interval=0.1` blocking measurement (immune to
+caller timing entirely), run via `asyncio.to_thread` so one status
+check can't stall the event loop for others; the now-unnecessary
+import-time warm-up call (Roadmap B1.10.1) was removed along with it.
+Confirmed live: firing 20 concurrent rapid requests during real CPU
+pressure converges to a stable, consistent reading instead of
+oscillating between near-0 and near-max on adjacent polls.
+
 **Goal**: A momentary host spike doesn't cause `select_node()` (B2.3) to
 see capacity oscillate every poll cycle, and the host OS/Docker daemon
 itself is never starved by sandboxes filling every last reservable slot.

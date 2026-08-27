@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -33,12 +34,6 @@ app = FastAPI(
 
 app.include_router(sandboxes_router)
 
-# Roadmap B1.10.1 — a throwaway first call at import time: psutil.cpu_percent()
-# measures the delta since its *previous* call, so an uncalled first
-# invocation from a real request would report a meaningless 0.0 (or the
-# usage since machine boot). This warms it up once so the first real
-# /v1/nodes/self response is already a real short-window sample.
-psutil.cpu_percent(interval=None)
 _PROCESS_STARTED_AT = datetime.fromtimestamp(psutil.Process(os.getpid()).create_time(), tz=UTC)
 
 
@@ -104,7 +99,15 @@ async def node_status() -> dict[str, str | int | float | bool]:
     version = await provider.runtime_version()
     image_available = await provider.sandbox_image_available(settings.sandbox_image)
     memory = psutil.virtual_memory()
-    cpu_percent = psutil.cpu_percent(interval=None)
+    # Roadmap B3.2 fix: interval=None measures the delta since psutil's
+    # *previous* call, process-wide -- when /v1/nodes/self is polled
+    # rapidly and concurrently (node_poller.py, select_node() on every
+    # session creation, an admin dashboard refresh, all sharing the same
+    # process), that interval can be a few milliseconds, and a momentary
+    # blip in that tiny window reads as a wildly misleading spike. A fixed
+    # 0.1s blocking measurement is immune to caller timing entirely; run
+    # off the event loop so one status check can't stall others.
+    cpu_percent = await asyncio.to_thread(psutil.cpu_percent, interval=0.1)
     cpu_count = psutil.cpu_count() or 1
     raw_capacity = _compute_capacity(
         settings,
@@ -158,9 +161,9 @@ def _compute_capacity(
     free_ram_mb = memory_total_mb - settings.reserved_ram_mb - used_ram_mb
     ram_capacity = max(0, int(free_ram_mb // settings.default_ram_limit_mb))
 
-    # cpu_percent is psutil.cpu_percent(interval=None) *without* percpu=True
-    # -- already a 0-100 average across every core, not a value scaled by
-    # cpu_count -- so the used share of the host's total cpu-percent budget
+    # cpu_percent is psutil.cpu_percent() without percpu=True -- already a
+    # 0-100 average across every core, not a value scaled by cpu_count --
+    # so the used share of the host's total cpu-percent budget
     # (0..cpu_count*100) is cpu_percent's *fraction* of that budget, not a
     # flat subtraction. (cpu_count * 100 - cpu_percent) would barely react
     # to real load on any host with more than one core.
