@@ -19,6 +19,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 - **Breaking:** `scripts/setup-network-isolation.sh`'s `OPENRBI_BACKEND_BROWSER_PLANE_IP` is renamed `OPENRBI_AGENT_BROWSER_PLANE_IP` (Phase B2.4 above) — the backend no longer has any `browser-plane` network presence to exempt, so continuing to honor the old name would let an existing override silently stop applying to anything. The default numeric address is unchanged (`172.30.0.2`), so an un-overridden single-node deployment needs no action; a deployment that explicitly set the old variable (e.g. in a systemd timer or Segmented setup) must rename it on upgrade. `browser-plane`'s subnet is also now overridable (`OPENRBI_BROWSER_PLANE_SUBNET`, default unchanged `172.30.0.0/24`).
 
+### Fixed
+
+- The session-status write race between `terminate_session()` and the display WebSocket's own close handler, previously documented as a known, unfixed limitation (see this file's "Productization v0.1.1" entry below), is now genuinely closed: `app/api/display.py`'s disconnect handling uses a single atomic conditional `UPDATE ... WHERE status = 'ACTIVE'` instead of a read-then-write, so it can never overwrite a session that already moved on to `TERMINATING`/`TERMINATED`/`FAILED`, regardless of how the two requests interleave. Discovered because Roadmap B2.4's extra relay hop widened the race's timing window enough to reproduce it close to deterministically in CI.
+
 ## [1.0.1] - 2026-08-15
 
 Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record.
