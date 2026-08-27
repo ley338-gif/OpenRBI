@@ -244,7 +244,7 @@ multi-node-readiness section.
 
 **ADR required**: no.
 
-### B3.3 — Admin visibility into *why* capacity changed
+### B3.3 — Admin visibility into *why* capacity changed — done
 
 **Goal**: An operator looking at a node whose capacity dropped can see
 *why* (RAM- vs CPU-bound, current headroom numbers), not just a smaller
@@ -272,6 +272,33 @@ admin action).
   already compute and report.
 
 **ADR required**: no.
+
+**As-built**: `_compute_capacity()` (session-agent/app/main.py) now
+returns a `CapacityBreakdown` (capacity, ram_capacity, cpu_capacity,
+`bound`) instead of a bare int — `bound` is `"ram"`/`"cpu"` (whichever is
+strictly binding, ties going to `"ram"` deterministically) or
+`"ceiling"` when `settings.capacity` is what's actually capping the
+result below real headroom. `/v1/nodes/self` gained `capacity_bound`/
+`ram_capacity`/`cpu_capacity` fields — deliberately *not* run through
+B3.2's hysteresis (that's purely for the scheduling-critical `capacity`
+number; the breakdown is informational and always reflects the current
+instant). `BrowserNode` and `WorkerMetricSample` both gained matching
+columns (migration `e3b3b0f8f6bd`), populated the same place `capacity`
+itself already is (`_apply_node_status()`, `record_sample()`).
+`BrowserNodeResponse` exposes the breakdown; Workers page shows a
+"RAM-bound"/"CPU-bound" tag next to the sessions count (never for
+`"ceiling"` — that's a deliberate admin config choice), Worker Detail
+shows a full "Capacity limited by" line with both raw numbers. A new
+`_capacity_bound_warnings()` (dashboard.py) mirrors the existing
+sustained-high-CPU check's shape — every sample in a configurable
+window (`OPENRBI_CAPACITY_BOUND_WARNING_MINUTES`, default 10) must show
+`"ram"`/`"cpu"` for the warning to fire, never `"ceiling"`. Verified
+against the real live stack: a real node's own capacity breakdown
+(`ram_capacity=9, cpu_capacity=32, bound="ram"`), the dashboard warning
+firing for 3 real sustained `"cpu"`-bound samples and staying silent for
+3 real sustained `"ceiling"`-bound ones, and both the Workers table and
+Worker Detail page rendering the breakdown correctly in a real logged-in
+browser session. 9 new backend tests, 2 new session-agent unit tests.
 
 ### B3.4 — Documentation & real acceptance evidence
 

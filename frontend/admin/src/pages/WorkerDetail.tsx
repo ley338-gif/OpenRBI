@@ -187,6 +187,20 @@ export function WorkerDetail() {
               {node.active_sessions} / {node.capacity}
             </dd>
           </div>
+          {node.capacity_bound && (
+            <div>
+              <dt>Capacity limited by</dt>
+              <dd>
+                {node.capacity_bound === "ceiling" ? (
+                  "Capacity ceiling (OPENRBI_AGENT_CAPACITY) — real headroom would allow more"
+                ) : node.capacity_bound === "ram" ? (
+                  `RAM (${node.ram_capacity} slots) — CPU headroom alone would allow ${node.cpu_capacity}`
+                ) : (
+                  `CPU (${node.cpu_capacity} slots) — RAM headroom alone would allow ${node.ram_capacity}`
+                )}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>Uptime</dt>
             <dd>{formatUptime(node.uptime_seconds)}</dd>

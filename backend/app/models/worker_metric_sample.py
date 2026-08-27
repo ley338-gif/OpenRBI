@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,3 +32,8 @@ class WorkerMetricSample(UUIDPKMixin, Base):
     ram_used_mb: Mapped[int | None] = mapped_column(Integer)
     ram_total_mb: Mapped[int | None] = mapped_column(Integer)
     active_sessions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Roadmap B3.3 — snapshot of BrowserNode.capacity_bound at sample time,
+    # so app/services/dashboard.py can check "bound by real headroom for
+    # every recent sample" the same way it already does for sustained high
+    # CPU, without a second time-series table.
+    capacity_bound: Mapped[str | None] = mapped_column(String(16))

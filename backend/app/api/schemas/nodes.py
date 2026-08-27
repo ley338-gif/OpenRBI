@@ -21,6 +21,13 @@ class BrowserNodeResponse(BaseModel):
     # select_node() acts on; `health` is what an admin should read.
     health: str
     capacity: int
+    # Roadmap B3.3 — why `capacity` is what it is right now. "ram"/"cpu"
+    # when real headroom is the constraint, "ceiling" when the operator's
+    # own OPENRBI_AGENT_CAPACITY is (never a real-headroom concern), None
+    # for a node that's never reported yet.
+    capacity_bound: str | None
+    ram_capacity: int | None
+    cpu_capacity: int | None
     active_sessions: int
     runtime: str
     version: str | None
@@ -40,6 +47,9 @@ class BrowserNodeResponse(BaseModel):
             endpoint_url=node.endpoint_url,
             health=compute_worker_health(node).value,
             capacity=node.capacity,
+            capacity_bound=node.capacity_bound,
+            ram_capacity=node.ram_capacity,
+            cpu_capacity=node.cpu_capacity,
             active_sessions=node.active_sessions,
             runtime=node.runtime,
             version=node.version,

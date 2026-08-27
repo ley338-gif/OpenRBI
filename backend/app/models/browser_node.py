@@ -41,6 +41,14 @@ class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
     cpu_percent: Mapped[float | None] = mapped_column(Float)
     ram_total_mb: Mapped[int | None] = mapped_column(Integer)
     ram_used_mb: Mapped[int | None] = mapped_column(Integer)
+    # Roadmap B3.3 — the raw breakdown behind `capacity` above: which
+    # resource is actually binding it right now ("ram"/"cpu"/"ceiling",
+    # see session-agent/app/main.py's CapacityBreakdown) and the two raw
+    # per-resource numbers, so an operator can see *why* capacity is what
+    # it is, not just a smaller integer with no explanation.
+    capacity_bound: Mapped[str | None] = mapped_column(String(16))
+    ram_capacity: Mapped[int | None] = mapped_column(Integer)
+    cpu_capacity: Mapped[int | None] = mapped_column(Integer)
     # When the Session Agent process serving this node last started —
     # "worker uptime" in the admin UI is `now - node_started_at`, computed
     # at read time rather than stored as a duration that would need

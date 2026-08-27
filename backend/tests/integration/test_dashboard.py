@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from app.models.browser_node import BrowserNode
 from app.models.worker_metric_sample import WorkerMetricSample
 from app.services import metrics_history
+from app.services.dashboard import get_dashboard
 from tests.conftest import login_with_mfa_enrollment, make_user
 
 
@@ -128,6 +129,66 @@ async def test_session_history_buckets_real_samples(db):
     assert all(point["count"] >= 0 for point in history)
     total_seen = sum(point["count"] for point in history)
     assert total_seen > 0
+
+
+@pytest.mark.asyncio
+async def test_sustained_real_headroom_capacity_bound_generates_a_warning(db):
+    """Roadmap B3.3 — a node whose every recent sample shows RAM or CPU as
+    the binding constraint (real headroom, not an admin-set ceiling) for
+    the configured window surfaces a `capacity_bound` warning, the same
+    way sustained high CPU already does.
+    """
+    node = await _get_the_node(db)
+    now = datetime.now(UTC)
+
+    await db.execute(delete(WorkerMetricSample).where(WorkerMetricSample.node_id == node.id))
+    for minutes_ago in (8, 5, 2):
+        db.add(
+            WorkerMetricSample(
+                node_id=node.id,
+                recorded_at=now - timedelta(minutes=minutes_ago),
+                cpu_percent=95.0,
+                ram_used_mb=1000,
+                ram_total_mb=15543,
+                active_sessions=0,
+                capacity_bound="cpu",
+            )
+        )
+    await db.commit()
+
+    dashboard = await get_dashboard(db)
+    matching = [w for w in dashboard.warnings if w.kind == "capacity_bound" and w.worker_hostname == node.hostname]
+    assert matching, "expected a capacity_bound warning for a sustained real-headroom-bound node"
+    assert "CPU" in matching[0].message
+
+
+@pytest.mark.asyncio
+async def test_ceiling_bound_capacity_never_generates_a_warning(db):
+    """A node capped by its own operator-set OPENRBI_AGENT_CAPACITY ceiling
+    is a deliberate config choice, not a health concern — must never
+    surface the same warning a real-headroom constraint does.
+    """
+    node = await _get_the_node(db)
+    now = datetime.now(UTC)
+
+    await db.execute(delete(WorkerMetricSample).where(WorkerMetricSample.node_id == node.id))
+    for minutes_ago in (8, 5, 2):
+        db.add(
+            WorkerMetricSample(
+                node_id=node.id,
+                recorded_at=now - timedelta(minutes=minutes_ago),
+                cpu_percent=5.0,
+                ram_used_mb=1000,
+                ram_total_mb=15543,
+                active_sessions=0,
+                capacity_bound="ceiling",
+            )
+        )
+    await db.commit()
+
+    dashboard = await get_dashboard(db)
+    matching = [w for w in dashboard.warnings if w.kind == "capacity_bound" and w.worker_hostname == node.hostname]
+    assert not matching, "an admin-set ceiling must never generate a capacity_bound warning"
 
 
 @pytest.mark.asyncio

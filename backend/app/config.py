@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     node_heartbeat_stale_seconds: float = 45.0
     node_cpu_degraded_percent: float = 90.0
     node_ram_degraded_percent: float = 90.0
+    # Roadmap B3.3 — a node whose capacity has been bound by real RAM/CPU
+    # headroom (never by its own admin-set OPENRBI_AGENT_CAPACITY ceiling)
+    # for at least this long generates a dashboard warning, mirroring
+    # _SUSTAINED_HIGH_LOAD_WINDOW's "don't warn on one noisy sample" shape.
+    capacity_bound_warning_minutes: int = 10
     # Roadmap B1.10.2 — the longest range the dashboard's own UI offers is
     # 7d; nothing older than that is ever queried, so nothing older than
     # that needs to stay in worker_metric_samples. Pruned opportunistically

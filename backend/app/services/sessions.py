@@ -81,6 +81,9 @@ def _apply_node_status(node: BrowserNode, status: session_agent_client.NodeStatu
     if node.status not in (BrowserNodeStatus.DRAINING, BrowserNodeStatus.MAINTENANCE):
         node.status = BrowserNodeStatus(status.status)
     node.capacity = status.capacity
+    node.capacity_bound = status.capacity_bound
+    node.ram_capacity = status.ram_capacity
+    node.cpu_capacity = status.cpu_capacity
     node.active_sessions = status.active_sessions
     node.runtime = status.runtime
     node.version = status.version

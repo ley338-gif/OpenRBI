@@ -38,6 +38,7 @@ async def record_sample(db: AsyncSession, node: BrowserNode, *, now: datetime | 
             ram_used_mb=node.ram_used_mb,
             ram_total_mb=node.ram_total_mb,
             active_sessions=node.active_sessions,
+            capacity_bound=node.capacity_bound,
         )
     )
     settings = get_settings()
