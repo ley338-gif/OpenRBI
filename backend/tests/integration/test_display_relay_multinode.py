@@ -24,7 +24,7 @@ import pytest
 import pytest_asyncio
 import uvicorn
 import websockets
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from starlette.applications import Starlette
 from starlette.responses import Response
 from starlette.routing import Route, WebSocketRoute
@@ -34,6 +34,7 @@ from app.core.crypto import encrypt_secret
 from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
 from app.models.enums import BrowserNodeStatus, NodeEnrollmentStatus, SessionStatus
+from app.models.security_event import SecurityEvent
 from tests.conftest import login, make_user
 
 _STUB_TOKEN = "stub-node-relay-token"
@@ -83,6 +84,15 @@ async def stub_relay_node():
 
 
 async def _delete_node_and_its_sessions(db, node_id: uuid.UUID) -> None:
+    # display_ws()'s own cleanup records a SESSION_DISCONNECTED event for
+    # a real client disconnect (app/api/display.py) — security_events
+    # must go first (FK), same ordering every other B2-phase test's
+    # cleanup uses.
+    session_ids = (
+        (await db.execute(select(BrowserSession.id).where(BrowserSession.node_id == node_id))).scalars().all()
+    )
+    if session_ids:
+        await db.execute(delete(SecurityEvent).where(SecurityEvent.session_id.in_(session_ids)))
     await db.execute(delete(BrowserSession).where(BrowserSession.node_id == node_id))
     await db.execute(delete(BrowserNode).where(BrowserNode.id == node_id))
     await db.commit()
@@ -127,4 +137,11 @@ async def test_display_ws_relays_through_the_sessions_own_node_with_its_own_toke
         # authenticated with that node's own decrypted token.
         assert stub_relay_node.received_token == _STUB_TOKEN
     finally:
+        # display_ws()'s own cleanup (recording SESSION_DISCONNECTED) runs
+        # as a server-side finally block triggered by the client closing
+        # above - genuinely concurrent with this test coroutine, not
+        # something the `async with` block waits on. A short grace period
+        # avoids a cleanup-vs-cleanup race deleting the session out from
+        # under that still-in-flight commit.
+        await asyncio.sleep(0.3)
         await _delete_node_and_its_sessions(db, node.id)

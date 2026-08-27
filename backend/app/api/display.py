@@ -1,9 +1,11 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import websockets
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from sqlalchemy import CursorResult, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
@@ -188,10 +190,30 @@ async def display_ws(
         # the remote-display connection drops (docs/session-lifecycle.md).
         # A TERMINATING/TERMINATED/FAILED session must not be bumped back
         # to DISCONNECTED just because its display connection also closed.
-        await db.refresh(session)
+        #
+        # This used to be db.refresh() + a Python-level `if status ==
+        # ACTIVE` check-then-write — a real read-modify-write race against
+        # a concurrent terminate_session() call on the same session: if
+        # this coroutine's refresh ran before terminate()'s own commit but
+        # this write landed after it, DISCONNECTED silently overwrote
+        # TERMINATED. Rare with the old direct-TCP relay; the B2.4 relay's
+        # extra hop widened the window enough to reproduce reliably in CI
+        # (a fresh-install-acceptance.py display-handshake check
+        # immediately followed by a terminate call). A single conditional
+        # UPDATE is atomic and immune to interleaving: it can only ever
+        # flip a session that is *still* ACTIVE at the instant it runs,
+        # and never touches one that already moved on to TERMINATING/
+        # TERMINATED/FAILED, regardless of how the two requests race.
+        result = cast(
+            "CursorResult",
+            await db.execute(
+                update(BrowserSession)
+                .where(BrowserSession.id == session.id, BrowserSession.status == SessionStatus.ACTIVE)
+                .values(status=SessionStatus.DISCONNECTED)
+            ),
+        )
         needs_commit = False
-        if session.status == SessionStatus.ACTIVE:
-            session.status = SessionStatus.DISCONNECTED
+        if result.rowcount > 0:
             await record_security_event(
                 db, SecurityEventType.SESSION_DISCONNECTED, user_id=current_user.id, session_id=session.id
             )
