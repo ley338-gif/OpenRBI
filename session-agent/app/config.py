@@ -39,12 +39,28 @@ class Settings(BaseSettings):
     sandbox_image: str = "openrbi-browser:latest"
     sandbox_command: list[str] | None = None
 
-    # Roadmap B2.3 (docs/roadmap-b2-multinode.md) — real per-node scheduling
-    # needs a real per-node capacity value; 10 matches the previous hardcoded
-    # placeholder exactly, so an operator who never sets this sees no change.
-    # Host-resource-aware auto-sizing is an explicit non-goal of B2 (see that
-    # roadmap's "what this deliberately does not cover" section).
-    capacity: int = 10
+    # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — capacity is
+    # now computed from real free host headroom (see _capacity_from_settings()
+    # in main.py), not a flat configured number. This is now a *ceiling* on
+    # that computed value, not the value itself: unset (the default) means
+    # uncapped — the computed number is reported as-is. An operator who
+    # wants the old fixed-number behavior back sets this explicitly; that's
+    # the only way OPENRBI_AGENT_CAPACITY still directly determines what's
+    # reported, and only ever as an upper bound.
+    #
+    # Before Roadmap B3, this defaulted to 10 and *was* the reported
+    # capacity outright (Roadmap B2.3). An operator who never set this
+    # explicitly (the documented default single-node setup) sees reported
+    # capacity change from a flat 10 to whatever this host's real headroom
+    # computes to — a deliberate behavior change, not a bug; see B3.1's own
+    # Definition of Done in the roadmap doc and CHANGELOG's Changed entry.
+    capacity: int | None = None
+    # Roadmap B3.1/B3.2 — RAM held back from the capacity computation for
+    # the host OS, the Docker daemon, and this agent process itself, so
+    # sandboxes are never sized to consume literally every free MB. 512 is a
+    # conservative starting point for a typical Linux server host; tune per
+    # docs/deployment.md#sizing once real headroom on a given host is known.
+    reserved_ram_mb: int = 512
     # Dedicated, egress-filtered network (docker-compose.yml, scripts/
     # setup-network-isolation.sh) — sandboxes are never on the same network
     # as postgres/redis/session-agent. The backend is multi-homed onto this

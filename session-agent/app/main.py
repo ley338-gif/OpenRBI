@@ -66,25 +66,63 @@ async def node_status() -> dict[str, str | int | float | bool]:
     version = await provider.runtime_version()
     image_available = await provider.sandbox_image_available(settings.sandbox_image)
     memory = psutil.virtual_memory()
+    cpu_percent = psutil.cpu_percent(interval=None)
+    cpu_count = psutil.cpu_count() or 1
     return {
         "hostname": settings.node_name,
         "status": "ONLINE",
-        "capacity": _capacity_from_settings(settings),
+        "capacity": _compute_capacity(
+            settings,
+            cpu_percent=cpu_percent,
+            cpu_count=cpu_count,
+            memory_total_mb=memory.total / (1024 * 1024),
+            memory_available_mb=memory.available / (1024 * 1024),
+        ),
         "active_sessions": active_sessions,
         "runtime": "docker",
         "version": version,
         "sandbox_image_available": image_available,
         "heartbeat_at": datetime.now(UTC).isoformat(),
-        "cpu_percent": psutil.cpu_percent(interval=None),
+        "cpu_percent": cpu_percent,
         "ram_total_mb": int(memory.total / (1024 * 1024)),
         "ram_used_mb": int((memory.total - memory.available) / (1024 * 1024)),
         "node_started_at": _PROCESS_STARTED_AT.isoformat(),
     }
 
 
-def _capacity_from_settings(settings) -> int:
-    # Roadmap B2.3 — real per-node deploy-time config (OPENRBI_AGENT_CAPACITY),
-    # not a hardcoded ceiling. Host-resource-aware auto-sizing is still out of
-    # scope for B2 (docs/roadmap-b2-multinode.md); this is the "minimum
-    # viable version" that roadmap phase explicitly calls for.
-    return settings.capacity
+def _compute_capacity(
+    settings, *, cpu_percent: float, cpu_count: int, memory_total_mb: float, memory_available_mb: float
+) -> int:
+    """Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
+    capacity derived from this host's actual free CPU/RAM headroom right
+    now, using the same per-sandbox reservation the platform already
+    enforces (default_cpu_limit/default_ram_limit_mb — Docker's own
+    --cpus/--memory for every sandbox, SandboxConfig) as the unit, rather
+    than a flat operator-configured number. Whichever resource has less
+    room for another sandbox is the binding constraint — a host can be
+    RAM-bound one moment and CPU-bound the next, and this always reflects
+    whichever is scarcer at the instant this is called (`GET
+    /v1/nodes/self`, polled by node_poller.py and select_node()).
+
+    settings.capacity is a *ceiling* on this computed value (B3.1's own
+    Decisions table) — unset (the default) leaves the computed number
+    exactly as calculated; set, it caps the result but never raises it
+    above what real headroom actually allows.
+
+    Every host reading is a plain number argument, not a live psutil call
+    made inside this function — keeps this pure and deterministic for
+    tests/test_capacity.py, and guarantees the capacity reported in one
+    /v1/nodes/self response is computed from the exact same readings as
+    that response's own cpu_percent/ram_total_mb/ram_used_mb fields.
+    """
+    used_ram_mb = memory_total_mb - memory_available_mb
+    free_ram_mb = memory_total_mb - settings.reserved_ram_mb - used_ram_mb
+    ram_capacity = max(0, int(free_ram_mb // settings.default_ram_limit_mb))
+
+    free_cpu_percent = max(0.0, cpu_count * 100 - cpu_percent)
+    cpu_capacity = max(0, int(free_cpu_percent // (settings.default_cpu_limit * 100)))
+
+    capacity = min(ram_capacity, cpu_capacity)
+    if settings.capacity is not None:
+        capacity = min(capacity, settings.capacity)
+    return capacity

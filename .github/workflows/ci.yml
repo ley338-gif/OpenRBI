@@ -25,7 +25,7 @@ jobs:
           sh scripts/lock-python-dependencies.sh
           git diff --exit-code -- backend/requirements.lock backend/requirements-dev.lock session-agent/requirements.lock session-agent/requirements-dev.lock
       - name: Ruff
-        run: ruff check backend/app backend/tests backend/migrations session-agent/app scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py scripts/fault-injection-probe.py scripts/check-v1-acceptance.py scripts/check-docs-freeze.py
+        run: ruff check backend/app backend/tests backend/migrations session-agent/app session-agent/tests scripts/fresh-install-acceptance.py scripts/backup-restore-acceptance.py scripts/upgrade-acceptance.py scripts/security-release-review.py scripts/fault-injection-probe.py scripts/check-v1-acceptance.py scripts/check-docs-freeze.py
       - name: Check component version synchronization
         run: python scripts/check-version-sync.py
       - name: Validate binding v1 acceptance manifest
@@ -38,6 +38,17 @@ jobs:
       - name: Type-check session agent
         working-directory: session-agent
         run: mypy app --ignore-missing-imports
+      - name: Install session agent dependencies
+        working-directory: session-agent
+        run: pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+      - name: Run session agent unit tests
+        # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — the
+        # first session-agent-side pytest suite (tests/test_capacity.py).
+        # Pure unit tests (no Docker/live stack needed, unlike backend's
+        # own integration suite) so this runs directly on the runner, not
+        # inside a container.
+        working-directory: session-agent
+        run: PYTHONPATH=. pytest tests/ -v
 
   dependency-scan-python:
     name: Python dependency scan (${{ matrix.component }})
@@ -224,6 +235,16 @@ jobs:
           sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+          # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
+          # capacity is now derived from this runner's actual free RAM/CPU,
+          # which can be modest on a shared CI runner. This suite's own
+          # session-scoped test cleanup (tests/conftest.py) means several
+          # real sandbox containers can be alive at once across a full run,
+          # not just within one test — pin a generous ceiling here so CI
+          # keeps the same headroom the old flat default gave it, matching
+          # the roadmap's own "an operator may have real reasons to cap
+          # lower/keep it stable" allowance.
+          echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -308,6 +329,16 @@ jobs:
           sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+          # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
+          # capacity is now derived from this runner's actual free RAM/CPU,
+          # which can be modest on a shared CI runner. This suite's own
+          # session-scoped test cleanup (tests/conftest.py) means several
+          # real sandbox containers can be alive at once across a full run,
+          # not just within one test — pin a generous ceiling here so CI
+          # keeps the same headroom the old flat default gave it, matching
+          # the roadmap's own "an operator may have real reasons to cap
+          # lower/keep it stable" allowance.
+          echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -387,6 +418,16 @@ jobs:
           sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+          # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
+          # capacity is now derived from this runner's actual free RAM/CPU,
+          # which can be modest on a shared CI runner. This suite's own
+          # session-scoped test cleanup (tests/conftest.py) means several
+          # real sandbox containers can be alive at once across a full run,
+          # not just within one test — pin a generous ceiling here so CI
+          # keeps the same headroom the old flat default gave it, matching
+          # the roadmap's own "an operator may have real reasons to cap
+          # lower/keep it stable" allowance.
+          echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |

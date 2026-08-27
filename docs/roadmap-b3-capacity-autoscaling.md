@@ -48,7 +48,43 @@ like a healthy one.
 
 ## Phases
 
-### B3.1 — Real per-node dynamic capacity computation
+### B3.1 — Real per-node dynamic capacity computation — **done**
+
+`_capacity_from_settings()` is now `_compute_capacity()`
+(`session-agent/app/main.py`) — real capacity derived from actual free
+CPU/RAM headroom at the instant `GET /v1/nodes/self` is called, using
+`default_ram_limit_mb`/`default_cpu_limit` (the same per-sandbox
+reservation Docker itself already enforces) as the unit; whichever
+resource is scarcer wins. `OPENRBI_AGENT_CAPACITY` (`capacity` in
+`session-agent/app/config.py`) is now a *ceiling* on that computed value
+— `None` by default (uncapped), so an un-overridden node reports the
+real computed number, not a flat 10; setting it caps the result but
+never raises it above real headroom. A new `OPENRBI_AGENT_RESERVED_RAM_MB`
+(default 512) is held back from the computation for the host OS/Docker
+daemon/this agent process itself. Every host reading is passed into
+`_compute_capacity()` as a plain argument rather than read via a live
+`psutil` call inside the function, keeping it pure and deterministic for
+`session-agent/tests/test_capacity.py` — the Session Agent's first pytest
+suite, now run in CI (`.github/workflows/ci.yml`'s `python-quality` job)
+alongside its existing ruff/mypy checks.
+
+**Real-world interaction found while verifying this**: the backend's own
+integration-test suite relies on a session-scoped cleanup fixture
+(`tests/conftest.py`) that sweeps up DB rows once at the very end of a
+run rather than terminating each session's real sandbox container
+immediately — a deliberate, already-documented tradeoff (see ADR 0021).
+Under the old flat `capacity=10`, the real containers this leaves running
+mid-suite never mattered; under real headroom-based capacity, a
+resource-constrained host running the full suite can now legitimately
+hit `NoCapacityError` from its own accumulated test containers.
+`scripts/run-fresh-install-acceptance.sh`,
+`scripts/run-backup-restore-acceptance.sh`,
+`scripts/run-upgrade-acceptance.sh`, and both `.env`-generating steps in
+`.github/workflows/ci.yml` now explicitly pin `OPENRBI_AGENT_CAPACITY=20`
+— restoring the old suite's effective headroom deliberately, via the
+ceiling this phase's own design added for exactly this kind of case,
+rather than silently letting CI's outcome depend on the runner's
+momentary real headroom.
 
 **Goal**: `_capacity_from_settings()` stops being a flat number and
 reflects actual free host headroom, bounded by the existing
