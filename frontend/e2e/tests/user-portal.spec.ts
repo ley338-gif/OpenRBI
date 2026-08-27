@@ -78,13 +78,23 @@ test.describe("User Portal", () => {
     // PageHeader's subtitle line — every top-level page should have one.
     await expect(page.getByText(/current overview of your secure browsing environment/i)).toBeVisible();
 
-    // The CTA is the one primary action on the dashboard (section 39: one
-    // primary action per area) — exactly one Secure Browser link, wording
-    // depending on whether a previous test in this file left a session
-    // DISCONNECTED rather than TERMINATED (a known, documented backend
-    // race — see CHANGELOG's "Productization v0.1.1" entry — not
-    // something this UI test should be sensitive to).
-    await expect(page.getByRole("link", { name: /^(Start|Open) Secure Browser$/ })).toBeVisible();
+    // The session-hero card's own CTA — wording depends on whatever state
+    // the previous test in this file left the session in (properly
+    // TERMINATED gives "Start", DISCONNECTED gives "Resume session", etc.
+    // — see Dashboard.tsx's sessionPresentation()). Scoped to the hero
+    // card specifically: the sidebar's "Quick actions" panel always has
+    // its own, separate, unconditional "Open Secure Browser" link, which
+    // an unscoped locator here would ambiguously also match whenever the
+    // hero's own text happened to be "Start Secure Browser" or "Open
+    // Secure Browser" too (a real Roadmap B2.4/display-race fix — see
+    // CHANGELOG's "Productization v0.1.1" entry for the backend
+    // concurrency bug this used to paper over by making a session
+    // unreliably land DISCONNECTED — made this collision visible for the
+    // first time; termination is now reliable, so this test needed a
+    // properly scoped locator rather than a lucky-by-race unique match).
+    await expect(
+      page.locator(".session-hero").getByRole("link", { name: /^(Start|Open) Secure Browser$/ })
+    ).toBeVisible();
 
     // A freshly seeded user has no downloads — the empty state must be a
     // real structured message, not a bare table with no rows.

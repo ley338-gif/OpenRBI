@@ -311,7 +311,38 @@ tested failure behavior.
 **ADR required**: no (extends existing, already-multi-node-aware health
 logic).
 
-### B2.6 — Deployment & ops
+### B2.6 — Deployment & ops — **done (single-host verified only)**
+
+New `docker-compose.node.yml`: a standalone (not an overlay — a node host
+has none of the control-plane services at all) compose file bringing up
+just a Session Agent and its own local `browser-plane`. The Admin
+Portal's Register/Approve/Revoke flow (built in B2.1) already satisfies
+"no direct database access needed" — no frontend changes were required
+for this phase. `docs/deployment.md` gained a "Multi-node" section
+(marked experimental/technology preview, the same honesty pattern as
+Segmented) with the full add/remove-a-node operator walkthrough, and its
+`#sizing` section now covers N-node capacity as a sum of each node's own
+`OPENRBI_AGENT_CAPACITY`.
+
+Verified end to end on the real single-host stack (a second Session
+Agent standing in for a second node, same technique every earlier B2
+phase's tests use — genuine cross-host testing remains the open item
+recorded in [ADR 0024](adr/0024-cross-host-display-relay.md)): using
+`docker-compose.node.yml` itself (`docker compose -p openrbi-node2 -f
+docker-compose.node.yml up -d`, connected to the primary stack's
+`control-plane` network to reach it), the node self-enrolled, was
+approved via the real `approve_node()` service function, was correctly
+selected by the real `select_node()` once the default node was drained,
+and a real sandbox was created, started, passed its VNC-readiness probe,
+and was cleanly terminated on it — the actual DoD claim below, proven
+rather than assumed. One real finding from this run: `session-agent`'s
+`sandbox_network_name` default only matches `docker-compose.yml`'s
+*default* Compose project name: evaluating a second node on the same
+host as the primary stack (which needs a distinct `-p` project name to
+avoid colliding with it) requires overriding
+`OPENRBI_AGENT_SANDBOX_NETWORK_NAME` to match — documented in
+`docker-compose.node.yml`'s own comments. A real second host, run with
+the default project name, needs no such override.
 
 **Goal**: A node host can run *just* a Session Agent + its own network
 isolation, cleanly separate from the control-plane compose file.
