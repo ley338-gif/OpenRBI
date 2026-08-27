@@ -445,7 +445,8 @@ validated with B2.1–B2.3 alone against two containers on one Docker host.
 ## What this roadmap deliberately does not cover
 
 - Host-resource-aware auto-scaling of capacity (flagged in B2.3 as a
-  follow-up, not silently dropped).
+  follow-up, not silently dropped — see [Roadmap B3](roadmap-b3-capacity-autoscaling.md),
+  which picks this up directly).
 - Live session migration between nodes (explicitly out of scope,
   documented in B2.3/B2.5, not assumed away).
 - Kubernetes/orchestration — stays out of scope per the project's existing
