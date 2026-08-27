@@ -14,10 +14,9 @@ from app.config import get_settings
 from app.models.browser_session import BrowserSession
 from app.models.enums import SecurityEventType, SessionStatus
 from app.models.security_event import SecurityEvent
-from app.services.sessions import create_session as create_session_service
 from app.services import sessions as session_service
 
-from tests.conftest import make_user
+from tests.conftest import create_session_tolerating_transient_capacity, make_user
 
 
 async def _run_to_grace_period() -> None:
@@ -35,7 +34,7 @@ async def test_orphaned_container_is_terminated_after_grace_period(db):
     orphan_reconcile_grace_cycles consecutive cycles.
     """
     owner, _ = await make_user(db, role_name="USER")
-    session = await create_session_service(db, owner)
+    session = await create_session_tolerating_transient_capacity(db, owner)
     await db.commit()
     session_id = session.id
 
@@ -78,7 +77,7 @@ async def test_lost_session_row_is_marked_failed_after_grace_period(db):
     marked FAILED with ended_at set, after the same grace period.
     """
     owner, _ = await make_user(db, role_name="USER")
-    session = await create_session_service(db, owner)
+    session = await create_session_tolerating_transient_capacity(db, owner)
     await db.commit()
     session_id = session.id
     assert session.status == SessionStatus.ACTIVE
@@ -150,7 +149,7 @@ async def test_failed_startup_is_audited_and_cleans_up_container(db, monkeypatch
     monkeypatch.setattr(session_service, "_wait_for_display_ready", fail_display_ready)
 
     with pytest.raises(session_service.SessionServiceError):
-        await create_session_service(db, owner)
+        await create_session_tolerating_transient_capacity(db, owner)
     await db.commit()
 
     session = await db.scalar(

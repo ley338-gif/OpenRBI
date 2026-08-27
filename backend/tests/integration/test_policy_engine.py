@@ -28,7 +28,7 @@ from app.services.policy_engine import (
     resolve_clipboard_policy,
     resolve_session_resolution,
 )
-from tests.conftest import PREFIX, make_user
+from tests.conftest import PREFIX, create_session_tolerating_transient_capacity, make_user
 
 
 async def _make_group(db) -> Group:
@@ -306,8 +306,6 @@ async def test_create_session_applies_resolved_policy_resolution(db):
     group with a published SESSION policy carries that policy's resolution,
     not the sandbox default.
     """
-    from app.services.sessions import create_session as create_session_service
-
     user, _ = await make_user(db, role_name="USER")
     group = await _make_group(db)
     db.add(UserGroup(user_id=user.id, group_id=group.id))
@@ -318,7 +316,7 @@ async def test_create_session_applies_resolved_policy_resolution(db):
     )
     await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
 
-    session = await create_session_service(db, user)
+    session = await create_session_tolerating_transient_capacity(db, user)
     await db.commit()
 
     assert session.screen_width == 1024
@@ -428,8 +426,6 @@ async def test_create_session_applies_resolved_clipboard_policy(db):
     BrowserSession row created for a user in a group with a published
     CLIPBOARD policy carries that policy's resolved mode, not the default.
     """
-    from app.services.sessions import create_session as create_session_service
-
     user, _ = await make_user(db, role_name="USER")
     group = await _make_group(db)
     db.add(UserGroup(user_id=user.id, group_id=group.id))
@@ -438,7 +434,7 @@ async def test_create_session_applies_resolved_clipboard_policy(db):
     policy = await _make_published_clipboard_policy(db, actor_id=user.id, content={"clipboard_mode": "REMOTE_TO_LOCAL"})
     await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
 
-    session = await create_session_service(db, user)
+    session = await create_session_tolerating_transient_capacity(db, user)
     await db.commit()
 
     assert session.clipboard_mode.value == "REMOTE_TO_LOCAL"

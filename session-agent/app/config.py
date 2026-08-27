@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # conservative starting point for a typical Linux server host; tune per
     # docs/deployment.md#sizing once real headroom on a given host is known.
     reserved_ram_mb: int = 512
+    # Roadmap B3.2 — asymmetric hysteresis on the computed capacity above:
+    # a drop applies on the very next poll (fail-closed toward safety), but
+    # a rise only applies once this many *consecutive* polls all sustain
+    # the higher value — so a momentary host recovery blip doesn't
+    # immediately reverse a real drop, and select_node() (backend,
+    # Roadmap B2.3) doesn't see capacity flap on every single poll. See
+    # _CapacityHysteresis in main.py.
+    capacity_recovery_polls: int = 3
     # Dedicated, egress-filtered network (docker-compose.yml, scripts/
     # setup-network-isolation.sh) — sandboxes are never on the same network
     # as postgres/redis/session-agent. The backend is multi-homed onto this

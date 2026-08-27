@@ -25,10 +25,9 @@ from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
 from app.models.enums import BrowserNodeStatus, NodeEnrollmentStatus, SecurityEventType, SessionStatus
 from app.models.security_event import SecurityEvent
-from app.services.sessions import create_session as create_session_service
 from app.services.sessions import terminate_session
 
-from tests.conftest import make_user
+from tests.conftest import create_session_tolerating_transient_capacity, make_user
 
 
 async def _make_unreachable_node(db) -> BrowserNode:
@@ -113,7 +112,7 @@ async def test_an_unreachable_node_does_not_block_reconciling_a_healthy_one(db):
     await db.commit()
 
     real_owner, _ = await make_user(db, role_name="USER")
-    real_session = await create_session_service(db, real_owner)
+    real_session = await create_session_tolerating_transient_capacity(db, real_owner)
     await db.commit()
 
     orphan_reconciler._candidates.clear()

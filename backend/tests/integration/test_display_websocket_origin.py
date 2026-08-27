@@ -18,9 +18,7 @@ import pytest
 import websockets
 from websockets.exceptions import InvalidStatus
 
-from app.services.sessions import create_session as create_session_service
-
-from tests.conftest import login, make_user
+from tests.conftest import create_session_tolerating_transient_capacity, login, make_user
 
 
 @pytest.mark.asyncio
@@ -28,7 +26,7 @@ async def test_display_ws_accepts_matching_origin_and_host_with_a_nondefault_por
     client: httpx.AsyncClient, db
 ):
     user, password = await make_user(db, role_name="USER")
-    session = await create_session_service(db, user)
+    session = await create_session_tolerating_transient_capacity(db, user)
     await db.commit()
     cookie = await login(client, user.username, password)
 
@@ -48,7 +46,7 @@ async def test_display_ws_accepts_matching_origin_and_host_with_a_nondefault_por
 @pytest.mark.asyncio
 async def test_display_ws_rejects_a_genuinely_cross_origin_handshake(client: httpx.AsyncClient, db):
     user, password = await make_user(db, role_name="USER")
-    session = await create_session_service(db, user)
+    session = await create_session_tolerating_transient_capacity(db, user)
     await db.commit()
     cookie = await login(client, user.username, password)
 

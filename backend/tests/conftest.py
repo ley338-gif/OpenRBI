@@ -14,6 +14,7 @@ since tests commit (like real request handlers do) so that a later test step
 issued through a fresh DB session or a real HTTP request can see the data.
 """
 
+import asyncio
 import uuid
 
 import httpx
@@ -93,6 +94,33 @@ async def make_user(db, *, role_name: str = "USER", password: str = "Test-Passwo
     )
     await db.commit()
     return user, password
+
+
+async def create_session_tolerating_transient_capacity(db, owner, **kwargs):
+    """Calls the real app.services.sessions.create_session, retrying only
+    on NoCapacityError -- Roadmap B3's own real, host-derived capacity
+    (docs/roadmap-b3-capacity-autoscaling.md) means this CI runner's
+    capacity can genuinely, transiently hit zero under this suite's own
+    accumulated real container load (session-scoped cleanup, ADR 0021's
+    conftest.py docstring above), unrelated to whatever the calling test
+    is actually verifying. Never used by tests/integration/test_scheduling.py
+    or anything else that's testing capacity/scheduling behavior itself --
+    those must see the real, unretried NoCapacityError. Any other
+    exception (including one raised on the very first attempt) propagates
+    immediately, unretried.
+    """
+    from app.services.sessions import NoCapacityError
+    from app.services.sessions import create_session as create_session_service
+
+    attempts = 8
+    for attempt in range(attempts):
+        try:
+            return await create_session_service(db, owner, **kwargs)
+        except NoCapacityError:
+            if attempt == attempts - 1:
+                raise
+            await asyncio.sleep(0.5)
+    raise AssertionError("unreachable")
 
 
 async def login(client: httpx.AsyncClient, username: str, password: str) -> str:

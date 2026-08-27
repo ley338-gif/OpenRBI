@@ -65,6 +65,15 @@ restore_dependencies() {
     docker compose -p "$NODE2_PROJECT" -f "$SCRIPT_DIR/../docker-compose.node.yml" -f "$NODE2_OVERRIDE" \
         down --volumes --remove-orphans >/dev/null 2>&1 || true
     rm -f "$NODE2_OVERRIDE"
+    # Roadmap B3.2 — Fault 14's real CPU-pressure containers, in case an
+    # earlier assertion in that fault exited the script before its own
+    # cleanup ran.
+    n=$(nproc 2>/dev/null || echo 4)
+    i=1
+    while [ "$i" -le "$n" ]; do
+        docker rm -f "openrbi-fault-cpu-pressure-$i" >/dev/null 2>&1 || true
+        i=$((i + 1))
+    done
 }
 trap restore_dependencies EXIT INT TERM
 
@@ -228,6 +237,78 @@ probe agent-unavailable
 docker compose up -d --force-recreate session-agent >/dev/null
 wait_agent
 probe verify-active "$SESSION_TWO" "$TOKEN_TWO"
+
+echo "== Fault 14: real host CPU pressure drops capacity, with hysteresis (Roadmap B3.2) =="
+
+# Real containers that actually pin CPU cores busy, not a synthetic
+# reading — the default node's own session-agent reads real host-wide
+# psutil.cpu_percent(), so this is visible to it exactly the way any
+# other real CPU consumer on the host would be. CPU pressure is used
+# here instead of RAM pressure: an earlier version of this fault
+# committed ~1.2 GB of real RAM and, on a real CI run, pushed an
+# already memory-tight GitHub-hosted runner into genuine host memory
+# exhaustion severe enough to break the backend's own PostgreSQL
+# connection pool (asyncpg "connection is closed") seconds later — a
+# real production incident risk that CPU contention (which degrades
+# throughput, not availability) doesn't share.
+CPU_PRESSURE_PREFIX="openrbi-fault-cpu-pressure"
+CPU_PRESSURE_CORES=$(nproc 2>/dev/null || echo 4)
+cleanup_cpu_pressure() {
+    i=1
+    while [ "$i" -le "$CPU_PRESSURE_CORES" ]; do
+        docker rm -f "${CPU_PRESSURE_PREFIX}-$i" >/dev/null 2>&1 || true
+        i=$((i + 1))
+    done
+}
+cleanup_cpu_pressure
+BEFORE_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+i=1
+while [ "$i" -le "$CPU_PRESSURE_CORES" ]; do
+    docker run -d --name "${CPU_PRESSURE_PREFIX}-$i" python:3.11-slim python -c "
+import time
+end = time.time() + 60
+x = 0
+while time.time() < end:
+    x += 1
+" >/dev/null
+    i=$((i + 1))
+done
+sleep 5
+DURING_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+if [ "$DURING_CAPACITY" -ge "$BEFORE_CAPACITY" ]; then
+    echo "capacity did not drop under real CPU pressure (before=$BEFORE_CAPACITY during=$DURING_CAPACITY)" >&2
+    cleanup_cpu_pressure
+    exit 1
+fi
+
+cleanup_cpu_pressure
+
+# The drop must not instantly reverse the moment real headroom is back —
+# this is the actual hysteresis behavior B3.2 adds, not just B3.1's raw
+# computation (already covered by session-agent/tests/test_capacity.py).
+# The exact poll count isn't asserted precisely here: node_poller.py
+# (backend, real background task) polls the same endpoint independently
+# on its own interval and would otherwise advance the recovery streak
+# unpredictably relative to this script's own probe calls — the
+# meaningful, deterministic claims are "not on the very next poll" and
+# "eventually, within a generous bound", not an exact count.
+JUST_AFTER_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+if [ "$JUST_AFTER_CAPACITY" != "$DURING_CAPACITY" ]; then
+    echo "capacity recovered instantly instead of being held (during=$DURING_CAPACITY just_after=$JUST_AFTER_CAPACITY)" >&2
+    exit 1
+fi
+
+RECOVERED_CAPACITY="$DURING_CAPACITY"
+for attempt in $(seq 1 10); do
+    RECOVERED_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+    [ "$RECOVERED_CAPACITY" -gt "$DURING_CAPACITY" ] && break
+    sleep 1
+done
+if [ "$RECOVERED_CAPACITY" -le "$DURING_CAPACITY" ]; then
+    echo "capacity never recovered after sustained real headroom (during=$DURING_CAPACITY recovered=$RECOVERED_CAPACITY)" >&2
+    exit 1
+fi
+echo "PASS: capacity dropped under real CPU pressure ($BEFORE_CAPACITY -> $DURING_CAPACITY), was still held on the very next poll after pressure cleared, then recovered ($RECOVERED_CAPACITY)"
 
 trap - EXIT INT TERM
 restore_dependencies
