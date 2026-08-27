@@ -74,17 +74,22 @@ integration-test suite relies on a session-scoped cleanup fixture
 run rather than terminating each session's real sandbox container
 immediately — a deliberate, already-documented tradeoff (see ADR 0021).
 Under the old flat `capacity=10`, the real containers this leaves running
-mid-suite never mattered; under real headroom-based capacity, a
-resource-constrained host running the full suite can now legitimately
-hit `NoCapacityError` from its own accumulated test containers.
-`scripts/run-fresh-install-acceptance.sh`,
+mid-suite never mattered; under real headroom-based capacity, this
+genuinely exhausted a real GitHub Actions runner's own free RAM,
+confirmed by an actual CI run — not just a theoretical concern.
+`OPENRBI_AGENT_CAPACITY=20` alone (`scripts/run-fresh-install-acceptance.sh`,
 `scripts/run-backup-restore-acceptance.sh`,
-`scripts/run-upgrade-acceptance.sh`, and both `.env`-generating steps in
-`.github/workflows/ci.yml` now explicitly pin `OPENRBI_AGENT_CAPACITY=20`
-— restoring the old suite's effective headroom deliberately, via the
-ceiling this phase's own design added for exactly this kind of case,
-rather than silently letting CI's outcome depend on the runner's
-momentary real headroom.
+`scripts/run-upgrade-acceptance.sh`, and every `.env`-generating step in
+`.github/workflows/ci.yml`) turned out to be insufficient by itself — a
+ceiling can only ever *lower* an already-higher computed value, so it
+does nothing when the computed value itself is the binding constraint.
+The same four places also now set `OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024`
+— shrinking the per-sandbox reservation the RAM computation divides by,
+which both raises computed capacity *and* reduces what each test sandbox
+actually uses. Verified this doesn't just move the failure elsewhere:
+1024 MB is still enough for a real, working Firefox+Xvfb+x11vnc sandbox
+in the existing noVNC/canvas E2E test, run locally against the real
+stack with this setting applied.
 
 **Goal**: `_capacity_from_settings()` stops being a flat number and
 reflects actual free host headroom, bounded by the existing

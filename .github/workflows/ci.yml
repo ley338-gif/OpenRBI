@@ -236,15 +236,21 @@ jobs:
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
           # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
-          # capacity is now derived from this runner's actual free RAM/CPU,
-          # which can be modest on a shared CI runner. This suite's own
-          # session-scoped test cleanup (tests/conftest.py) means several
-          # real sandbox containers can be alive at once across a full run,
-          # not just within one test — pin a generous ceiling here so CI
-          # keeps the same headroom the old flat default gave it, matching
-          # the roadmap's own "an operator may have real reasons to cap
-          # lower/keep it stable" allowance.
+          # capacity is now derived from this runner's actual free RAM/CPU.
+          # This suite's own session-scoped test cleanup (tests/conftest.py)
+          # means several real sandbox containers can be alive at once
+          # across a full run, not just within one test — a ceiling alone
+          # (OPENRBI_AGENT_CAPACITY) can only ever *lower* an already-higher
+          # computed value, so it doesn't help when the computed value
+          # itself is the constraint, confirmed by a real CI run: also
+          # shrinking the per-sandbox reservation the computation divides
+          # by (default_ram_limit_mb) is what actually restores the old
+          # suite's effective headroom on a runner with finite RAM. 1024 MB
+          # is still a real, functional limit for a short-lived automated
+          # test's Firefox+Xvfb+x11vnc sandbox (verified against the real
+          # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
+          echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -330,15 +336,21 @@ jobs:
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
           # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
-          # capacity is now derived from this runner's actual free RAM/CPU,
-          # which can be modest on a shared CI runner. This suite's own
-          # session-scoped test cleanup (tests/conftest.py) means several
-          # real sandbox containers can be alive at once across a full run,
-          # not just within one test — pin a generous ceiling here so CI
-          # keeps the same headroom the old flat default gave it, matching
-          # the roadmap's own "an operator may have real reasons to cap
-          # lower/keep it stable" allowance.
+          # capacity is now derived from this runner's actual free RAM/CPU.
+          # This suite's own session-scoped test cleanup (tests/conftest.py)
+          # means several real sandbox containers can be alive at once
+          # across a full run, not just within one test — a ceiling alone
+          # (OPENRBI_AGENT_CAPACITY) can only ever *lower* an already-higher
+          # computed value, so it doesn't help when the computed value
+          # itself is the constraint, confirmed by a real CI run: also
+          # shrinking the per-sandbox reservation the computation divides
+          # by (default_ram_limit_mb) is what actually restores the old
+          # suite's effective headroom on a runner with finite RAM. 1024 MB
+          # is still a real, functional limit for a short-lived automated
+          # test's Firefox+Xvfb+x11vnc sandbox (verified against the real
+          # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
+          echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -419,15 +431,21 @@ jobs:
           sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
           echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
           # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
-          # capacity is now derived from this runner's actual free RAM/CPU,
-          # which can be modest on a shared CI runner. This suite's own
-          # session-scoped test cleanup (tests/conftest.py) means several
-          # real sandbox containers can be alive at once across a full run,
-          # not just within one test — pin a generous ceiling here so CI
-          # keeps the same headroom the old flat default gave it, matching
-          # the roadmap's own "an operator may have real reasons to cap
-          # lower/keep it stable" allowance.
+          # capacity is now derived from this runner's actual free RAM/CPU.
+          # This suite's own session-scoped test cleanup (tests/conftest.py)
+          # means several real sandbox containers can be alive at once
+          # across a full run, not just within one test — a ceiling alone
+          # (OPENRBI_AGENT_CAPACITY) can only ever *lower* an already-higher
+          # computed value, so it doesn't help when the computed value
+          # itself is the constraint, confirmed by a real CI run: also
+          # shrinking the per-sandbox reservation the computation divides
+          # by (default_ram_limit_mb) is what actually restores the old
+          # suite's effective headroom on a runner with finite RAM. 1024 MB
+          # is still a real, functional limit for a short-lived automated
+          # test's Firefox+Xvfb+x11vnc sandbox (verified against the real
+          # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
+          echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
