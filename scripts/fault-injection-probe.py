@@ -14,17 +14,30 @@ from sqlalchemy import func, select
 
 from app.core import orphan_reconciler, session_agent_client
 from app.core import sessions as login_sessions
+from app.core.node_enrollment_tokens import create_token
 from app.db.session import async_session_factory
+from app.models.browser_node import BrowserNode
 from app.models.browser_session import BrowserSession
+from app.models.enums import (
+    BrowserNodeStatus,
+    NodeEnrollmentStatus,
+    SecurityEventType,
+    SessionStatus,
+)
 from app.models.incident import Incident
-from app.models.enums import BrowserNodeStatus, SecurityEventType, SessionStatus
 from app.models.role import Role
 from app.models.security_event import SecurityEvent
 from app.models.user import User
 from app.services import sessions as session_service
 from app.services.dashboard import get_dashboard
 from app.services.health import ComponentStatus, get_system_health
-from app.services.nodes import drain_node, maintenance_node, undrain_node, unmaintenance_node
+from app.services.nodes import (
+    approve_node,
+    drain_node,
+    maintenance_node,
+    undrain_node,
+    unmaintenance_node,
+)
 
 
 def emit(**values) -> None:
@@ -304,6 +317,89 @@ async def token_state(token: str, expected: str) -> None:
     emit(login_token_present=present)
 
 
+async def node2_enrollment_token() -> None:
+    """Roadmap B2.7 — the host script starts a real second Session Agent
+    container (docker-compose.node.yml) pointed at this token; it
+    self-enrolls the same way any real second node would.
+    """
+    token = await create_token()
+    emit(enrollment_token=token)
+
+
+async def node2_approve(hostname: str, endpoint_url: str) -> None:
+    async with async_session_factory() as db:
+        node = await db.scalar(select(BrowserNode).where(BrowserNode.hostname == hostname))
+        assert node is not None and node.enrollment_status == NodeEnrollmentStatus.PENDING
+        actor = await make_user(db, "fault-operator")
+        await approve_node(db, node, endpoint_url=endpoint_url, actor_id=actor.id)
+        await db.commit()
+        emit(node_id=str(node.id))
+
+
+async def node2_seed_active(hostname: str) -> None:
+    """Drains the default node so create_session()'s real select_node()
+    naturally lands on the named second node — proves real cross-node
+    scheduling put the session there, not a hand-set node_id.
+    """
+    async with async_session_factory() as db:
+        default = await session_service.refresh_node_from_agent(db)
+        actor = await make_user(db, "fault-operator")
+        await drain_node(db, default, actor_id=actor.id)
+        await db.commit()
+
+        user = await make_user(db, "fault-node2")
+        browser_session = await session_service.create_session(db, user)
+        await db.commit()
+        assert browser_session.node_id is not None
+        node = await db.get(BrowserNode, browser_session.node_id)
+        assert node is not None and node.hostname == hostname, (
+            f"expected session on {hostname}, landed on {node.hostname if node else None}"
+        )
+
+        await undrain_node(db, default, actor_id=actor.id)
+        await db.commit()
+        token = await login_sessions.create_session(user.id, "USER")
+        emit(session_id=str(browser_session.id), login_token=token, node_hostname=node.hostname)
+
+
+async def node2_verify_unreachable_session_failed(session_id: str) -> None:
+    """Same shape as reconcile_lost(), plus the B2.5 node_unreachable tag
+    that distinguishes 'the whole node went down' from 'one container on
+    an otherwise-healthy node vanished'.
+    """
+    await run_grace_period()
+    async with async_session_factory() as db:
+        browser_session = await db.get(BrowserSession, uuid.UUID(session_id))
+        assert browser_session is not None
+        assert browser_session.status == SessionStatus.FAILED and browser_session.ended_at is not None
+        event = await db.scalar(
+            select(SecurityEvent)
+            .where(
+                SecurityEvent.session_id == browser_session.id,
+                SecurityEvent.event_type == SecurityEventType.SESSION_LOST_RECONCILED,
+            )
+            .order_by(SecurityEvent.created_at.desc())
+        )
+        assert event is not None
+        assert event.metadata_json is not None and event.metadata_json.get("node_unreachable") is True
+        emit(db_state="FAILED", node_unreachable=True, audit_event=event.event_type.value)
+
+
+async def node2_verify_survivor_unaffected(session_id: str) -> None:
+    async with async_session_factory() as db:
+        browser_session = await db.get(BrowserSession, uuid.UUID(session_id))
+        assert browser_session is not None and browser_session.status == SessionStatus.ACTIVE
+        emit(db_state=browser_session.status.value)
+
+
+async def node2_verify_reschedules_onto_survivor(expected_hostname: str) -> None:
+    async with async_session_factory() as db:
+        node = await session_service.select_node(db)
+        await db.commit()
+        assert node.hostname == expected_hostname, f"expected {expected_hostname}, got {node.hostname}"
+        emit(scheduled_node=node.hostname)
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command")
@@ -319,6 +415,12 @@ async def main() -> None:
         "agent-unavailable": lambda: agent_unavailable(),
         "node-modes": lambda: node_modes(parsed.args[0]),
         "token-state": lambda: token_state(parsed.args[0], parsed.args[1]),
+        "node2-enrollment-token": lambda: node2_enrollment_token(),
+        "node2-approve": lambda: node2_approve(parsed.args[0], parsed.args[1]),
+        "node2-seed-active": lambda: node2_seed_active(parsed.args[0]),
+        "node2-verify-unreachable-session-failed": lambda: node2_verify_unreachable_session_failed(parsed.args[0]),
+        "node2-verify-survivor-unaffected": lambda: node2_verify_survivor_unaffected(parsed.args[0]),
+        "node2-verify-reschedules-onto-survivor": lambda: node2_verify_reschedules_onto_survivor(parsed.args[0]),
     }
     if parsed.command not in commands:
         parser.error(f"unknown command: {parsed.command}")

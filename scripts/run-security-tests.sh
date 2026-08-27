@@ -283,6 +283,91 @@ check "a rebound hostname pointing at Postgres's real IP is still blocked" 1 \
         --resolve "totally-legit-cdn.example.com:80:$POSTGRES_IP" \
         -sf --max-time 3 -o /dev/null "http://totally-legit-cdn.example.com:80"
 
+echo "== 6. Roadmap B2.1/B2.3: a rogue/unapproved node cannot receive scheduled sessions =="
+
+# A leaked/guessed enrollment token is not, by itself, sufficient
+# (docs/adr/0023-node-enrollment-and-trust-model.md's whole point) — this
+# proves it against the real, currently-running stack's own database and
+# scheduler, not a throwaway pytest fixture DB (B2.1's own
+# test_admin_nodes.py already covers the unit level; this is the
+# black-box regression this script's own category exists for). Goes
+# through enroll_node() directly, the same service function the real
+# unauthenticated POST /admin/nodes/enroll endpoint calls after verifying
+# a single-use token — CSRF/rate-limiting on that HTTP path are already
+# covered elsewhere and aren't what this check is about.
+ROGUE_RESULT=$(docker exec "$BACKEND_CONTAINER" python -c "
+import asyncio, uuid
+from app.db.session import async_session_factory
+from app.services.nodes import enroll_node
+from app.models.enums import NodeEnrollmentStatus
+
+async def main():
+    async with async_session_factory() as db:
+        node = await enroll_node(db, hostname=f'rogue-node-{uuid.uuid4().hex[:8]}', api_token='rogue-attacker-supplied-token')
+        assert node.enrollment_status == NodeEnrollmentStatus.PENDING
+        assert node.endpoint_url is None
+        await db.commit()
+        print(node.hostname)
+
+asyncio.run(main())
+")
+
+SCHEDULE_CHECK=$(docker exec "$BACKEND_CONTAINER" python -c "
+import asyncio
+from app.db.session import async_session_factory
+from app.models.user import User
+from app.models.role import Role
+from app.services.sessions import select_node, create_session, terminate_session
+from sqlalchemy import select
+
+async def main():
+    async with async_session_factory() as db:
+        role = await db.scalar(select(Role).where(Role.name == 'USER'))
+        landed_on_rogue = False
+        for i in range(10):
+            node = await select_node(db)
+            await db.commit()
+            if node.hostname == '$ROGUE_RESULT':
+                landed_on_rogue = True
+                break
+            user = User(
+                username=f'security-rogue-check-{i}-{node.id}', password_hash='not-a-real-login',
+                role_id=role.id, is_active=True,
+            )
+            db.add(user)
+            await db.flush()
+            session = await create_session(db, user)
+            await db.commit()
+            if session.node_id == node.id and node.hostname == '$ROGUE_RESULT':
+                landed_on_rogue = True
+            await terminate_session(db, session, actor_id=user.id)
+            await db.commit()
+        print('FAIL' if landed_on_rogue else 'OK')
+
+asyncio.run(main())
+")
+docker exec "$BACKEND_CONTAINER" python -c "
+import asyncio
+from app.db.session import async_session_factory
+from app.models.browser_node import BrowserNode
+from sqlalchemy import delete
+
+async def main():
+    async with async_session_factory() as db:
+        await db.execute(delete(BrowserNode).where(BrowserNode.hostname == '$ROGUE_RESULT'))
+        await db.commit()
+
+asyncio.run(main())
+" >/dev/null
+
+if [ "$SCHEDULE_CHECK" = "OK" ]; then
+    echo "PASS: a PENDING (unapproved) node never received a scheduled session across repeated real create_session() calls"
+    pass=$((pass + 1))
+else
+    echo "FAIL: a PENDING (unapproved) node was selected/scheduled onto — see output above"
+    fail=$((fail + 1))
+fi
+
 echo
 echo "== Summary: $pass passed, $fail failed =="
 [ "$fail" -eq 0 ]
