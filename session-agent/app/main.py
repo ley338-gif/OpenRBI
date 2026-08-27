@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import psutil
@@ -41,6 +42,43 @@ psutil.cpu_percent(interval=None)
 _PROCESS_STARTED_AT = datetime.fromtimestamp(psutil.Process(os.getpid()).create_time(), tz=UTC)
 
 
+@dataclass
+class _CapacityHysteresis:
+    """Roadmap B3.2 (docs/roadmap-b3-capacity-autoscaling.md) — asymmetric
+    smoothing on top of _compute_capacity()'s raw, instantaneous number.
+    A drop is applied immediately on the very next call (fail-closed
+    toward safety — never hide a real resource crunch behind smoothing).
+    A rise is only applied once `recovery_polls` *consecutive* calls all
+    report a value at least that high; any call in between that drops
+    back to or below the currently-reported value resets the streak,
+    since that's no longer a sustained recovery.
+
+    A real object (not module-level globals) so tests can construct
+    their own fresh instance instead of needing to reset shared state
+    between cases — `main.py`'s own module-level `_capacity_hysteresis`
+    is the one real GET /v1/nodes/self actually uses.
+    """
+
+    last_reported: int | None = None
+    recovery_streak: int = 0
+
+    def apply(self, raw: int, *, recovery_polls: int) -> int:
+        if self.last_reported is None or raw <= self.last_reported:
+            self.last_reported = raw
+            self.recovery_streak = 0
+            return raw
+
+        # raw > last_reported: a potential recovery, not yet applied.
+        self.recovery_streak += 1
+        if self.recovery_streak >= recovery_polls:
+            self.last_reported = raw
+            self.recovery_streak = 0
+        return self.last_reported
+
+
+_capacity_hysteresis = _CapacityHysteresis()
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", **BUILD_INFO.as_dict()}
@@ -68,16 +106,17 @@ async def node_status() -> dict[str, str | int | float | bool]:
     memory = psutil.virtual_memory()
     cpu_percent = psutil.cpu_percent(interval=None)
     cpu_count = psutil.cpu_count() or 1
+    raw_capacity = _compute_capacity(
+        settings,
+        cpu_percent=cpu_percent,
+        cpu_count=cpu_count,
+        memory_total_mb=memory.total / (1024 * 1024),
+        memory_available_mb=memory.available / (1024 * 1024),
+    )
     return {
         "hostname": settings.node_name,
         "status": "ONLINE",
-        "capacity": _compute_capacity(
-            settings,
-            cpu_percent=cpu_percent,
-            cpu_count=cpu_count,
-            memory_total_mb=memory.total / (1024 * 1024),
-            memory_available_mb=memory.available / (1024 * 1024),
-        ),
+        "capacity": _capacity_hysteresis.apply(raw_capacity, recovery_polls=settings.capacity_recovery_polls),
         "active_sessions": active_sessions,
         "runtime": "docker",
         "version": version,

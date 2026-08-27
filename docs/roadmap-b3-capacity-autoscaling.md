@@ -133,7 +133,34 @@ to consume literally 100% of host RAM).
 and its inputs; no new trust boundary (the backend already trusts
 whatever `capacity` a node self-reports, unchanged since B1.10.1).
 
-### B3.2 — Smoothing and starvation guards
+### B3.2 — Smoothing and starvation guards — **done**
+
+`session-agent/app/main.py` gained `_CapacityHysteresis`: a small
+stateful wrapper around B3.1's pure `_compute_capacity()`. A drop
+applies on the very next `GET /v1/nodes/self` call (fail-closed toward
+safety — a real resource crunch is never hidden behind smoothing); a
+rise only applies once `OPENRBI_AGENT_CAPACITY_RECOVERY_POLLS`
+(`capacity_recovery_polls` in `session-agent/app/config.py`, default 3)
+*consecutive* calls all sustain the higher value — any call in between
+that drops back down resets the streak, since that's no longer a
+sustained recovery. `OPENRBI_AGENT_RESERVED_RAM_MB`'s non-zero default
+(512, from B3.1) already satisfied this phase's starvation-guard
+requirement.
+
+Verified with 6 new deterministic unit tests
+(`session-agent/tests/test_capacity_hysteresis.py`, each constructing
+its own fresh `_CapacityHysteresis` instance) and a real fault-injection
+scenario (`scripts/run-fault-injection-tests.sh`'s new Fault 14,
+`scripts/fault-injection-probe.py`'s new `capacity-snapshot` command): a
+real container that actually commits and touches ~1.2 GB of host RAM
+(not a synthetic reading) drives the default node's *real* reported
+capacity down, confirmed still held on the very next poll after the
+pressure container is removed (not instantly back to full — the exact
+DoD wording), then confirmed to eventually recover. Run as a dry-run
+extraction of the exact committed shell code against the real stack
+before being wired in, and observed live via repeated manual polling
+during development (capacity `12 → 10` under pressure, held at `10` for
+one more poll after clearing it, recovered to `12` on the next).
 
 **Goal**: A momentary host spike doesn't cause `select_node()` (B2.3) to
 see capacity oscillate every poll cycle, and the host OS/Docker daemon

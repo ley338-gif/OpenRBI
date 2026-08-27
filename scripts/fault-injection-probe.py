@@ -311,6 +311,18 @@ async def node_modes(active_session_id: str) -> None:
         )
 
 
+async def capacity_snapshot() -> None:
+    """Roadmap B3.2 (docs/roadmap-b3-capacity-autoscaling.md) — the
+    default node's own currently-reported capacity, straight from its
+    real GET /v1/nodes/self (through session_agent_client, no smoothing
+    or interpretation added here — the host script drives the actual
+    memory-pressure fault and reads this repeatedly to observe the real
+    session-agent's own hysteresis behavior).
+    """
+    status = await session_agent_client.get_node_status()
+    emit(capacity=status.capacity)
+
+
 async def token_state(token: str, expected: str) -> None:
     present = await login_sessions.get_session(token) is not None
     assert present is (expected == "present")
@@ -415,6 +427,7 @@ async def main() -> None:
         "agent-unavailable": lambda: agent_unavailable(),
         "node-modes": lambda: node_modes(parsed.args[0]),
         "token-state": lambda: token_state(parsed.args[0], parsed.args[1]),
+        "capacity-snapshot": lambda: capacity_snapshot(),
         "node2-enrollment-token": lambda: node2_enrollment_token(),
         "node2-approve": lambda: node2_approve(parsed.args[0], parsed.args[1]),
         "node2-seed-active": lambda: node2_seed_active(parsed.args[0]),
