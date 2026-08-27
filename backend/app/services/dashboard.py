@@ -148,6 +148,33 @@ def _sustained_high_load_warnings(nodes: list[BrowserNode], samples_by_node: dic
     return warnings
 
 
+def _capacity_bound_warnings(
+    nodes: list[BrowserNode], samples_by_node: dict, *, window: timedelta
+) -> list[Warning]:
+    """Roadmap B3.3 — a node whose every recent sample shows real headroom
+    (RAM or CPU) as the binding constraint, not the operator's own
+    OPENRBI_AGENT_CAPACITY ceiling. Deliberately never fires for
+    "ceiling": that's a deliberate admin config choice, the same reason
+    DRAINING/MAINTENANCE aren't health concerns either.
+    """
+    warnings: list[Warning] = []
+    for node in nodes:
+        samples = samples_by_node.get(node.id, [])
+        recent = [s for s in samples if s.capacity_bound is not None]
+        if len(recent) < 2:
+            continue
+        if all(s.capacity_bound in ("ram", "cpu") for s in recent):
+            reason = recent[-1].capacity_bound
+            warnings.append(
+                Warning(
+                    kind="capacity_bound",
+                    worker_hostname=node.hostname,
+                    message=f"{node.hostname} has been {reason.upper()}-bound for over {int(window.total_seconds() / 60)} minutes",
+                )
+            )
+    return warnings
+
+
 async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboard:
     now = datetime.now(UTC)
 
@@ -234,7 +261,20 @@ async def get_dashboard(db: AsyncSession, *, range_key: str = "24h") -> Dashboar
         for sample in sample_result.scalars():
             samples_by_node.setdefault(sample.node_id, []).append(sample)
 
+    # Same shape as the sustained-high-CPU check above, but its own query:
+    # settings.capacity_bound_warning_minutes is independently
+    # configurable, so it can't just reuse samples_by_node's fixed
+    # _SUSTAINED_HIGH_LOAD_WINDOW.
+    capacity_bound_window = timedelta(minutes=get_settings().capacity_bound_warning_minutes)
+    capacity_samples_by_node: dict = {}
+    if nodes:
+        since = now - capacity_bound_window
+        sample_result = await db.execute(select(WorkerMetricSample).where(WorkerMetricSample.recorded_at >= since))
+        for sample in sample_result.scalars():
+            capacity_samples_by_node.setdefault(sample.node_id, []).append(sample)
+
     warnings = _sustained_high_load_warnings(nodes, samples_by_node)
+    warnings.extend(_capacity_bound_warnings(nodes, capacity_samples_by_node, window=capacity_bound_window))
     for node in nodes:
         health = node_health[node.id]
         if health == WorkerHealth.DRAINING:

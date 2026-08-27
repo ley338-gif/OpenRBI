@@ -383,6 +383,13 @@ export interface BrowserNodeDto {
   // not `status` (the raw scheduling flag).
   health: WorkerHealthLabel;
   capacity: number;
+  // Roadmap B3.3 — why `capacity` is what it is right now. "ram"/"cpu"
+  // when real headroom is the constraint, "ceiling" when the operator's
+  // own OPENRBI_AGENT_CAPACITY is (never a real-headroom concern), null
+  // for a node that's never reported yet.
+  capacity_bound: "ram" | "cpu" | "ceiling" | null;
+  ram_capacity: number | null;
+  cpu_capacity: number | null;
   active_sessions: number;
   runtime: string;
   version: string | null;

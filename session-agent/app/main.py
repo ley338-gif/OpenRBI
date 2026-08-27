@@ -109,17 +109,26 @@ async def node_status() -> dict[str, str | int | float | bool]:
     # off the event loop so one status check can't stall others.
     cpu_percent = await asyncio.to_thread(psutil.cpu_percent, interval=0.1)
     cpu_count = psutil.cpu_count() or 1
-    raw_capacity = _compute_capacity(
+    breakdown = _compute_capacity(
         settings,
         cpu_percent=cpu_percent,
         cpu_count=cpu_count,
         memory_total_mb=memory.total / (1024 * 1024),
         memory_available_mb=memory.available / (1024 * 1024),
     )
+    # Roadmap B3.3 — capacity_bound/ram_capacity/cpu_capacity are the raw,
+    # unsmoothed breakdown for this instant: purely informational (why is
+    # capacity what it is right now), so they don't go through B3.2's
+    # hysteresis the way the scheduling-critical `capacity` field below
+    # does -- only the number actually used for scheduling decisions needs
+    # to resist flapping.
     return {
         "hostname": settings.node_name,
         "status": "ONLINE",
-        "capacity": _capacity_hysteresis.apply(raw_capacity, recovery_polls=settings.capacity_recovery_polls),
+        "capacity": _capacity_hysteresis.apply(breakdown.capacity, recovery_polls=settings.capacity_recovery_polls),
+        "capacity_bound": breakdown.bound,
+        "ram_capacity": breakdown.ram_capacity,
+        "cpu_capacity": breakdown.cpu_capacity,
         "active_sessions": active_sessions,
         "runtime": "docker",
         "version": version,
@@ -132,9 +141,27 @@ async def node_status() -> dict[str, str | int | float | bool]:
     }
 
 
+@dataclass
+class CapacityBreakdown:
+    """Roadmap B3.3 (docs/roadmap-b3-capacity-autoscaling.md) — the final
+    capacity number alone doesn't tell an operator *why* it's low. `bound`
+    names whichever input actually decided the final `capacity`: "ram" or
+    "cpu" when real headroom is the constraint, or "ceiling" when
+    settings.capacity (an admin-set config value, not real headroom) is
+    what's actually capping it below what the host could otherwise
+    support — the dashboard (app/services/dashboard.py) only ever warns
+    on the first two, never on an admin's own deliberate ceiling.
+    """
+
+    capacity: int
+    ram_capacity: int
+    cpu_capacity: int
+    bound: str
+
+
 def _compute_capacity(
     settings, *, cpu_percent: float, cpu_count: int, memory_total_mb: float, memory_available_mb: float
-) -> int:
+) -> CapacityBreakdown:
     """Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
     capacity derived from this host's actual free CPU/RAM headroom right
     now, using the same per-sandbox reservation the platform already
@@ -170,7 +197,12 @@ def _compute_capacity(
     free_cpu_percent = max(0.0, cpu_count * (100 - cpu_percent))
     cpu_capacity = max(0, int(free_cpu_percent // (settings.default_cpu_limit * 100)))
 
+    # Ties go to "ram" arbitrarily (both are equally binding) -- same
+    # "pick a deterministic winner" spirit as select_node()'s own
+    # lowest-hostname tie-break, not a claim that RAM matters more.
+    bound = "ram" if ram_capacity <= cpu_capacity else "cpu"
     capacity = min(ram_capacity, cpu_capacity)
-    if settings.capacity is not None:
-        capacity = min(capacity, settings.capacity)
-    return capacity
+    if settings.capacity is not None and settings.capacity < capacity:
+        capacity = settings.capacity
+        bound = "ceiling"
+    return CapacityBreakdown(capacity=capacity, ram_capacity=ram_capacity, cpu_capacity=cpu_capacity, bound=bound)

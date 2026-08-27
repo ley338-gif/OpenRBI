@@ -38,6 +38,12 @@ class NodeStatus:
     hostname: str
     status: str
     capacity: int
+    # Roadmap B3.3 — why `capacity` is what it is right now: "ram"/"cpu"
+    # when real headroom is the constraint, "ceiling" when the operator's
+    # own OPENRBI_AGENT_CAPACITY is (never a real-headroom concern).
+    capacity_bound: str
+    ram_capacity: int
+    cpu_capacity: int
     active_sessions: int
     runtime: str
     version: str
@@ -83,6 +89,9 @@ async def get_node_status(*, connection: NodeConnection | None = None) -> NodeSt
         hostname=body["hostname"],
         status=body["status"],
         capacity=body["capacity"],
+        capacity_bound=body["capacity_bound"],
+        ram_capacity=body["ram_capacity"],
+        cpu_capacity=body["cpu_capacity"],
         active_sessions=body["active_sessions"],
         runtime=body["runtime"],
         version=body["version"],
