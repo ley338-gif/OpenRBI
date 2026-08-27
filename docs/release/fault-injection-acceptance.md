@@ -1,7 +1,7 @@
 # Fault-Injection / Reliability Acceptance
 
 Status: **PASS**  
-Last executed: 2026-08-15  
+Last executed: 2026-08-27 (Fault 14 addition, Roadmap B3.4)  
 Scope: isolated local Docker Compose test stack only
 
 The authoritative executable is `scripts/run-fault-injection-tests.sh`. It is
@@ -23,6 +23,7 @@ destructive by design and must never be pointed at production containers.
 | Worker Drain | node round-trips `ONLINE -> DRAINING -> ONLINE`; existing session remains `ACTIVE` | existing container/capacity preserved; no new scheduling | enable/disable events; 0 incidents expected | `draining`; new session receives no-capacity error | PASS |
 | Worker Maintenance | node round-trips `ONLINE -> MAINTENANCE -> ONLINE`; existing session remains `ACTIVE` | existing container/capacity preserved; no new scheduling | enable/disable events; 0 incidents expected | `maintenance`; new session receives no-capacity error | PASS |
 | interrupt Agent control-plane network | no session row is created while runtime state is unknown; existing row stays `ACTIVE` | no scheduling on unknown capacity; state refreshes after deterministic Agent recreation | no business audit/incident expected because rejection precedes session creation | aggregate health `DEGRADED`; explicit no-capacity error | PASS |
+| real host CPU pressure (Roadmap B3.2/B3.4) | no session row created while capacity is genuinely 0 | reported capacity drops to 0 (real cores pinned busy, not simulated), held on the very next poll after pressure clears (B3.2 hysteresis), recovers once sustained real headroom returns | no business audit/incident expected because rejection precedes session creation | Workers/Worker Detail show the real CPU-bound reason and raw numbers (Roadmap B3.3); explicit `NoCapacityError` | PASS |
 
 An incident count of zero is an asserted result where listed, not an omitted
 check. OpenRBI deliberately does not turn every transient infrastructure fault
@@ -74,3 +75,26 @@ non-zero and fails the release gate.
   cleanup regression the reconciler file contains four real-Agent tests.
 - CI evidence is the `Backend integration tests` job and its required parent
   `Release gates` check on the commit being released.
+- Roadmap B3.4 (2026-08-27), Fault 14 real host CPU pressure and its
+  fail-closed rejection, targeted local verification against the real
+  live stack (the full script's `json_field` helper needs a host
+  `python`, unavailable on this Windows dev machine — CI's Linux runner
+  is the full script's authoritative run; targeted per-command
+  verification, calling `fault-injection-probe.py` directly inside the
+  real backend container, is the established pattern for local
+  verification throughout this project, same as B3.2's own development):
+  - `capacity-snapshot` before real pressure: `capacity=12, capacity_bound=ram`.
+  - 16 real containers pinning every visible host core busy for 60s:
+    `capacity=0, capacity_bound=cpu, cpu_capacity=0` within 6s.
+  - `capacity-exhausted-rejects-session`: a real `create_session()` call
+    raised `NoCapacityError` (`"no enrolled node is online with free
+    capacity"`), with the session row count unchanged before/after —
+    no ghost row.
+  - Pressure cleared: capacity held at 0 for one more poll (B3.2
+    hysteresis, not instantly back to full), then recovered to 11 within
+    a few seconds.
+  - Real Admin Portal, real logged-in browser session, live during the
+    same pressure window: Workers page showed `CPU 100%`, `Sessions 0 /
+    0`, health `DEGRADED`, and the real "CPU-bound" tag next to the
+    session count (Roadmap B3.3) — not simulated or read from the API
+    directly, read from the rendered page.

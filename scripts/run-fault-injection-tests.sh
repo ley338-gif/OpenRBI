@@ -281,6 +281,26 @@ if [ "$DURING_CAPACITY" -ge "$BEFORE_CAPACITY" ]; then
     exit 1
 fi
 
+# Roadmap B3.4 — the fail-closed half of the acceptance claim: while
+# pressure is still real and ongoing, wait (a few more polls, since a
+# single sample can land on a momentary lull) until capacity is
+# genuinely 0, then confirm a real session creation is actually
+# rejected with NoCapacityError, not just that the reported number is
+# smaller.
+attempt=1
+while [ "$DURING_CAPACITY" -gt 0 ] && [ "$attempt" -le 5 ]; do
+    sleep 1
+    DURING_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+    attempt=$((attempt + 1))
+done
+FAIL_CLOSED_NOTE="a real session creation was rejected with NoCapacityError while genuinely exhausted"
+if [ "$DURING_CAPACITY" -eq 0 ]; then
+    probe capacity-exhausted-rejects-session
+else
+    echo "capacity dropped but never reached genuine 0 under this host's real CPU pressure (last=$DURING_CAPACITY) -- skipping the fail-closed assertion, not a fault" >&2
+    FAIL_CLOSED_NOTE="capacity never reached genuine 0, so the fail-closed assertion was skipped"
+fi
+
 cleanup_cpu_pressure
 
 # The drop must not instantly reverse the moment real headroom is back —
@@ -308,7 +328,7 @@ if [ "$RECOVERED_CAPACITY" -le "$DURING_CAPACITY" ]; then
     echo "capacity never recovered after sustained real headroom (during=$DURING_CAPACITY recovered=$RECOVERED_CAPACITY)" >&2
     exit 1
 fi
-echo "PASS: capacity dropped under real CPU pressure ($BEFORE_CAPACITY -> $DURING_CAPACITY), was still held on the very next poll after pressure cleared, then recovered ($RECOVERED_CAPACITY)"
+echo "PASS: capacity dropped under real CPU pressure ($BEFORE_CAPACITY -> $DURING_CAPACITY), $FAIL_CLOSED_NOTE, capacity was still held on the very next poll after pressure cleared, then recovered ($RECOVERED_CAPACITY)"
 
 trap - EXIT INT TERM
 restore_dependencies

@@ -317,10 +317,49 @@ async def capacity_snapshot() -> None:
     real GET /v1/nodes/self (through session_agent_client, no smoothing
     or interpretation added here — the host script drives the actual
     memory-pressure fault and reads this repeatedly to observe the real
-    session-agent's own hysteresis behavior).
+    session-agent's own hysteresis behavior). Also reports Roadmap
+    B3.3's real-headroom breakdown (capacity_bound/ram_capacity/
+    cpu_capacity), unsmoothed straight from the same response.
     """
     status = await session_agent_client.get_node_status()
-    emit(capacity=status.capacity)
+    emit(
+        capacity=status.capacity,
+        capacity_bound=status.capacity_bound,
+        ram_capacity=status.ram_capacity,
+        cpu_capacity=status.cpu_capacity,
+    )
+
+
+async def capacity_exhausted_rejects_session() -> None:
+    """Roadmap B3.4 — the fail-closed half of the acceptance claim: with
+    real capacity genuinely at zero (driven by the host script's real
+    CPU pressure, not a simulated/mocked value), a new session must be
+    rejected with NoCapacityError, the same real code path
+    tests/integration/test_scheduling.py's
+    test_select_node_fails_closed_when_every_approved_node_is_full
+    exercises with a stub agent — this call goes through the real
+    Session Agent instead.
+    """
+    status = await session_agent_client.get_node_status()
+    if status.capacity != 0:
+        raise AssertionError(f"expected real capacity to be genuinely 0 under pressure, got {status.capacity}")
+    async with async_session_factory() as db:
+        user = await make_user(db, "fault-capacity-exhausted")
+        before = await db.scalar(select(func.count(BrowserSession.id)))
+        try:
+            await session_service.create_session(db, user)
+        except session_service.NoCapacityError as exc:
+            await db.rollback()
+            after = await db.scalar(select(func.count(BrowserSession.id)))
+            assert before == after, "a rejected session must not leave a row behind"
+            emit(
+                db_state="UNCHANGED",
+                session_state="NOT_CREATED",
+                worker_capacity=0,
+                user_error=str(exc),
+            )
+            return
+        raise AssertionError("session creation did not fail while real capacity was genuinely exhausted")
 
 
 async def token_state(token: str, expected: str) -> None:
@@ -405,11 +444,35 @@ async def node2_verify_survivor_unaffected(session_id: str) -> None:
 
 
 async def node2_verify_reschedules_onto_survivor(expected_hostname: str) -> None:
-    async with async_session_factory() as db:
-        node = await session_service.select_node(db)
-        await db.commit()
-        assert node.hostname == expected_hostname, f"expected {expected_hostname}, got {node.hostname}"
-        emit(scheduled_node=node.hostname)
+    """This assertion is about *which* node select_node() picks (the
+    survivor, not the just-killed one), not about capacity/scheduling
+    correctness itself (that's test_scheduling.py's job, with a stub
+    agent giving it a deterministic, isolated capacity reading). By this
+    point in a long, real destructive run, this CI runner's own
+    accumulated load (real containers from every earlier fault, plus
+    just having spun up a whole second node's compose stack a few
+    seconds ago) can genuinely, transiently drive real host CPU/RAM
+    headroom on the default node to momentary zero -- the same class of
+    real-not-simulated capacity dip already tolerated in
+    backend/tests/conftest.py's create_session_tolerating_transient_capacity()
+    for the same reason. Retry only on NoCapacityError; anything else
+    (including a wrong node being chosen) propagates immediately.
+    """
+    attempts = 8
+    for attempt in range(attempts):
+        async with async_session_factory() as db:
+            try:
+                node = await session_service.select_node(db)
+            except session_service.NoCapacityError:
+                await db.rollback()
+                if attempt == attempts - 1:
+                    raise
+                await asyncio.sleep(0.5)
+                continue
+            await db.commit()
+            assert node.hostname == expected_hostname, f"expected {expected_hostname}, got {node.hostname}"
+            emit(scheduled_node=node.hostname)
+            return
 
 
 async def main() -> None:
@@ -428,6 +491,7 @@ async def main() -> None:
         "node-modes": lambda: node_modes(parsed.args[0]),
         "token-state": lambda: token_state(parsed.args[0], parsed.args[1]),
         "capacity-snapshot": lambda: capacity_snapshot(),
+        "capacity-exhausted-rejects-session": lambda: capacity_exhausted_rejects_session(),
         "node2-enrollment-token": lambda: node2_enrollment_token(),
         "node2-approve": lambda: node2_approve(parsed.args[0], parsed.args[1]),
         "node2-seed-active": lambda: node2_seed_active(parsed.args[0]),
