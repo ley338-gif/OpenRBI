@@ -37,6 +37,9 @@ wait_agent() {
     done
 }
 
+NODE2_PROJECT="${OPENRBI_NODE2_PROJECT:-openrbi-node2-fault-test}"
+NODE2_OVERRIDE="/tmp/openrbi-node2-fault-test.override.yml"
+
 restore_dependencies() {
     docker start "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$CLAMAV_CONTAINER" >/dev/null 2>&1 || true
     docker start "$SESSION_AGENT_CONTAINER" >/dev/null 2>&1 || true
@@ -45,6 +48,23 @@ restore_dependencies() {
         2>/dev/null | grep -q .; then
         docker compose up -d --force-recreate session-agent >/dev/null 2>&1 || true
     fi
+    # Roadmap B2.7 — Fault 12 deliberately leaves node2's own sandbox
+    # container behind (an unreachable node's containers are the
+    # operator's concern once it's reachable again, per ADR 0024/B2.5's
+    # documented behavior — this proves that rather than hiding it), so
+    # `docker network rm` below would otherwise fail with "has active
+    # endpoints". Remove every container still attached to node2's own
+    # browser-plane by network membership, not compose labels (the
+    # sandbox itself carries session-agent's own openrbi.managed label,
+    # never a compose one).
+    docker network inspect "${NODE2_PROJECT}_browser-plane" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null \
+        | tr ' ' '\n' | while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            docker rm -f "$name" >/dev/null 2>&1 || true
+        done
+    docker compose -p "$NODE2_PROJECT" -f "$SCRIPT_DIR/../docker-compose.node.yml" -f "$NODE2_OVERRIDE" \
+        down --volumes --remove-orphans >/dev/null 2>&1 || true
+    rm -f "$NODE2_OVERRIDE"
 }
 trap restore_dependencies EXIT INT TERM
 
@@ -144,7 +164,64 @@ fi
 echo "== Faults 9/10: Worker Drain and Maintenance =="
 probe node-modes "$SESSION_TWO"
 
-echo "== Fault 11: interrupt Session Agent network =="
+echo "== Fault 12: kill one of N nodes mid-session (Roadmap B2.7) =="
+
+# A real second node, brought up exactly the way an operator would
+# (docker-compose.node.yml), self-enrolling with a real single-use
+# enrollment token. -p gives it its own project (and therefore its own
+# browser-plane) so it can coexist with the primary stack on this same
+# CI runner without colliding — see docker-compose.node.yml's own
+# comments on OPENRBI_AGENT_SANDBOX_NETWORK_NAME, needed for the same
+# reason.
+NODE2_HOSTNAME="node2-fault-test-$(date +%s)"
+NODE2_TOKEN=$(probe node2-enrollment-token | json_field enrollment_token)
+cat > "$NODE2_OVERRIDE" <<EOF
+services:
+  session-agent:
+    environment:
+      OPENRBI_AGENT_API_TOKEN: $(openssl rand -hex 32)
+      OPENRBI_AGENT_NODE_NAME: ${NODE2_HOSTNAME}
+      OPENRBI_AGENT_ENROLLMENT_TOKEN: ${NODE2_TOKEN}
+      OPENRBI_AGENT_CONTROL_PLANE_URL: http://backend:8000
+      OPENRBI_AGENT_SANDBOX_NETWORK_NAME: ${NODE2_PROJECT}_browser-plane
+    networks:
+      browser-plane:
+        ipv4_address: 172.31.0.2
+networks:
+  browser-plane:
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+EOF
+docker compose -p "$NODE2_PROJECT" -f docker-compose.node.yml -f "$NODE2_OVERRIDE" up -d >/dev/null
+NODE2_CONTAINER="${NODE2_PROJECT}-session-agent-1"
+docker network connect "$CONTROL_PLANE_NETWORK" "$NODE2_CONTAINER"
+
+i=0
+until docker logs "$NODE2_CONTAINER" 2>&1 | grep -q "node enrollment succeeded"; do
+    i=$((i + 1)); [ "$i" -lt 40 ] || { echo "node2 never enrolled" >&2; exit 1; }
+    sleep 1
+done
+probe node2-approve "$NODE2_HOSTNAME" "http://${NODE2_CONTAINER}:8100"
+
+SEED_NODE2=$(probe node2-seed-active "$NODE2_HOSTNAME")
+SESSION_NODE2=$(printf '%s' "$SEED_NODE2" | json_field session_id)
+
+# Kill the node outright — not the container it happens to be running on
+# a graceful path, an actual process-level failure, the same category of
+# fault every earlier scenario in this script injects for the default
+# node.
+docker kill "$NODE2_CONTAINER" >/dev/null
+
+# Verify all three Definition of Done claims: the killed node's own
+# session reaches the B2.5 failure state, the survivor (SESSION_TWO, on
+# the default node) is completely unaffected, and select_node() reschedules
+# new sessions onto the survivor rather than trying the dead node again.
+probe node2-verify-unreachable-session-failed "$SESSION_NODE2"
+probe node2-verify-survivor-unaffected "$SESSION_TWO"
+probe node2-verify-reschedules-onto-survivor default-node
+
+echo "== Fault 13: interrupt Session Agent network =="
 docker network disconnect "$CONTROL_PLANE_NETWORK" "$SESSION_AGENT_CONTAINER"
 probe agent-unavailable
 # Recreate instead of guessing a dynamic control-plane address on reconnect.

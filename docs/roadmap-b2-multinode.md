@@ -7,9 +7,12 @@
 > `backend/app/models/browser_node.py`, `session-agent/app/main.py`) before
 > this roadmap was written — all still accurate at time of writing.
 >
-> **Status: roadmap only, nothing below is implemented.** Matches the
-> project's existing convention (`docs/analysis/productization-v0.1.1-zone-separation.md`
-> → ADRs 0011–0013) of separating "what should we do" from "doing it."
+> **Status: all seven phases (B2.1–B2.7) implemented and merged.**
+> Verification against a genuine second host (rather than a second
+> container/process standing in for one on the same Docker host) remains
+> an explicitly stated open item — see [ADR 0024](adr/0024-cross-host-display-relay.md)'s
+> Consequences and B2.4/B2.6's own entries below for exactly what that
+> gap is and isn't.
 
 ## Goal
 
@@ -367,7 +370,49 @@ enrollment token, show pending approvals from B2.1).
 **ADR required**: no (deployment packaging, decisions already made in
 earlier phases).
 
-### B2.7 — Testing & fault injection
+### B2.7 — Testing & fault injection — **done**
+
+Both Definition of Done items below are now real, automated, CI-gated
+scenarios (part of the existing `backend-integration-tests` job, which
+already runs `run-integration-tests.sh` → `run-security-tests.sh` →
+`run-fault-injection-tests.sh` in sequence on every PR):
+
+- **`scripts/run-security-tests.sh`, new section 6**: enrolls a real
+  rogue node against the live stack's own database via `enroll_node()`
+  (the same service function the real, unauthenticated
+  `POST /admin/nodes/enroll` endpoint calls after verifying a single-use
+  token — this is the black-box regression the roadmap calls for,
+  complementing B2.1's own unit-level `test_admin_nodes.py` coverage,
+  not replacing it), confirms it lands `PENDING` with no `endpoint_url`,
+  then calls the real `select_node()`/`create_session()` repeatedly and
+  asserts the rogue node is never selected and never receives a
+  session — proving [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)'s
+  central claim ("a leaked enrollment token is not, by itself,
+  sufficient") against live infrastructure, not a throwaway pytest
+  fixture DB.
+- **`scripts/run-fault-injection-tests.sh`, new Fault 12**: brings up a
+  real second node with `docker-compose.node.yml` (Roadmap B2.6,
+  self-enrolling with a real single-use token, approved via the real
+  `approve_node()`), seeds a real ACTIVE session onto it (draining the
+  default node so `select_node()` is forced to place it there for real,
+  not a hand-set `node_id`), then `docker kill`s that node's Session
+  Agent outright — the same category of fault every other scenario in
+  this script injects. Verifies all three Definition of Done claims:
+  the killed node's session reaches `FAILED` with the B2.5
+  `node_unreachable: true` tag, a survivor session on the default node
+  is completely unaffected, and `select_node()` reschedules new sessions
+  onto the survivor. `fault-injection-probe.py` gained the
+  `node2-*` command family this scenario drives.
+
+Both were verified locally against the real single-host stack before
+being committed (same single-host-standing-in-for-a-second-node
+technique as every earlier B2 phase, per [ADR 0024](adr/0024-cross-host-display-relay.md)'s
+stated verification gap) — every assertion passed, including the killed
+node deliberately leaving its own sandbox container behind (an
+unreachable node's containers are the operator's concern once it's
+reachable again, per B2.5's own documented design), which the cleanup
+path in `run-fault-injection-tests.sh` now explicitly accounts for
+rather than assuming `docker compose down` handles it.
 
 **Goal**: Multi-node scenarios get the same fault-injection rigor
 single-node already has.
