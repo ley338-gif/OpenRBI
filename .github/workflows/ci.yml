@@ -312,14 +312,7 @@ jobs:
         run: |
           (
             while true; do
-              docker compose exec -T backend python -c "
-import asyncio, httpx, os, datetime
-async def main():
-    async with httpx.AsyncClient() as c:
-        r = await c.get('http://session-agent:8100/v1/nodes/self', headers={'X-Openrbi-Agent-Token': os.environ['OPENRBI_SESSION_AGENT_API_TOKEN']})
-        print(datetime.datetime.utcnow().isoformat(), r.json())
-asyncio.run(main())
-" >> /tmp/capacity_monitor.log 2>&1
+              docker compose exec -T backend python -c "import httpx, os, datetime; r = httpx.get('http://session-agent:8100/v1/nodes/self', headers={'X-Openrbi-Agent-Token': os.environ['OPENRBI_SESSION_AGENT_API_TOKEN']}); print(datetime.datetime.now(datetime.UTC).isoformat(), r.json())" >> /tmp/capacity_monitor.log 2>&1
               sleep 2
             done
           ) &
