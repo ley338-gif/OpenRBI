@@ -158,7 +158,13 @@ def _compute_capacity(
     free_ram_mb = memory_total_mb - settings.reserved_ram_mb - used_ram_mb
     ram_capacity = max(0, int(free_ram_mb // settings.default_ram_limit_mb))
 
-    free_cpu_percent = max(0.0, cpu_count * 100 - cpu_percent)
+    # cpu_percent is psutil.cpu_percent(interval=None) *without* percpu=True
+    # -- already a 0-100 average across every core, not a value scaled by
+    # cpu_count -- so the used share of the host's total cpu-percent budget
+    # (0..cpu_count*100) is cpu_percent's *fraction* of that budget, not a
+    # flat subtraction. (cpu_count * 100 - cpu_percent) would barely react
+    # to real load on any host with more than one core.
+    free_cpu_percent = max(0.0, cpu_count * (100 - cpu_percent))
     cpu_capacity = max(0, int(free_cpu_percent // (settings.default_cpu_limit * 100)))
 
     capacity = min(ram_capacity, cpu_capacity)

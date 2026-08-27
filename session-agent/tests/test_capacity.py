@@ -37,7 +37,9 @@ def test_ram_bound_host_reports_ram_derived_capacity():
 
 
 def test_cpu_bound_host_reports_cpu_derived_capacity():
-    # 2 cores, 50% host-wide load -> 200 - 50 = 150% free / (2.0 * 100) = 0.75 -> 0.
+    # cpu_percent is psutil's 0-100 *average* across all cores, not a value
+    # already scaled by cpu_count. 2 cores at a 50% average -> 100 of the
+    # 200 total cpu-percent budget used -> 100% free / (2.0 * 100) = 0.5 -> 0.
     # Plenty of free RAM so CPU is the binding constraint.
     capacity = _compute_capacity(
         _settings(),
@@ -45,6 +47,22 @@ def test_cpu_bound_host_reports_cpu_derived_capacity():
         cpu_count=2,
         memory_total_mb=16384,
         memory_available_mb=16000,
+    )
+    assert capacity == 0
+
+
+def test_cpu_percent_is_treated_as_a_host_wide_average_not_a_flat_subtraction():
+    # Regression for a real B3.1 bug: cpu_count * 100 - cpu_percent barely
+    # reacts to real load on a multi-core host, because psutil's cpu_percent
+    # is already a 0-100 average, not scaled by cpu_count. 8 cores at a 90%
+    # average load (the host is essentially fully busy) must be reported as
+    # CPU-exhausted, not as having room for more sandboxes.
+    capacity = _compute_capacity(
+        _settings(),
+        cpu_percent=90.0,
+        cpu_count=8,
+        memory_total_mb=65536,
+        memory_available_mb=60000,
     )
     assert capacity == 0
 

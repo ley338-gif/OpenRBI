@@ -151,16 +151,47 @@ Verified with 6 new deterministic unit tests
 (`session-agent/tests/test_capacity_hysteresis.py`, each constructing
 its own fresh `_CapacityHysteresis` instance) and a real fault-injection
 scenario (`scripts/run-fault-injection-tests.sh`'s new Fault 14,
-`scripts/fault-injection-probe.py`'s new `capacity-snapshot` command): a
-real container that actually commits and touches ~1.2 GB of host RAM
-(not a synthetic reading) drives the default node's *real* reported
-capacity down, confirmed still held on the very next poll after the
-pressure container is removed (not instantly back to full — the exact
-DoD wording), then confirmed to eventually recover. Run as a dry-run
-extraction of the exact committed shell code against the real stack
-before being wired in, and observed live via repeated manual polling
-during development (capacity `12 → 10` under pressure, held at `10` for
-one more poll after clearing it, recovered to `12` on the next).
+`scripts/fault-injection-probe.py`'s new `capacity-snapshot` command).
+
+Fault 14 originally drove real RAM pressure (a container committing and
+touching ~1.2 GB of host RAM). A real CI run on PR #114 showed this was
+unsafe: on an already memory-tight GitHub-hosted runner (already tuned
+down for B3.1's own CI fix, see below), the extra ~1.2 GB pushed the
+runner into genuine host memory exhaustion severe enough to break the
+*backend's own* PostgreSQL connection pool
+(`asyncpg.exceptions._base.InterfaceError: connection is closed`)
+seconds after the fault started — an unrelated service casualty, not a
+finding about capacity computation. Fault 14 was redesigned to drive
+real CPU pressure instead (containers pinning every visible host core
+busy for a bounded duration): CPU contention degrades throughput, not
+availability, so it can't OOM-kill an unrelated container the way an
+uncontrolled RAM commitment can.
+
+Switching to CPU pressure surfaced a real, independent bug in B3.1's
+own `_compute_capacity()`: `psutil.cpu_percent(interval=None)` (no
+`percpu=True`) already returns a 0-100 *average* across every core, not
+a value scaled by `cpu_count` — so the original
+`cpu_count * 100 - cpu_percent` barely reacted to real load on any host
+with more than one core (fixed to
+`cpu_count * (100 - cpu_percent)`, with a new regression test,
+`test_cpu_percent_is_treated_as_a_host_wide_average_not_a_flat_subtraction`,
+covering an 8-core host at 90% average load that the old formula would
+have under-reported as having room for 3 more sandboxes). This means
+`_compute_capacity()`'s CPU-derived capacity was silently wrong on
+every real multi-core host from the moment B3.1 merged until this fix —
+caught only because Fault 14 needed a real CPU-bound scenario to pass,
+not by the original unit tests (their CPU-bound scenario's expected
+value happened to be numerically identical under both the buggy and
+the corrected formula).
+
+Confirmed live against the real stack after the fix: Fault 14 drives
+real capacity down under real CPU pressure, confirmed still held on the
+very next poll after the pressure containers are removed (not instantly
+back to full — the exact DoD wording), then confirmed to eventually
+recover. Observed live via repeated manual polling during development
+(capacity `12 → 0` under pressure from 16 cores pinned busy, held at
+`0` for one more poll after clearing it, recovered to `11` shortly
+after).
 
 **Goal**: A momentary host spike doesn't cause `select_node()` (B2.3) to
 see capacity oscillate every poll cycle, and the host OS/Docker daemon
@@ -183,11 +214,14 @@ multi-node-readiness section.
   guidance on tuning it per host.
 - A fault-injection scenario (extending `scripts/fault-injection-probe.py`/
   `run-fault-injection-tests.sh`, matching Roadmap B2.7's own pattern):
-  drive real host memory pressure (e.g. a throwaway `stress-ng`-style
-  container consuming RAM outside sandbox accounting) and confirm
-  reported capacity drops, `select_node()` respects the lower number, and
-  it isn't already back at full capacity the moment the pressure
-  container exits.
+  drive real host resource pressure and confirm reported capacity drops,
+  `select_node()` respects the lower number, and it isn't already back
+  at full capacity the moment the pressure clears. Implemented as real
+  CPU pressure (pinning host cores busy), not RAM pressure — an
+  uncontrolled real RAM commitment was found, via a real CI incident, to
+  risk OOM-killing unrelated services on an already memory-tight runner;
+  CPU contention degrades throughput without that blast radius. See the
+  as-built notes above.
 
 **ADR required**: no.
 
