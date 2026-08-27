@@ -258,7 +258,16 @@ jobs:
           # the gap; still a real, functional CPU allocation for a
           # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
           # (verified against the real noVNC/canvas E2E path).
-          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
+          #
+          # Roadmap B3.2 retune: a real B3.1 bug meant CPU-derived capacity
+          # barely reacted to real load on a multi-core runner (psutil's
+          # 0-100 host-wide average was treated as if already scaled by
+          # core count). Now that this is fixed, the 0.5 reservation above
+          # no longer matches real accumulated test load on this runner —
+          # confirmed by a real CI run failing with NoCapacityError right
+          # after the fix landed. Shrunk further (0.5 -> 0.2) so the same
+          # real free CPU still divides into enough sandbox slots.
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.2" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -366,7 +375,16 @@ jobs:
           # the gap; still a real, functional CPU allocation for a
           # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
           # (verified against the real noVNC/canvas E2E path).
-          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
+          #
+          # Roadmap B3.2 retune: a real B3.1 bug meant CPU-derived capacity
+          # barely reacted to real load on a multi-core runner (psutil's
+          # 0-100 host-wide average was treated as if already scaled by
+          # core count). Now that this is fixed, the 0.5 reservation above
+          # no longer matches real accumulated test load on this runner —
+          # confirmed by a real CI run failing with NoCapacityError right
+          # after the fix landed. Shrunk further (0.5 -> 0.2) so the same
+          # real free CPU still divides into enough sandbox slots.
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.2" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -469,7 +487,16 @@ jobs:
           # the gap; still a real, functional CPU allocation for a
           # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
           # (verified against the real noVNC/canvas E2E path).
-          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
+          #
+          # Roadmap B3.2 retune: a real B3.1 bug meant CPU-derived capacity
+          # barely reacted to real load on a multi-core runner (psutil's
+          # 0-100 host-wide average was treated as if already scaled by
+          # core count). Now that this is fixed, the 0.5 reservation above
+          # no longer matches real accumulated test load on this runner —
+          # confirmed by a real CI run failing with NoCapacityError right
+          # after the fix landed. Shrunk further (0.5 -> 0.2) so the same
+          # real free CPU still divides into enough sandbox slots.
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.2" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
