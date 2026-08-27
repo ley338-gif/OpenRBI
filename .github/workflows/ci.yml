@@ -251,6 +251,14 @@ jobs:
           # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
+          # CPU turned out to be the actual binding constraint on a real
+          # runner, not RAM — the RAM-only fix above alone did not resolve
+          # this, confirmed by a second real CI run still failing
+          # identically. Shrinking the CPU reservation the same way closes
+          # the gap; still a real, functional CPU allocation for a
+          # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
+          # (verified against the real noVNC/canvas E2E path).
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -351,6 +359,14 @@ jobs:
           # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
+          # CPU turned out to be the actual binding constraint on a real
+          # runner, not RAM — the RAM-only fix above alone did not resolve
+          # this, confirmed by a second real CI run still failing
+          # identically. Shrinking the CPU reservation the same way closes
+          # the gap; still a real, functional CPU allocation for a
+          # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
+          # (verified against the real noVNC/canvas E2E path).
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |
@@ -446,6 +462,14 @@ jobs:
           # noVNC/canvas E2E path), just not full production sizing.
           echo "OPENRBI_AGENT_CAPACITY=20" >> .env
           echo "OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024" >> .env
+          # CPU turned out to be the actual binding constraint on a real
+          # runner, not RAM — the RAM-only fix above alone did not resolve
+          # this, confirmed by a second real CI run still failing
+          # identically. Shrinking the CPU reservation the same way closes
+          # the gap; still a real, functional CPU allocation for a
+          # short-lived automated test's Firefox+Xvfb+x11vnc sandbox
+          # (verified against the real noVNC/canvas E2E path).
+          echo "OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5" >> .env
           docker compose up -d --build
       - name: Wait for backend to be healthy
         run: |

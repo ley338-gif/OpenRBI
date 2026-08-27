@@ -86,10 +86,17 @@ does nothing when the computed value itself is the binding constraint.
 The same four places also now set `OPENRBI_AGENT_DEFAULT_RAM_LIMIT_MB=1024`
 — shrinking the per-sandbox reservation the RAM computation divides by,
 which both raises computed capacity *and* reduces what each test sandbox
-actually uses. Verified this doesn't just move the failure elsewhere:
-1024 MB is still enough for a real, working Firefox+Xvfb+x11vnc sandbox
-in the existing noVNC/canvas E2E test, run locally against the real
-stack with this setting applied.
+actually uses. That alone still wasn't enough — a second real CI run
+failed identically, revealing CPU, not RAM, as the actual binding
+constraint on that runner (`default_cpu_limit=2.0`'s 200%-per-sandbox
+divisor is large against a real runner's host-wide CPU load from
+Postgres/Redis/ClamAV/the browser image build/Docker itself all running
+concurrently). The same four places now also set
+`OPENRBI_AGENT_DEFAULT_CPU_LIMIT=0.5`. Verified both changes together
+don't just move the failure elsewhere: 1024 MB / 0.5 vCPU is still
+enough for a real, working Firefox+Xvfb+x11vnc sandbox in the existing
+noVNC/canvas E2E test, run locally against the real stack with both
+settings applied.
 
 **Goal**: `_capacity_from_settings()` stops being a flat number and
 reflects actual free host headroom, bounded by the existing
