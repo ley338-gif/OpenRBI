@@ -7,8 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.security_event import SecurityEvent
-from app.services.sessions import create_session as create_session_service
-from tests.conftest import login_with_mfa_enrollment, make_user
+from tests.conftest import create_session_tolerating_transient_capacity, login_with_mfa_enrollment, make_user
 
 
 @pytest.mark.asyncio
@@ -21,7 +20,7 @@ async def test_revoke_terminates_every_live_session_and_is_audited(db, client):
     admin, admin_password = await make_user(db, role_name="ADMIN")
     admin_cookie = await login_with_mfa_enrollment(client, admin.username, admin_password)
 
-    session_a = await create_session_service(db, owner)
+    session_a = await create_session_tolerating_transient_capacity(db, owner)
     await db.commit()
 
     r = await client.post(f"/admin/users/{owner.id}/sessions/revoke", cookies={"openrbi_session": admin_cookie})
