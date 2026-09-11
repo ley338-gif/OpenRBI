@@ -29,6 +29,7 @@ git clone <this-repo>
 cd OpenRBI
 cp .env.example .env   # fill in secrets before first run
 docker compose up -d --build
+docker exec $(docker compose ps -q backend) alembic upgrade head   # required on a fresh database
 ```
 
 Then open the **Admin Portal** at `http://localhost:8080/admin/` — a fresh install has no accounts yet, so it shows **Initial System Setup** instead of a login form. Retrieve the one-time setup token with `docker compose logs backend | grep -A3 "initial setup token"`, create the first administrator, and complete TOTP enrollment; no manual database access is ever required (see [docs/deployment.md#first-run-setup-roadmap-b19](docs/deployment.md#first-run-setup-roadmap-b19)). After that, the **User Portal** is at `http://localhost:8080/`. Both are real, API-backed UIs — see [docs/user-guide.md](docs/user-guide.md) and [docs/admin-guide.md](docs/admin-guide.md). Admin/Security Reviewer accounts are walked through mandatory TOTP enrollment on first login.

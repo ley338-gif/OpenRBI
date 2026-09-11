@@ -8,7 +8,12 @@
 # for a reverse proxy that's supposed to be terminating TLS.
 services:
   reverse-proxy:
-    ports:
+    # !override (not a plain list) is required here: Compose merges `ports:`
+    # additively across -f files by default, so a plain list would leave the
+    # base docker-compose.yml's dev-only "8080:80" mapping reachable
+    # alongside these in production (found on real infrastructure — see
+    # docs/deployment.md#tls and docs/troubleshooting.md).
+    ports: !override
       - "80:80"
       - "443:443"
     volumes:
