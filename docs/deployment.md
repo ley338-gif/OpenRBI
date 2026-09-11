@@ -32,6 +32,14 @@ echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
 
 docker compose up -d --build
 
+# REQUIRED on a genuinely fresh database — the backend does not run
+# migrations at startup itself (deliberately: a DB outage or an
+# not-yet-migrated schema must never crash the whole process, see the
+# comment on _lifespan in backend/app/main.py). Without this, every
+# query against system_state/browser_nodes fails with UndefinedTableError
+# on a fresh volume, and /setup/* never produces a setup token:
+docker exec $(docker compose ps -q backend) alembic upgrade head
+
 # Building this way reports version=1.0.0/commit_sha=unknown for every
 # image (each Dockerfile's ARG defaults, RBI-POST-014) — fine for a quick
 # local check, but useless for "which exact code is this" later. Use
@@ -52,6 +60,8 @@ sudo ./scripts/setup-network-isolation.sh
 ```
 
 At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
+
+**As soon as `docker compose ps` shows everything `Up`, check `GET /admin/health` (or the Admin Portal's System page) before doing anything else** — it independently checks every dependency and gives a plain-English reason for the first thing that's actually wrong, which is faster than diagnosing from symptoms (backend logs, connection errors, etc.) further down this guide.
 
 ## Network isolation
 

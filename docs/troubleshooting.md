@@ -2,6 +2,16 @@
 
 > Start any investigation with `GET /admin/health` (ADMIN/SECURITY_REVIEWER) — it independently checks every dependency (API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine storage) and tells you which one is actually down, rather than guessing from symptoms. See [admin-guide.md#health-monitoring](admin-guide.md#health-monitoring).
 
+## Troubleshooting a fresh production rollout
+
+Gaps found and fixed during the first real DMZ rollout, kept here as a checklist in case any recur on a checkout that predates the fix:
+
+- **Fresh install has no data at all** — `docker compose up -d --build` alone does not create the schema; run `docker exec $(docker compose ps -q backend) alembic upgrade head` once afterward (now part of both the [README quick start](../README.md#quick-start) and [Installation](deployment.md#installation)). Symptom if skipped: `UndefinedTableError` repeating in the backend log and `/setup/*` never producing a setup token.
+- **`.env` edits not taking effect** — `docker compose restart <service>` reuses the environment captured when the container was created; it does **not** re-read `.env`. Every secret-rotation procedure in [deployment.md](deployment.md#update-procedure) uses `docker compose up -d <service>` instead, which does. If you changed `.env` by hand outside those documented procedures, use `up -d`, not `restart`.
+- **Setup bootstrap fails** — see "First-run setup" above.
+- **Port 8080 reachable after a production deploy** — fixed in `docker-compose.prod.yml` (`ports: !override`); confirm with `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` that `reverse-proxy` only publishes `80`/`443` before going live.
+- **`./scripts/*.sh: Permission denied`** — all scripts in `scripts/` are tracked executable in git; a checkout predating that fix needs `chmod +x scripts/*.sh` once.
+
 ## File scanner (ClamAV) unavailable
 
 `GET /admin/health` reports `clamav: UNAVAILABLE` when ClamAV can't be reached or doesn't respond to `PING`. While this is true, **no download or upload is ever released**, regardless of what policy would otherwise allow — a scanner outage fails closed to `QUARANTINED`/blocked, never to an implicit clean result (`app/services/scanning.py`, [ADR 0008](adr/0008-fail-closed.md)). This is by design, not a bug: check `docker logs openrbi-clamav-1` and confirm the container is actually up and its virus database finished loading (the official image reports `healthy` in `docker ps` once it has) before assuming anything else is wrong. Files that were blocked purely because of the outage are not automatically retried — they stay `QUARANTINED` and can be manually reviewed/released once the scanner is back (see [quarantine.md](quarantine.md)); the pipeline itself does not distinguish "outage" from "infected" in the row's final status, only in the security-event `reason` metadata and the `Incident` it may have opened.
@@ -29,6 +39,18 @@ If `POST /sessions` succeeds but the noVNC connection immediately fails, the san
 ## Session Agent unreachable
 
 Backend endpoints touching sessions (`POST /sessions`, the display WebSocket) return `502`/`503` with a `session agent unreachable` or similar detail if `OPENRBI_SESSION_AGENT_BASE_URL`/`OPENRBI_SESSION_AGENT_API_TOKEN` are misconfigured, or the `session-agent` container isn't running. Check `docker logs openrbi-session-agent-1` and confirm the token matches `OPENRBI_AGENT_API_TOKEN` in the Session Agent's own environment — see `.env.example`'s comments on keeping these two in sync.
+
+## First-run setup: "could not create the initial administrator"
+
+`POST /setup/admin` returns this same generic 400 for three distinct causes — an invalid/expired setup token, a username collision, and (as a `429` instead, so it's actually distinguishable by status code alone) a bootstrap rate-limit lockout — deliberately, to avoid giving an unauthenticated caller a way to enumerate which check failed (see `app/api/setup.py`). The backend logs the real reason server-side (never in the client response) at `WARNING` under the `openrbi.setup` logger — check `docker compose logs backend | grep openrbi.setup` first.
+
+If the log shows a rate-limit lockout, ten failed `POST /setup/admin` attempts lock the bootstrap flow out for 15 minutes (`_LOGIN_FAILURE_MAX_ATTEMPTS`/`_LOGIN_FAILURE_WINDOW_SECONDS` in `app/core/sessions.py`, the same mechanism as normal login lockout). It clears itself after the window, or immediately with:
+
+```bash
+docker exec openrbi-redis-1 redis-cli DEL login_fail:__setup_bootstrap__
+```
+
+If the log instead shows an expired/invalid token, retrieve a fresh one (`docker compose logs backend | grep -A3 "initial setup token"` — a new one is issued on every backend restart while the system remains uninitialized).
 
 ## Browser sandbox won't start
 

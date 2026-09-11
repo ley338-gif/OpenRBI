@@ -8,6 +8,7 @@ listener (app/main.py) — matches app/api/admin_ldap.py's placement, since
 only the Admin Portal has any use for it.
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -34,6 +35,7 @@ from app.services.setup_service import (
 )
 
 router = APIRouter(prefix="/setup", tags=["setup"])
+logger = logging.getLogger("openrbi.setup")
 
 
 @router.get("/status", response_model=SetupStatusResponse)
@@ -50,14 +52,18 @@ async def create_admin(payload: SetupAdminRequest, db: AsyncSession = Depends(ge
     except SetupAlreadyInitializedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="system already initialized") from exc
     except SetupRateLimitedError as exc:
+        logger.warning("Setup bootstrap rate-limited (too many failed attempts)")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too many failed setup attempts"
         ) from exc
     except SetupError as exc:
         # Deliberately the same generic-enough message for "wrong token"
-        # and "username taken" — SetupInvalidTokenError text and this
-        # branch both stay a plain 400 with no internal detail, never a
-        # stacktrace or a hint about which check failed.
+        # and "username taken" in the *client-facing* response —
+        # SetupInvalidTokenError text and this branch both stay a plain 400
+        # with no internal detail, never a stacktrace or a hint about which
+        # check failed. The real reason still goes server-side only, so an
+        # operator tailing logs isn't stuck re-deriving it from source.
+        logger.warning("Setup bootstrap admin creation failed: %s (%s)", exc, type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="could not create the initial administrator") from exc
     return SetupAdminResponse(mfa_token=mfa_token)
 
@@ -83,6 +89,7 @@ async def confirm_mfa(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="system already initialized") from exc
     except (SetupError, ValueError) as exc:
         await db.rollback()
+        logger.warning("Setup bootstrap MFA confirmation failed: %s (%s)", exc, type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid setup code") from exc
 
     await delete_mfa_pending(payload.mfa_token)
