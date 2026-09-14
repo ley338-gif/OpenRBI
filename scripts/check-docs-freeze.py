@@ -22,7 +22,12 @@ REQUIRED = (
     "docs/release/rollback.md",
 )
 FORBIDDEN = {
-    "README.md": ("Pre-alpha / MVP 1 in progress", "not yet feature-complete"),
+    "README.md": (
+        "Pre-alpha / MVP 1 in progress",
+        "not yet feature-complete",
+        "MVP 1 goals",
+    ),
+    "SECURITY.md": ("Known MVP limitations",),
     "docs/deployment.md": ("allow-list is hardcoded to the base `backend`",),
     "docs/security-model.md": (
         "ownership* enforcement there is still pending",
