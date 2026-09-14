@@ -6,9 +6,9 @@
 
 **Latest stable release: v1.0.x.** The scoped v1 feature set is complete and the repository has passed its first-party security review, destructive fault injection, clean-install, backup/restore, upgrade, and 35-scenario acceptance suites. It has not undergone an independent external security assessment; evaluate the documented residual risks and supported configuration before production use. See [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md), [docs/threat-model.md](docs/threat-model.md), and [docs/supported-configurations.md](docs/supported-configurations.md).
 
-The MVP 1 build order and scope are tracked internally against the phases in [docs/development.md](docs/development.md).
+The build order and scope that produced this release are tracked as development history in [docs/development.md](docs/development.md).
 
-## MVP 1 goals
+## What OpenRBI 1.0 does
 
 - Admins manage users, groups, roles, MFA, policies, sessions, incidents, and quarantine.
 - Users log in locally with username/password + TOTP MFA.
@@ -36,7 +36,7 @@ Then open the **Admin Portal** at `http://localhost:8080/admin/` — a fresh ins
 
 ## Architecture overview
 
-OpenRBI separates a **control plane** (backend API, database, policy engine) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so MVP 1's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
+OpenRBI separates a **control plane** (backend API, database, policy engine) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so v1.0's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
 
 Two separate frontends — a **User Portal** and an **Admin Portal** — sit in front of the API (`frontend/user/`, `frontend/admin/`, sharing common code from `frontend/shared/`), each talking only to the listener mode it's meant for. The backend itself can run as a `user`- or `admin`-only listener (`OPENRBI_LISTENER_MODE`, default `both`); in `user` mode, admin routes don't exist in that process at all (a `404`, not a `403`). This is preparation for a future Segmented deployment with genuinely separate portal origins, not yet the default — see [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown, and [docs/deployment.md](docs/deployment.md#compact-vs-segmented-productization-v011) for Compact vs. Segmented.
 
@@ -84,7 +84,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 ## Scope
 
-MVP 1 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+OpenRBI 1.0 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
 
 LDAP/LDAPS authentication against an existing Active Directory (Roadmap Phase B / B1) is implemented as an equal, parallel option alongside local login, fully configurable through the Admin Portal — no `.env` editing or backend restart needed (Roadmap B1.8, [ADR 0016](docs/adr/0016-ldap-admin-configuration.md)) — see [docs/admin-guide.md](docs/admin-guide.md#ldapldaps-authentication-roadmap-phase-b--b1) for configuration and [ADR 0015](docs/adr/0015-auth-provider-abstraction.md) for the underlying design.
 

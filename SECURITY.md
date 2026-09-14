@@ -28,6 +28,6 @@ OpenRBI's isolation model assumes:
 
 See [docs/threat-model.md](docs/threat-model.md) for the full attacker-model breakdown.
 
-## Known MVP limitations
+## Known limitations
 
-MVP 1 does not defend against: host kernel compromise, hypervisor escape, sophisticated zero-days against the sandbox runtime, or a malicious infrastructure administrator. It also does not yet implement SSO/enterprise identity federation, full DLP/content disarm & reconstruction, or high availability. See [docs/threat-model.md](docs/threat-model.md) for the complete non-goals list.
+OpenRBI 1.0 does not defend against: host kernel compromise, hypervisor escape, sophisticated zero-days against the sandbox runtime, or a malicious infrastructure administrator. It also does not yet implement SSO/enterprise identity federation, full DLP/content disarm & reconstruction, or high availability. See [docs/threat-model.md](docs/threat-model.md) for the complete non-goals list.
