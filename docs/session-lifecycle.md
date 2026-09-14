@@ -6,7 +6,7 @@ The full state machine is real and backend-orchestrated: `POST /sessions` (Phase
 
 **Role assumption** (documented per the project's own "pick the more restrictive reading when ambiguous" principle): the project brief lists Disconnect/Isolate/Kill together under "User Detail Actions" without stating which role each requires, while §6 explicitly grants only Isolate to `SECURITY_REVIEWER`. Disconnect and Isolate are available to both `ADMIN` and `SECURITY_REVIEWER`; Kill is `ADMIN`-only. An admin-triggered Isolate also always opens an Incident (`MEDIUM` severity), matching the project brief's Definition-of-Done walkthrough (§37, step 25) — not just a security event.
 
-Admin-forced Disconnect closes the user's live display WebSocket immediately via an in-process connection registry (`app/api/display.py`'s `_active_connections`) — single-backend-process for MVP 1; a real multi-instance deployment would need this shared (e.g. Redis pub/sub) instead.
+Admin-forced Disconnect closes the user's live display WebSocket immediately via an in-process connection registry (`app/api/display.py`'s `_active_connections`) — single-backend-process in v1.0; a real multi-instance deployment would need this shared (e.g. Redis pub/sub) instead.
 
 ## States
 

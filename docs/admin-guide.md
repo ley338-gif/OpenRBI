@@ -168,7 +168,7 @@ Full draft → publish → rollback workflow under `/admin/policies/*` — see [
 
 ## Quarantine review
 
-The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in MVP 1" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted.
+The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in v1.0" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted.
 
 <details><summary>Underlying API</summary>
 

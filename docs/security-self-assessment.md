@@ -4,7 +4,7 @@ Roadmap Phase A / A2. **This is not an independent security review or a substitu
 
 Loosely follows the [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/) chapter structure where it fits this project's actual architecture; chapters with no OpenRBI-relevant surface (e.g. ASVS V9 API design conventions, mobile-specific controls) are omitted rather than padded out. Verified against commit `main` as of 2026-08-13 (originally 2026-08-12; the V2 rows covering Roadmap Phase B / B1's LDAP authentication path were added the following day once that work landed, re-verified against the code at that point; the rows covering B1.8's admin-portal LDAP configuration and B1.9's first-run bootstrap were added once each was implemented and tested, same day) — re-verify before relying on this after further changes, especially anywhere marked **GAP** below.
 
-**Use of this document**: acceptable as the basis for a first, tightly scoped pilot in an isolated test environment (Roadmap Phase B). Not a substitute for A2's own stated goal of an eventual independent external review, and not sufficient on its own to justify production use — see `README.md`'s Project status and `SECURITY.md`'s Known MVP limitations, both of which remain accurate after this pass.
+**Use of this document**: acceptable as the basis for a first, tightly scoped pilot in an isolated test environment (Roadmap Phase B). Not a substitute for A2's own stated goal of an eventual independent external review, and not sufficient on its own to justify production use — see `README.md`'s Project status and `SECURITY.md`'s Known limitations, both of which remain accurate after this pass.
 
 ---
 
