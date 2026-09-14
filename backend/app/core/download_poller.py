@@ -7,7 +7,7 @@ from app.models.browser_session import BrowserSession
 from app.models.enums import SessionStatus
 from app.services.downloads import process_new_downloads
 
-# Single backend process for MVP 1 (same caveat as app/api/display.py's
+# Single backend process in v1.0 (same caveat as app/api/display.py's
 # connection registry) — a real multi-instance deployment would need this
 # as a proper background worker, not an in-process task per session.
 _tasks: dict[uuid.UUID, asyncio.Task] = {}

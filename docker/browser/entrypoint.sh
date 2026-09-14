@@ -37,7 +37,7 @@ while [ ! -e /tmp/.X11-unix/X99 ] && [ "$i" -lt 40 ]; do
     i=$((i + 1))
 done
 
-# No VNC password: this MVP relies on network isolation (no path from the
+# No VNC password: v1.0 relies on network isolation (no path from the
 # public internet or the browser's own egress network to this port) rather
 # than VNC's own weak auth. Known limitation, tracked for Phase 8/9/20 —
 # see docs/security-model.md.

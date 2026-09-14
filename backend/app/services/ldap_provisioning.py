@@ -116,5 +116,5 @@ async def _get_role_by_name(db: AsyncSession, role_name: str) -> Role:
     result = await db.execute(select(Role).where(Role.name == role_name))
     role = result.scalar_one_or_none()
     if role is None:
-        raise RuntimeError(f"role '{role_name}' is not seeded — this should never happen for a fixed MVP role")
+        raise RuntimeError(f"role '{role_name}' is not seeded — this should never happen for a fixed v1.0 role")
     return role

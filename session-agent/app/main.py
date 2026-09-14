@@ -84,7 +84,7 @@ async def node_status() -> dict[str, str | int | float | bool]:
     """Real BrowserNode self-report (capacity/active_sessions/runtime/
     version/CPU/RAM) — the control plane's poller (app/core/node_poller.py)
     and select_node() both call this to populate the BrowserNode row.
-    Single-node MVP 1 still models this as a first-class, polled status
+    Single-node v1.0 still models this as a first-class, polled status
     rather than assumed-always-online (see docs/architecture.md#multi-node-readiness).
 
     CPU/RAM are host-wide (psutil.cpu_percent/virtual_memory), not scoped to

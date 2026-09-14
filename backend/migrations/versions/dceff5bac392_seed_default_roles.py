@@ -17,8 +17,8 @@ down_revision: Union[str, None] = 'ada766b187c5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# Fixed MVP 1 role set (see docs/security-model.md / the project's role
-# definitions). Roles are a small closed set for MVP 1, so they're seeded by
+# Fixed v1.0 role set (see docs/security-model.md / the project's role
+# definitions). Roles are a small closed set for v1.0, so they're seeded by
 # migration rather than requiring an admin bootstrap step.
 ROLES = [
     ("USER", "Can start/end their own browser sessions, manage their own MFA, and retrieve their own released downloads."),

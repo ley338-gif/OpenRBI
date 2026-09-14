@@ -6,7 +6,7 @@ from app.models.mixins import CreatedAtMixin, UUIDPKMixin
 
 
 class Role(UUIDPKMixin, CreatedAtMixin, Base):
-    """One of the MVP roles (USER, SECURITY_REVIEWER, ADMIN), seeded by
+    """One of the v1.0 roles (USER, SECURITY_REVIEWER, ADMIN), seeded by
     migration. Roles grant product capabilities; they are deliberately
     separate from Groups, which drive security policy (see docs/policies.md).
     """
