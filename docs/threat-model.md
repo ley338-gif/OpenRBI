@@ -31,17 +31,17 @@ See [architecture.md](architecture.md#trust-boundaries) for the diagram. The thr
 | Malicious file | A file downloaded/uploaded through a session is malware or a policy-violating type | Fail-closed download/upload pipeline: hash, MIME detection (declared + actual/magic-byte), scan, versioned policy decision, quarantine by default for anything not explicitly auto-released. |
 | Compromised OpenRBI web application | Attacker achieves code execution or SQL injection in the backend | Backend has no Docker socket access (see [ADR 0005](adr/0005-no-docker-socket-in-backend.md)), so this does not directly yield host/container-runtime compromise. Least-privilege service accounts, parameterized queries, append-only audit log limit further damage and preserve forensic trail. |
 
-## Explicit non-goals (residual risk MVP 1 does not fully address)
+## Explicit non-goals (residual risk this release does not fully address)
 
 OpenRBI does **not** claim to fully defend against:
 
 - **Host kernel compromise** — if the underlying Linux kernel itself is exploited (e.g. via a container-escape zero-day), all containers on that host are at risk. Mitigated but not eliminated by seccomp/AppArmor and the optional gVisor runtime.
-- **Hypervisor escape** — out of scope; OpenRBI does not mandate a specific virtualization layer for MVP 1.
+- **Hypervisor escape** — out of scope; OpenRBI does not mandate a specific virtualization layer in v1.0.
 - **Sophisticated zero-days against the sandbox runtime** — Docker/runc/gVisor vulnerabilities are a residual risk; patch cadence and optional stronger isolation (gVisor, later Kata) reduce but do not eliminate this.
 - **A malicious infrastructure administrator** — anyone with host root, database admin, or Session Agent credentials can bypass application-level controls. OpenRBI protects against attackers operating *through* the platform, not against a trusted operator abusing direct infrastructure access.
 
 OpenRBI never claims a scanned file is "safe" — status wording is limited to what was actually verified (*No threat detected*, *Scan completed*, *Policy allowed*, *Quarantined*), never a safety guarantee.
 
-## Out of scope for MVP 1 (see README "Scope")
+## Out of scope for v1.0 (see README "Scope")
 
 LDAP/AD/Entra ID/OIDC/SAML/WebAuthn federation, Kubernetes orchestration, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, ML-based detection.

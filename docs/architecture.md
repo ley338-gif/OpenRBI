@@ -18,7 +18,7 @@ All 22 build phases (see [development.md](development.md)) are complete, and Pro
 | Browser Sandbox | Per-user hardened Firefox container | done |
 | Remote Display | noVNC + VNC backend + Xvfb inside the sandbox container | done |
 | File Scanner | ClamAV daemon, wrapped by `FileScanner`-shaped client (`app/core/clamav_client.py`) | done |
-| Quarantine Storage | Content-addressed local disk staging (`app/services/downloads.py`) — see [quarantine.md](quarantine.md) for the tracked simplification vs. a pluggable/S3-like abstraction | done (as scoped for MVP 1) |
+| Quarantine Storage | Content-addressed local disk staging (`app/services/downloads.py`) — see [quarantine.md](quarantine.md) for the tracked simplification vs. a pluggable/S3-like abstraction | done (as scoped for v1.0) |
 | Reverse Proxy | TLS termination (production overlay), routing to backend/noVNC/websockets | done |
 
 ## Trust boundaries
@@ -64,10 +64,10 @@ Key boundary: **the backend/API never holds container-runtime credentials** (see
 
 Core session/policy logic depends only on these interfaces (see [ADR 0003](adr/0003-provider-abstraction.md)):
 
-- `SandboxProvider` — `create_session()`, `start_session()`, `isolate_session()`, `restore_session()`, `terminate_session()`, `get_status()`, `get_metrics()`. MVP 1: `DockerSandboxProvider`, optionally `GVisorSandboxProvider`.
-- `DisplayProvider` — `prepare()`, `get_connection_info()`, `disconnect()`, `destroy()`. MVP 1: `NoVNCDisplayProvider`.
-- `BrowserProvider` — browser launch/config. MVP 1: `FirefoxProvider`.
-- `FileScanner` — `scan()`, `health()`, `signature_version()`. MVP 1: `ClamAVScanner`.
+- `SandboxProvider` — `create_session()`, `start_session()`, `isolate_session()`, `restore_session()`, `terminate_session()`, `get_status()`, `get_metrics()`. Current default: `DockerSandboxProvider`, optionally `GVisorSandboxProvider`.
+- `DisplayProvider` — `prepare()`, `get_connection_info()`, `disconnect()`, `destroy()`. Current default: `NoVNCDisplayProvider`.
+- `BrowserProvider` — browser launch/config. Current default: `FirefoxProvider`.
+- `FileScanner` — `scan()`, `health()`, `signature_version()`. Current default: `ClamAVScanner`.
 
 ## Session Agent
 
@@ -83,7 +83,7 @@ The plain `GET /health` liveness probe is deliberately separate and unauthentica
 
 Following `docs/analysis/productization-v0.1.1-zone-separation.md`'s recommendation (`PREPARE FOR SEGMENTATION, IMPLEMENT LATER`) and [ADR 0011](adr/0011-user-admin-listener-separation.md), the backend's router registration is now conditional on `OPENRBI_LISTENER_MODE` (`user` | `admin` | `both`, default `both`) — a single, central decision in `app/main.py`, not scattered per-endpoint checks:
 
-- **`both`** (default): every router registered, exactly MVP 1's prior behavior. This is what Compact/homelab/dev deployments use, unchanged.
+- **`both`** (default): every router registered, exactly v1.0's prior behavior. This is what Compact/homelab/dev deployments use, unchanged.
 - **`user`**: only shared routes (health, auth, MFA enrollment/verification) plus user-facing routes (sessions, files, display) are registered. Admin routers are never imported into this process — a request to `/admin/*` gets a plain `404` (the route doesn't exist), not a `403` (RBAC rejected it). This is the actual point: a compromise of a user-mode process has no admin route to call, regardless of what credentials it might extract from its own environment.
 - **`admin`**: shared routes plus every admin router. User-only routes (sessions/files/display) are not registered.
 
@@ -108,7 +108,7 @@ Two separate Vite/React/TypeScript single-page apps, `frontend/user/` and `front
 
 ## Multi-node readiness
 
-MVP 1 runs on a single Linux host, but Roadmap B2 (`docs/roadmap-b2-multinode.md`)
+OpenRBI 1.0 runs on a single Linux host, but Roadmap B2 (`docs/roadmap-b2-multinode.md`)
 is actively extending this to real N-node deployments:
 
 - The Session Agent is addressed over the network, not assumed co-located with the backend.
