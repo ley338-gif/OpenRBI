@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Mirrors the same check in backend/app/config.py — see that file's comment.
@@ -20,7 +20,19 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OPENRBI_AGENT_", env_file=".env", extra="ignore")
 
     environment: str = "development"
+    # The legacy, full-access shared token — still the only credential a
+    # Compact (single-process backend) deployment needs. Segmented-deployment
+    # credential scoping (docs/adr/0025) adds the two scoped tokens below as
+    # an alternative, not a replacement: either this alone, or both scoped
+    # tokens together, must be configured (see the validator below).
     api_token: str = ""
+    # Roadmap: docs/adr/0025. Grants only the "user" scope (app/auth.py) —
+    # create/start/terminate-own-lifecycle/status/display/downloads/uploads/
+    # metrics — never isolate/restore/list-all-sandboxes/node-telemetry.
+    api_token_user: str = ""
+    # Grants the "admin" scope, a strict superset of "user" (admin-mode
+    # background work like orphan reconciliation still calls terminate too).
+    api_token_admin: str = ""
     docker_base_url: str = "unix:///var/run/docker.sock"
 
     # Stable node identity for the control plane's BrowserNode row —
@@ -95,15 +107,35 @@ class Settings(BaseSettings):
     default_screen_width: int = 1280
     default_screen_height: int = 800
 
-    @field_validator("api_token")
+    @field_validator("api_token", "api_token_user", "api_token_admin")
     @classmethod
-    def _reject_missing_or_placeholder_secret(cls, value: str, info) -> str:
-        if not value or value == _PLACEHOLDER_SECRET:
+    def _reject_placeholder_secret(cls, value: str, info) -> str:
+        # Unlike backend/app/config.py's equivalent, emptiness alone isn't
+        # rejected here per-field: each of these three may legitimately be
+        # unset (Compact uses only api_token; Segmented-with-scoping uses
+        # only the two scoped tokens). The literal placeholder is always
+        # wrong regardless, and the model validator below enforces that
+        # *some* valid combination is actually configured.
+        if value == _PLACEHOLDER_SECRET:
             raise ValueError(
                 f"{info.field_name} must be set to a real generated secret (see .env.example) — "
-                "refusing to start with a missing or unedited placeholder value"
+                "refusing to start with the unedited placeholder value"
             )
         return value
+
+    @model_validator(mode="after")
+    def _at_least_one_complete_credential_set(self) -> "Settings":
+        has_legacy = bool(self.api_token)
+        has_scoped = bool(self.api_token_user) and bool(self.api_token_admin)
+        if not has_legacy and not has_scoped:
+            raise ValueError(
+                "refusing to start with no usable control-plane credential: set either "
+                "OPENRBI_AGENT_API_TOKEN (Compact / single shared token), or both "
+                "OPENRBI_AGENT_API_TOKEN_USER and OPENRBI_AGENT_API_TOKEN_ADMIN "
+                "(Segmented credential scoping, docs/adr/0025) — a single scoped token "
+                "alone is not enough, since it can't authenticate the other scope's calls"
+            )
+        return self
 
 
 @lru_cache

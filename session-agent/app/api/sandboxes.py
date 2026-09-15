@@ -3,7 +3,6 @@ import logging
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Request,
     Response,
@@ -12,7 +11,7 @@ from fastapi import (
     status,
 )
 
-from app.auth import require_control_plane_token
+from app.auth import require_admin_scope, require_user_scope
 from app.config import get_settings
 from app.providers.base import SandboxConfig, SandboxRuntimeStatus
 from app.providers.factory import get_provider
@@ -34,11 +33,11 @@ _CHUNK_SIZE = 65536
 _CLOSE_DISPLAY_UNREACHABLE = 4502
 
 router = APIRouter(
-    prefix="/v1/sandboxes", tags=["sandboxes"], dependencies=[Depends(require_control_plane_token)]
+    prefix="/v1/sandboxes", tags=["sandboxes"], dependencies=[require_user_scope]
 )
 
 
-@router.get("", response_model=list[str])
+@router.get("", response_model=list[str], dependencies=[require_admin_scope])
 async def list_active_sandboxes(include_stopped: bool = False) -> list[str]:
     """Session IDs of every currently running openrbi.managed container —
     the minimal addition the control plane's orphan reconciliation job
@@ -46,6 +45,9 @@ async def list_active_sandboxes(include_stopped: bool = False) -> list[str]:
     against BrowserSession rows. Deliberately separate from
     count_active_sessions() (used by /v1/nodes/self), not a change to that
     method's existing int return contract.
+
+    Admin-scoped (docs/adr/0025): discloses every session id on the node,
+    including other users' — reconciliation/admin-dashboard use only.
     """
     if include_stopped:
         return await get_provider().list_managed_session_ids()
@@ -84,8 +86,10 @@ async def start_sandbox(session_id: str) -> dict[str, str]:
     return {"status": "started"}
 
 
-@router.post("/{session_id}/isolate")
+@router.post("/{session_id}/isolate", dependencies=[require_admin_scope])
 async def isolate_sandbox(session_id: str) -> dict[str, str]:
+    """Admin-scoped (docs/adr/0025): an incident-response action, never
+    something a user does to their own session."""
     try:
         await get_provider().isolate_session(session_id)
     except Exception as exc:  # noqa: BLE001
@@ -93,8 +97,10 @@ async def isolate_sandbox(session_id: str) -> dict[str, str]:
     return {"status": "isolated"}
 
 
-@router.post("/{session_id}/restore")
+@router.post("/{session_id}/restore", dependencies=[require_admin_scope])
 async def restore_sandbox(session_id: str) -> dict[str, str]:
+    """Admin-scoped (docs/adr/0025): un-isolates a session — the inverse of
+    isolate, same incident-response-only justification."""
     try:
         await get_provider().restore_session(session_id)
     except Exception as exc:  # noqa: BLE001
@@ -158,7 +164,7 @@ async def sandbox_display_ready(session_id: str) -> dict[str, str]:
 
 @router.websocket("/{session_id}/display/ws")
 async def sandbox_display_relay(
-    websocket: WebSocket, session_id: str, _: None = Depends(require_control_plane_token)
+    websocket: WebSocket, session_id: str, _: None = require_user_scope
 ) -> None:
     """Roadmap B2.4 (docs/adr/0024) — the control plane no longer dials a
     sandbox's VNC port directly (impossible once the sandbox lives on a
