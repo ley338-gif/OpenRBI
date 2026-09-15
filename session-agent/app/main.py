@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import psutil
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
 from app import enrollment
 from app.api.sandboxes import router as sandboxes_router
-from app.auth import require_control_plane_token
+from app.auth import require_user_scope
 from app.build_info import BUILD_INFO
 from app.config import get_settings
 from app.providers.factory import get_provider
@@ -79,13 +79,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok", **BUILD_INFO.as_dict()}
 
 
-@app.get("/v1/nodes/self", dependencies=[Depends(require_control_plane_token)])
+@app.get("/v1/nodes/self", dependencies=[require_user_scope])
 async def node_status() -> dict[str, str | int | float | bool]:
     """Real BrowserNode self-report (capacity/active_sessions/runtime/
     version/CPU/RAM) — the control plane's poller (app/core/node_poller.py)
     and select_node() both call this to populate the BrowserNode row.
     Single-node v1.0 still models this as a first-class, polled status
     rather than assumed-always-online (see docs/architecture.md#multi-node-readiness).
+
+    User-scoped, not admin-only (docs/adr/0025): select_node() calls this
+    synchronously from user-registered session-creation code
+    (app/services/sessions.py), so a backend-user process holding only a
+    user-scope token must still be able to reach it — the node poller's
+    own admin/both-mode-only background polling still works too, since the
+    legacy/admin token is a superset of user scope.
 
     CPU/RAM are host-wide (psutil.cpu_percent/virtual_memory), not scoped to
     this container's own cgroup — deliberately: the browser sandboxes this

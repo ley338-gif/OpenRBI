@@ -27,8 +27,23 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://openrbi:openrbi@postgres:5432/openrbi"
     redis_url: str = "redis://redis:6379/0"
 
+    # Roadmap: Segmented-deployment credential scoping (docs/adr/0025).
+    # Empty by default — Compact and any Segmented deployment that hasn't
+    # opted into scoped roles both keep using `database_url` unchanged.
+    # Only consulted when `listener_mode` is "user"/"admin" (see
+    # app/db/session.py's resolver); irrelevant in "both" mode, where one
+    # process holds every role anyway. Point these at the `openrbi_user`/
+    # `openrbi_admin` Postgres roles docker/postgres/init/ provisions.
+    database_url_user: str = ""
+    database_url_admin: str = ""
+
     session_agent_base_url: str = "http://session-agent:8100"
     session_agent_api_token: str = ""
+    # Same opt-in, Segmented-only scoping as the database URLs above, for
+    # the Session Agent's bearer token instead of Postgres — see
+    # app/services/nodes.py's connection_for_node() and docs/adr/0025.
+    session_agent_api_token_user: str = ""
+    session_agent_api_token_admin: str = ""
 
     session_cookie_name: str = "openrbi_session"
     session_ttl_seconds: int = 8 * 60 * 60
@@ -210,6 +225,28 @@ class Settings(BaseSettings):
                 f"OPENRBI_LDAP_CA_CERT_FILE is set to '{self.ldap_ca_cert_file}' but that file "
                 "does not exist — refusing to start with a custom CA path that would silently "
                 "fall back to no additional trust at connection time"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _segmented_role_scoping_incompatible_with_ldap_on_user_listener(self) -> "Settings":
+        """docs/adr/0025 — the openrbi_user Postgres role (see docker/postgres/init/) is
+        deliberately denied INSERT and role_id/is_active UPDATE on `users`, so it cannot
+        create or re-privilege an account. app/services/ldap_provisioning.py's JIT
+        provisioning/role-remap-on-login does exactly that, from the *shared* /auth/login
+        route this "user"-mode process also serves. Rather than let that combination fail
+        at the first real LDAP login with an opaque Postgres permission error, refuse to
+        start at all — the operator must pick one: run this listener as "both" instead, or
+        turn off LDAP for this deployment.
+        """
+        if self.listener_mode == "user" and self.database_url_user and self.ldap_enabled:
+            raise ValueError(
+                "refusing to start: OPENRBI_LISTENER_MODE=user with OPENRBI_DATABASE_URL_USER set "
+                "(Segmented DB role scoping, docs/adr/0025) is incompatible with "
+                "OPENRBI_LDAP_ENABLED=true — the scoped openrbi_user role cannot create or "
+                "re-privilege a user account, which LDAP auto-provisioning/role-remapping on "
+                "login requires. Run this listener as OPENRBI_LISTENER_MODE=both instead, or "
+                "disable LDAP for this deployment."
             )
         return self
 

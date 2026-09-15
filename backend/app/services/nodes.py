@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.session_agent_client import NodeConnection
 from app.models.browser_node import BrowserNode
@@ -183,4 +183,17 @@ def connection_for_node(node: BrowserNode | None) -> NodeConnection:
     if node is not None and node.endpoint_url and node.agent_token_encrypted:
         return NodeConnection(base_url=node.endpoint_url, token=decrypt_secret(node.agent_token_encrypted))
     settings = get_settings()
-    return NodeConnection(base_url=settings.session_agent_base_url, token=settings.session_agent_api_token)
+    return NodeConnection(base_url=settings.session_agent_base_url, token=_resolve_session_agent_token(settings))
+
+
+def _resolve_session_agent_token(settings: Settings) -> str:
+    """Segmented-deployment credential scoping (docs/adr/0025) — same shape
+    as app/db/session.py's _resolve_database_url(). "both" mode and any
+    un-opted-in "user"/"admin" deployment keep using the single shared
+    session_agent_api_token unchanged.
+    """
+    if settings.listener_mode == "user" and settings.session_agent_api_token_user:
+        return settings.session_agent_api_token_user
+    if settings.listener_mode == "admin" and settings.session_agent_api_token_admin:
+        return settings.session_agent_api_token_admin
+    return settings.session_agent_api_token
