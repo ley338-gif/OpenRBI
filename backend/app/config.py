@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     csrf_secret_key: str = ""
 
     # Restrictive default per the project's fail-closed philosophy (§24
-    # allows this to be configured higher; MVP 1 has no per-group/per-policy
+    # allows this to be configured higher; v1.0 has no per-group/per-policy
     # override yet — that's Phase 12).
     max_sessions_per_user: int = 1
 
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
 
     # Productization v0.1.1 (docs/analysis/productization-v0.1.1-zone-separation.md,
     # docs/adr/0011-user-admin-listener-separation.md): which API surface this
-    # process instance registers. "both" (the default) preserves MVP 1's
+    # process instance registers. "both" (the default) preserves v1.0's
     # single-process behavior exactly — Compact/homelab/dev deployments never
     # need to touch this. "user"/"admin" let the *same* built image run as two
     # separate processes with disjoint router surfaces, so a compromise of one

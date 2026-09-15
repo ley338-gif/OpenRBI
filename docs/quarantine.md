@@ -54,11 +54,11 @@ Verified end-to-end against the live stack: a reviewer lists and releases a `QUA
 The reverse direction of Phase 13. No local client directory is ever mounted into a sandbox — the only way a file gets in is `POST /sessions/{id}/uploads` (`app/services/uploads.py`), the project brief §17 Upload Gateway:
 
 1. Hash, detect the real MIME type (magic bytes), derive the extension.
-2. Run the Phase 12 policy engine as the check (not merely a pre-check, since there's no deferred admin-review queue for uploads in MVP 1 — see below).
+2. Run the Phase 12 policy engine as the check (not merely a pre-check, since there's no deferred admin-review queue for uploads in v1.0 — see below).
 3. Scan via ClamAV.
 4. On success, write the bytes into the sandbox's upload directory (`$HOME/uploads`) via the Session Agent.
 
-**Deliberate simplification vs. downloads:** an upload has no `QUARANTINED`-and-await-admin-review state. The user is actively waiting on this action inside their live session, so both a `QUARANTINE` and a `DENY` policy verdict are treated as an immediate block (`UPLOAD_BLOCKED`) — there's no async approval queue for uploads in MVP 1, and the project brief doesn't define one. An infected upload is blocked identically to an infected download: never written to the sandbox, `MALWARE_DETECTED` event, `CRITICAL` Incident. A scanner outage fails closed exactly like downloads — nothing gets written to the sandbox while the scanner is unreachable, regardless of policy.
+**Deliberate simplification vs. downloads:** an upload has no `QUARANTINED`-and-await-admin-review state. The user is actively waiting on this action inside their live session, so both a `QUARANTINE` and a `DENY` policy verdict are treated as an immediate block (`UPLOAD_BLOCKED`) — there's no async approval queue for uploads in v1.0, and the project brief doesn't define one. An infected upload is blocked identically to an infected download: never written to the sandbox, `MALWARE_DETECTED` event, `CRITICAL` Incident. A scanner outage fails closed exactly like downloads — nothing gets written to the sandbox while the scanner is unreachable, regardless of policy.
 
 **Getting bytes into the sandbox** hits the same tmpfs limitation Phase 13 found on the read side: `put_archive` would fail for the same reason `get_archive` did (both go through the storage driver's layer-diff mechanism, which cannot see a tmpfs mount at all). The Session Agent instead opens a live `exec` process (`cat > path`) with a raw stdin socket and streams the bytes directly (`docker_provider.py`'s `write_upload`). A second real bug surfaced here during testing: `exec_inspect`'s reported exit code stayed `None` well after the write had actually completed correctly (confirmed by reading the file back) — plain socket `close()` doesn't reliably signal EOF to the remote process's stdin in time for the exit code to settle. Fixed by explicitly shutting down the write half of the socket first, and — since the exit code still couldn't always be trusted even after that — independently verifying the write via the file's actual size on disk rather than relying on the exec exit code at all.
 
@@ -95,7 +95,7 @@ Quarantined files are **never** stored under their original filename on disk. St
 
 ### Reviewer actions
 
-`RELEASE`, `REJECT` — restricted to ADMIN/SECURITY_REVIEWER. A quarantined file is never automatically opened in the admin's own browser; file preview is explicitly out of scope for MVP 1.
+`RELEASE`, `REJECT` — restricted to ADMIN/SECURITY_REVIEWER. A quarantined file is never automatically opened in the admin's own browser; file preview is explicitly out of scope for v1.0.
 
 ## Release workflow
 

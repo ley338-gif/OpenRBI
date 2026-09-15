@@ -162,7 +162,7 @@ def _register_admin_routes(app: FastAPI) -> None:
 # Single, central decision point for which API surface this process
 # exposes (Productization v0.1.1) — deliberately not scattered across
 # individual endpoints. OPENRBI_LISTENER_MODE defaults to "both", which
-# reproduces MVP 1's exact prior behavior (every router, one process);
+# reproduces v1.0's exact prior behavior (every router, one process);
 # Compact/homelab/dev deployments never need to set this. A user-mode
 # process never imports/registers an admin router at all, so a request to
 # an admin path is a plain FastAPI 404 (the route does not exist), not a

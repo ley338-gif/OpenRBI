@@ -12,7 +12,7 @@ import type { QuarantineFileDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
 /**
- * Metadata only, never a file preview (section 33) — this MVP has no safe
+ * Metadata only, never a file preview (section 33) — v1.0 has no safe
  * file-preview mechanism, so this page only ever shows the captured
  * metadata a reviewer needs, matching app/api/admin_quarantine.py's own
  * response shape exactly.

@@ -4,7 +4,7 @@ ever refreshed a node's status/telemetry was select_node() (called once
 per session creation) or an admin loading /admin/health — an idle system
 with no new sessions and no one looking at System could show arbitrarily
 stale data forever. Same in-process-task pattern as
-app/core/download_poller.py (single backend process for MVP 1 — a real
+app/core/download_poller.py (single backend process in v1.0 — a real
 multi-instance deployment would need this as a proper background worker,
 not an in-process task per process).
 """

@@ -29,6 +29,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 - The session-status write race between `terminate_session()` and the display WebSocket's own close handler, previously documented as a known, unfixed limitation (see this file's "Productization v0.1.1" entry below), is now genuinely closed: `app/api/display.py`'s disconnect handling uses a single atomic conditional `UPDATE ... WHERE status = 'ACTIVE'` instead of a read-then-write, so it can never overwrite a session that already moved on to `TERMINATING`/`TERMINATED`/`FAILED`, regardless of how the two requests interleave. Discovered because Roadmap B2.4's extra relay hop widened the race's timing window enough to reproduce it close to deterministically in CI.
 
+### Documentation
+
+- The `[1.0.1]` entry below claimed "stale pre-1.0 language (pre-alpha, MVP 1 under active development, release candidate preparation)" had been removed from `README.md`/`SECURITY.md`/`docs/supported-configurations.md` — that was only partially true. "MVP 1" framing was still present in README's goals/scope headings, SECURITY.md's limitations heading, `docs/architecture.md`, `docs/threat-model.md`, several other product docs, and assorted code comments. All of it is now replaced with v1.0/GA-appropriate wording (same meaning, no scope change); `scripts/check-docs-freeze.py` gained guards for the two renamed headings so they can't silently come back. ADRs, `docs/development.md`, and existing CHANGELOG history are untouched, since "MVP 1" is the correct historical term there.
+
 ## [1.0.1] - 2026-08-15
 
 Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record.

@@ -15,7 +15,7 @@ BrowserSession rows, in both directions (docs/adr/0021):
 Both directions share the same poll cycle, grace-period logic, and
 audit-event principle — only the direction differs. Same in-process-task
 pattern as app/core/node_poller.py/download_poller.py (single backend
-process for MVP 1).
+process in v1.0).
 
 Root cause the first (container -> row) direction exists for (see
 docs/adr/0021 for the full writeup): integration tests that create a real

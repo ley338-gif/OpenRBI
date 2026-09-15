@@ -27,7 +27,7 @@ async def process_upload(db, session: BrowserSession, filename: str, data: bytes
     mounted into a sandbox (docs/security-model.md) — this is the only path
     bytes take to get in, and only after every check below passes.
 
-    Unlike downloads, an upload has no deferred admin-review queue in MVP 1
+    Unlike downloads, an upload has no deferred admin-review queue in v1.0
     — the user is actively waiting on this action inside their live
     session, so QUARANTINE and DENY policy verdicts are both treated as an
     immediate block (project brief doesn't define an async upload-approval

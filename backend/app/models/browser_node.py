@@ -9,7 +9,7 @@ from app.models.mixins import CreatedAtMixin, UUIDPKMixin
 
 
 class BrowserNode(UUIDPKMixin, CreatedAtMixin, Base):
-    """Modeled as a first-class entity even though MVP 1 runs a single node,
+    """Modeled as a first-class entity even though v1.0 runs a single node,
     so multi-node scheduling can be added later without a schema change
     (see docs/architecture.md#multi-node-readiness).
     """

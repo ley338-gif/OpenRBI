@@ -12,7 +12,7 @@ from app.models.mixins import UUIDPKMixin
 class WorkerMetricSample(UUIDPKMixin, Base):
     """Roadmap Phase B / B1.10.2 — the small internal metrics-history table
     the task explicitly allows in place of standing up Prometheus/Grafana
-    for MVP 1: one row per worker per poll tick (app/core/node_poller.py,
+    for v1.0: one row per worker per poll tick (app/core/node_poller.py,
     same 15s interval as the live telemetry it's a snapshot of), pruned to
     a 7-day retention window at insert time (app/services/metrics_history.py)
     — the longest range the dashboard's own UI offers. Answers both the
