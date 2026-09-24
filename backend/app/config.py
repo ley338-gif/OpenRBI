@@ -157,6 +157,19 @@ class Settings(BaseSettings):
     orphan_reconcile_interval_seconds: float = 300.0
     orphan_reconcile_grace_cycles: int = 2
 
+    # DISCONNECTED-session timeout (app/core/session_reaper.py): a session
+    # whose display connection dropped and was never reattached is
+    # terminated once it has sat DISCONNECTED this long. Without it, a
+    # closed browser tab left the sandbox running forever — and with the
+    # default max_sessions_per_user=1, silently blocked that user from
+    # starting any new session until an admin noticed and killed it by
+    # hand. 0 disables the timeout (the pre-reaper behavior). Measured from
+    # last_activity_at, which the display relay and admin disconnect both
+    # stamp at the moment of disconnect. ISOLATED sessions are never
+    # touched — they're preserved for investigation on purpose.
+    session_disconnected_timeout_seconds: float = 3600.0
+    session_reaper_interval_seconds: float = 60.0
+
     # Downloads/quarantine retention (app/core/quarantine_retention.py).
     # Two separate windows: RELEASED files are cheap to re-request (a fresh
     # 5-minute release token, app/core/release_tokens.py) and carry no

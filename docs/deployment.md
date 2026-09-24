@@ -78,12 +78,10 @@ This is a presence/freshness check on a self-attested marker file, not a live re
 **Re-running after restarts** — install the provided systemd timer so this happens automatically instead of depending on someone remembering:
 
 ```
-sudo cp scripts/systemd/openrbi-network-isolation.service /etc/systemd/system/
-sudo cp scripts/systemd/openrbi-network-isolation.timer /etc/systemd/system/
-# edit WorkingDirectory in the .service file to match where this repo is checked out
-sudo systemctl daemon-reload
-sudo systemctl enable --now openrbi-network-isolation.timer
+sudo ./scripts/install-network-isolation-timer.sh
 ```
+
+The helper writes the unit with `WorkingDirectory=` set to this checkout's real path, enables the timer, runs the service once, and exits non-zero with the journal command to run if that first run fails. Re-run it after moving the checkout. `--uninstall` removes both units. Installing the unit files by hand still works, but the `WorkingDirectory=` must then match the checkout path exactly, including case. On a mismatch, every run fails with `status=200/CHDIR` while `systemctl list-timers` keeps showing the timer as active. Verify with `systemctl status openrbi-network-isolation.service`, not just the timer (see [troubleshooting.md](troubleshooting.md#portal-health-page-shows-degradedunavailable)).
 
 Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_AGENT_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
 

@@ -2,18 +2,19 @@
 # iptables blocklist and refreshes its marker file (read by the backend's
 # /admin health check, app/services/health.py::check_network_isolation).
 #
-# Install (as root, on the Docker host):
-#   cp scripts/systemd/openrbi-network-isolation.service /etc/systemd/system/
-#   cp scripts/systemd/openrbi-network-isolation.timer /etc/systemd/system/
-#   systemctl daemon-reload
-#   systemctl enable --now openrbi-network-isolation.timer
-#   systemctl start openrbi-network-isolation.service   # apply once immediately
+# Install (as root, on the Docker host) with the helper, which writes this
+# unit with WorkingDirectory set to the checkout's real path, enables the
+# timer, and runs the service once — failing loudly if that run fails:
+#   sudo ./scripts/install-network-isolation-timer.sh
 #
-# Adjust WorkingDirectory below to wherever this repository is checked out
-# on the host. This unit is deliberately not started automatically by
-# anything OpenRBI ships — installing it is an explicit host-admin step,
-# same as running the script manually was before this existed (docs/
-# deployment.md#network-isolation).
+# If you copy this file into /etc/systemd/system/ by hand instead, you MUST
+# set WorkingDirectory below to the exact (case-sensitive) path of your
+# checkout. A mismatch fails every run with status=200/CHDIR while the
+# timer itself keeps reporting "active (waiting)" — check
+# `systemctl status openrbi-network-isolation.service`, not just
+# `systemctl list-timers`. This unit is deliberately not started
+# automatically by anything OpenRBI ships — installing it is an explicit
+# host-admin step (docs/deployment.md#network-isolation).
 [Unit]
 Description=OpenRBI browser-plane network isolation (iptables)
 After=docker.service
@@ -21,5 +22,5 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/openrbi
+WorkingDirectory=/opt/OpenRBI
 ExecStart=/bin/sh scripts/setup-network-isolation.sh

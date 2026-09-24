@@ -37,7 +37,7 @@ QUEUED → STARTING → ACTIVE ⇄ DISCONNECTED
 any state → FAILED (on unrecoverable error)
 ```
 
-- `ACTIVE → DISCONNECTED`: the remote-display connection drops (client closed tab, network blip). The sandbox is not touched. A user or admin can reconnect (`DISCONNECTED → ACTIVE`) or the session can time out and move to `TERMINATING`.
+- `ACTIVE → DISCONNECTED`: the remote-display connection drops (client closed tab, network blip). The sandbox is not touched. A user or admin can reconnect (`DISCONNECTED → ACTIVE`). If nobody does within `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it), `app/core/session_reaper.py` moves it to `TERMINATING → TERMINATED` automatically and records `SESSION_TIMED_OUT`. The disconnect time is `last_activity_at`, stamped when the display connection drops. There is no idle timeout for an `ACTIVE` session, and `ISOLATED` sessions are never timed out.
 - `ACTIVE/DISCONNECTED → ISOLATING → ISOLATED`: admin- or Security-Reviewer-triggered, or automatic on policy violation. Always generates a Security Event; automatic isolation also opens/updates an Incident.
 - `ISOLATED → ACTIVE`: explicit "restore" action by an authorized admin/reviewer — logged as its own Security Event, distinct from the original isolation.
 - `ISOLATED/ACTIVE/DISCONNECTED → TERMINATING → TERMINATED`: Kill. Must be idempotent — killing an already-terminated or already-terminating session succeeds (or no-ops) rather than erroring.
@@ -55,4 +55,4 @@ Every Disconnect, Isolate, Restore, and Kill action is attributed to the acting 
 
 ## Error states
 
-A session stuck in `STARTING`, `ISOLATING`, or `TERMINATING` past a configurable timeout is treated as `FAILED` and surfaced to admins with the last known provider status, rather than left in an ambiguous state indefinitely.
+A session whose sandbox container disappears while it's `ACTIVE`, `DISCONNECTED`, `ISOLATING`, or `ISOLATED` is marked `FAILED` by orphan reconciliation (`app/core/orphan_reconciler.py`, `SESSION_LOST_RECONCILED`) and surfaced to admins, rather than left in an ambiguous state indefinitely. There is currently **no** time-based timeout for a session stuck in `STARTING` or `TERMINATING` while its container still exists. An admin has to Kill it.

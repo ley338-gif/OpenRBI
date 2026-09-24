@@ -182,6 +182,39 @@ test.describe("Admin Portal", () => {
     expect(unlockedLogin.status()).toBe(200);
   });
 
+  test("User Detail changes a user's role through the UI and back", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByRole("link", { name: "Users", exact: true }).click();
+    await page.getByRole("link", { name: USER_USERNAME, exact: true }).click();
+    const userId = page.url().split("/users/")[1];
+
+    async function changeRoleTo(role: string) {
+      await page.getByRole("button", { name: "Change role" }).click();
+      await page.getByLabel("Role", { exact: true }).selectOption(role);
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("button", { name: "Change role" }).last().click();
+      await expect(page.getByText(`Role changed to ${role}`)).toBeVisible();
+    }
+
+    try {
+      await changeRoleTo("SECURITY_REVIEWER");
+      // Real backend round-trip, not just a UI state flip.
+      const promoted = await page.request.get(`/api/admin/users/${userId}`);
+      expect((await promoted.json()).role).toBe("SECURITY_REVIEWER");
+
+      await changeRoleTo("USER");
+      const restored = await page.request.get(`/api/admin/users/${userId}`);
+      expect((await restored.json()).role).toBe("USER");
+    } finally {
+      // e2e_user must stay a plain USER for the user-portal spec (an
+      // elevated role would force MFA enrollment at its next login).
+      await page.request.put(`/api/admin/users/${userId}/role`, {
+        data: { role: "USER" },
+        headers: await csrfHeader(page),
+      });
+    }
+  });
+
   test("System page renders real, non-hardcoded health status", async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByRole("navigation").getByRole("link", { name: "System health", exact: true }).click();
