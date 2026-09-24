@@ -24,7 +24,7 @@ from app.api.sessions import router as sessions_router
 from app.api.setup import router as setup_router
 from app.build_info import BUILD_INFO
 from app.config import get_settings
-from app.core import node_poller, orphan_reconciler, quarantine_retention
+from app.core import node_poller, orphan_reconciler, quarantine_retention, session_reaper
 from app.core.csrf import CSRFMiddleware
 from app.db.session import async_session_factory
 from app.services.setup_service import regenerate_setup_token
@@ -85,11 +85,13 @@ async def _lifespan(app: FastAPI):
         node_poller.start()
         orphan_reconciler.start()
         quarantine_retention.start()
+        session_reaper.start()
 
     yield
     node_poller.stop()
     orphan_reconciler.stop()
     quarantine_retention.stop()
+    session_reaper.stop()
 
 
 app = FastAPI(

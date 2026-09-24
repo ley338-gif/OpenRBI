@@ -209,7 +209,9 @@ async def display_ws(
             await db.execute(
                 update(BrowserSession)
                 .where(BrowserSession.id == session.id, BrowserSession.status == SessionStatus.ACTIVE)
-                .values(status=SessionStatus.DISCONNECTED)
+                # last_activity_at doubles as "disconnected since" for
+                # app/core/session_reaper.py's DISCONNECTED timeout.
+                .values(status=SessionStatus.DISCONNECTED, last_activity_at=datetime.now(UTC))
             ),
         )
         needs_commit = False

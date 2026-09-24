@@ -437,6 +437,8 @@ async def disconnect_session(db: AsyncSession, session: BrowserSession, *, actor
         raise SessionServiceError(f"cannot disconnect a session in status {session.status.value}")
 
     session.status = SessionStatus.DISCONNECTED
+    # Starts app/core/session_reaper.py's DISCONNECTED-timeout clock.
+    session.last_activity_at = datetime.now(UTC)
     await record_security_event(
         db, SecurityEventType.SESSION_DISCONNECTED, user_id=session.user_id, session_id=session.id,
         metadata={"actor": str(actor_id)},

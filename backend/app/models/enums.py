@@ -249,6 +249,13 @@ class SecurityEventType(str, enum.Enum):
     # this failure happened before the session ever reached ACTIVE.
     SESSION_START_FAILED = "SESSION_START_FAILED"
 
+    # app/core/session_reaper.py: a session sat DISCONNECTED longer than
+    # OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS and was terminated
+    # automatically. Recorded in addition to the SESSION_TERMINATED event
+    # terminate_session() itself emits, so a reviewer can tell a timeout
+    # apart from an admin Kill without decoding the sentinel actor id.
+    SESSION_TIMED_OUT = "SESSION_TIMED_OUT"
+
     # Quarantine/downloads retention (app/core/quarantine_retention.py):
     # automatic deletion of a QuarantineFile's staged bytes (and scrubbing
     # of its descriptive metadata) once its retention window has passed —
