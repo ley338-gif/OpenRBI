@@ -56,6 +56,24 @@ If the log instead shows an expired/invalid token, retrieve a fresh one (`docker
 
 Confirm the hardened browser image actually exists (`docker images | grep openrbi-browser`) — it's not a compose service, so `docker compose up` never builds it; run `./scripts/build-browser-image.sh` first (see docs/deployment.md).
 
+## Locked out of every admin account, SSH access only
+
+Symptom: the one local `ADMIN` you kept for break-glass access (see [admin-guide.md](admin-guide.md)) gets "invalid credentials", there is no other working admin session to reset it from **Users → Reset password**, and all you have is shell access to the Docker host. `scripts/bootstrap-admin.py` does **not** help here — it refuses to run once any `ADMIN` exists.
+
+Use the break-glass reset script instead, on the host, from the checkout:
+
+```
+./scripts/reset-local-password.sh <admin-username>            # prompts for the new password twice
+./scripts/reset-local-password.sh <admin-username> --enable   # also re-enables the account if it was disabled
+```
+
+It runs the same `reset_password()` service function the Admin Portal uses (Argon2 hash, `PASSWORD_RESET_BY_ADMIN` security event with a fixed break-glass actor id `00000000-0000-0000-0000-00000b7ea4c1`, so it stays fully audited — never hand-edit `users.password_hash` with SQL), and clears the account's login lockout if repeated attempts have tripped it (`ACCOUNT_UNLOCKED`). The password is read from the terminal, never passed as an argument. For a non-interactive run, pipe it in: `printf '%s
+' "$NEW_PASSWORD" | ./scripts/reset-local-password.sh <admin-username>`.
+
+- **MFA is not touched.** The account's enrolled TOTP device is still required at the next login. If the TOTP device is lost too, sign in with one of that account's recovery codes; if those are gone as well, there is no host-side MFA reset yet.
+- **LDAP-provisioned accounts are refused** — their password belongs to the directory.
+- **Container name:** defaults to `openrbi-backend-1`. On a Segmented deployment, point it at the admin listener: `OPENRBI_BACKEND_CONTAINER=openrbi-backend-admin-1 ./scripts/reset-local-password.sh <admin-username>`.
+
 ## Portal: login fails
 
 A wrong password, an unknown username, and a disabled account all show the identical "invalid credentials" message in both portals — by design (see [user-guide.md#logging-in](user-guide.md#logging-in)), not a bug to fix. If login fails even with correct credentials, check for a `429` in the browser's network tab: ten wrong attempts against a username locks it out for 15 minutes (`LOGIN_LOCKED` security event, see [security-model.md#login-brute-force-protection-phase-20](security-model.md#login-brute-force-protection-phase-20)) — the *correct* password won't work either until the window clears. If the request never reaches the backend at all (a network error, not a `401`), see "User API unavailable" / "Admin API unavailable" below.
@@ -93,6 +111,14 @@ Same as above, but for `backend` (Compact) / `backend-admin` (Segmented). Since 
 
 The Downloads page's **Download** button requests a genuine single-use token (`POST /files/{id}/download-token`) and immediately follows it — a second click, or reusing a link from browser history, gets a `401` by design (the token was already consumed), not a bug. A file stuck showing "Awaiting review" instead of a Download button is still `QUARANTINED` — see [Quarantine review](admin-guide.md#quarantine-review) for the administrator side of releasing it.
 
+## Portal: user can't start a session ("user already has 1 active session(s)")
+
+The default `OPENRBI_MAX_SESSIONS_PER_USER=1` counts every live session, including one that's `DISCONNECTED` (the user closed the tab; the sandbox is still running). Since this release, a session left `DISCONNECTED` for longer than `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it) is terminated automatically and audited as `SESSION_TIMED_OUT`, so this clears itself within that window plus up to one minute. To unblock the user right away, reconnect from the User Portal, or have an admin terminate the old session (**Users → user → Terminate all sessions**, or **Sessions → Kill**).
+
+There is no idle timeout for an `ACTIVE` session (one with a live display connection) — the backend can't reliably tell an idle viewer from an active one. `ISOLATED` sessions are never timed out; they're kept for investigation until an admin ends them.
+
+If you raised or disabled the timeout, check the Admin Portal's **Sessions** page for long-`DISCONNECTED` sessions from time to time.
+
 ## Portal: session isolated
 
 The Secure Browser page shows this honestly (*"This session has been isolated by an administrator…"*) rather than a generic connection error — see [user-guide.md#secure-browser](user-guide.md#secure-browser). This is expected admin behavior, not a defect; end the session and start a new one.
@@ -100,3 +126,14 @@ The Secure Browser page shows this honestly (*"This session has been isolated by
 ## Portal: health page shows Degraded/Unavailable
 
 See "File scanner (ClamAV) unavailable", "Quarantine storage issues", and "Database / Redis operational issues" above — the Admin Portal's System page renders exactly what `GET /admin/health` returns, component by component, with no hardcoded green checkmarks anywhere to mask a real outage.
+
+**`network_isolation` is `DEGRADED` although the systemd timer is installed and `active (waiting)`:** the timer only shows that it fires. It says nothing about whether the service it starts succeeds. Check the service itself:
+
+```
+systemctl status openrbi-network-isolation.service
+journalctl -u openrbi-network-isolation.service -n 50 --no-pager
+```
+
+`status=200/CHDIR` means the unit's `WorkingDirectory=` doesn't match where the repository is actually checked out. The path is case-sensitive, so `/opt/openrbi` is not `/opt/OpenRBI`. Re-install with `sudo ./scripts/install-network-isolation-timer.sh` from the real checkout. It writes the correct path and fails loudly if the first run doesn't succeed. A marker left fresh by an earlier manual run can show `HEALTHY` for up to `OPENRBI_NETWORK_ISOLATION_MAX_STALENESS_SECONDS` (default 900s) before the failing timer shows up as `DEGRADED`.
+
+OpenRBI doesn't push System Health changes anywhere: there's no alerting integration. For unattended production hosts, poll `GET /admin/health` from your existing monitoring, or at least watch `systemctl --failed` on the host.
