@@ -9,11 +9,17 @@ import { DefinitionList } from "@shared/components/DefinitionList";
 import { ActionMenu } from "@shared/components/ActionMenu";
 import { AttachList, type AttachListItem } from "@shared/components/AttachList";
 import { useToast } from "@shared/components/Toast";
+import { useAuth } from "@shared/auth/AuthContext";
+import { ApiError } from "@shared/api/client";
 import { formatDateTime } from "@shared/format";
-import type { AdminSessionDto, LockoutStatusDto, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
+import type { AdminSessionDto, LockoutStatusDto, Role, SecurityEventDto, UserSummaryDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
+const ROLES: Role[] = ["USER", "SECURITY_REVIEWER", "ADMIN"];
+const ELEVATED_ROLES: Role[] = ["SECURITY_REVIEWER", "ADMIN"];
+
 type PendingAction =
+  | { kind: "role"; role: Role }
   | { kind: "disable" }
   | { kind: "enable" }
   | { kind: "reset-mfa" }
@@ -25,6 +31,7 @@ type PendingAction =
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
   const { notify } = useToast();
+  const { user: currentUser } = useAuth();
   const [user, setUser] = useState<UserSummaryDto | null>(null);
   const [sessions, setSessions] = useState<AdminSessionDto[] | null>(null);
   const [events, setEvents] = useState<SecurityEventDto[]>([]);
@@ -35,6 +42,8 @@ export function UserDetail() {
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [groupsBusy, setGroupsBusy] = useState(false);
+  const [editingRole, setEditingRole] = useState(false);
+  const [roleDraft, setRoleDraft] = useState<Role>("USER");
 
   function load() {
     if (!id) return;
@@ -59,7 +68,12 @@ export function UserDetail() {
     if (!pending || !id) return;
     setBusy(true);
     try {
-      if (pending.kind === "disable") {
+      if (pending.kind === "role") {
+        setUser(await adminApi.updateRole(id, pending.role));
+        setEditingRole(false);
+        notify(`Role changed to ${pending.role}`);
+        load();
+      } else if (pending.kind === "disable") {
         setUser(await adminApi.disableUser(id));
         notify("User disabled");
       } else if (pending.kind === "enable") {
@@ -92,8 +106,10 @@ export function UserDetail() {
         setSessions((prev) => prev!.map((s) => (s.id === updated.id ? updated : s)));
         notify(`Session ${pending.action}d`);
       }
-    } catch {
-      notify("Action failed", "error");
+    } catch (err) {
+      // The backend's own guards (e.g. the last active administrator
+      // must keep ADMIN) come back as a specific detail worth showing.
+      notify(err instanceof ApiError ? err.detail : "Action failed", "error");
     } finally {
       setBusy(false);
       setPending(null);
@@ -188,7 +204,38 @@ export function UserDetail() {
         </div>
         <DefinitionList
           items={[
-            { label: "Role", value: user.role },
+            {
+              label: "Role",
+              value: editingRole ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (roleDraft !== user.role) setPending({ kind: "role", role: roleDraft });
+                    else setEditingRole(false);
+                  }}
+                  style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}
+                >
+                  <select aria-label="Role" value={roleDraft} onChange={(e) => setRoleDraft(e.target.value as Role)} autoFocus>
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>Save</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingRole(false)}>Cancel</button>
+                </form>
+              ) : (
+                <span style={{ display: "inline-flex", gap: "8px", alignItems: "center" }}>
+                  {user.role}
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setRoleDraft(user.role); setEditingRole(true); }}
+                  >
+                    Change role
+                  </button>
+                </span>
+              ),
+            },
             { label: "Authentication source", value: <StatusBadge value={user.auth_source} /> },
             { label: "MFA", value: <StatusBadge value={user.mfa_enabled ? "ENABLED" : "NOT ENABLED"} /> },
             {
@@ -312,6 +359,17 @@ export function UserDetail() {
         )}
       </div>
 
+      {pending?.kind === "role" && (
+        <ConfirmDialog
+          title={`Change ${user.username}'s role from ${user.role} to ${pending.role}?`}
+          description={roleChangeDescription(user, pending.role, currentUser?.id === user.id)}
+          confirmLabel="Change role"
+          danger={pending.role === "ADMIN" || user.role === "ADMIN"}
+          busy={busy}
+          onConfirm={() => void confirmPending()}
+          onCancel={() => setPending(null)}
+        />
+      )}
       {pending?.kind === "disable" && (
         <ConfirmDialog
           title={`Disable ${user.username}?`}
@@ -381,6 +439,27 @@ export function UserDetail() {
       )}
     </div>
   );
+}
+
+function roleChangeDescription(user: UserSummaryDto, next: Role, isSelf: boolean): string {
+  const parts: string[] = [];
+  if (next === "ADMIN") {
+    parts.push("This grants full administrative access to OpenRBI, effective on their next request.");
+  } else if (user.role === "ADMIN") {
+    parts.push("This removes their administrative access, effective on their next request.");
+  } else {
+    parts.push("The new role applies on their next request.");
+  }
+  if (ELEVATED_ROLES.includes(next) && !user.mfa_enabled) {
+    parts.push("MFA is mandatory for this role and will be required at their next login.");
+  }
+  if (user.auth_source === "LDAP") {
+    parts.push("This account is LDAP-provisioned: its role is re-derived from directory group mappings at every login, so this change lasts only until they next log in.");
+  }
+  if (isSelf && next !== "ADMIN") {
+    parts.push("This is your own account — you will lose access to the Admin Portal.");
+  }
+  return parts.join(" ");
 }
 
 function SessionActions({
