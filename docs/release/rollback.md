@@ -19,7 +19,10 @@ containers/images before changing state.
 3. Run `scripts/restore.sh` and provide its literal `yes` confirmation only
    after checking the displayed target/artifact paths.
 4. Redeploy the exact previously recorded source or image digests and the
-   original `.env`. Do not rotate or regenerate encryption keys during recovery.
+   original `.env`, including the browser sandbox image
+   (`scripts/build-browser-image.sh` from the old checkout). Do not use
+   `scripts/deploy.sh` here: it would run migrations and seeding against the
+   restored database before you have confirmed revision compatibility. Do not rotate or regenerate encryption keys during recovery.
 5. Start PostgreSQL, Valkey and ClamAV, then backend, Session Agent, frontend and
    reverse proxy. Reapply `scripts/setup-network-isolation.sh`.
 6. Confirm Alembic revision compatibility. Do not run an improvised downgrade;
