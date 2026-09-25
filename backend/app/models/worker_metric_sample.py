@@ -37,3 +37,7 @@ class WorkerMetricSample(UUIDPKMixin, Base):
     # every recent sample" the same way it already does for sustained high
     # CPU, without a second time-series table.
     capacity_bound: Mapped[str | None] = mapped_column(String(16))
+    # Snapshot of BrowserNode.capacity, so the capacity-bound warning can
+    # require the node to actually be out of free slots, not merely to
+    # have RAM or CPU as the tighter of two roomy constraints.
+    capacity: Mapped[int | None] = mapped_column(Integer)

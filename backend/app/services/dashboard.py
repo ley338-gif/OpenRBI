@@ -151,25 +151,34 @@ def _sustained_high_load_warnings(nodes: list[BrowserNode], samples_by_node: dic
 def _capacity_bound_warnings(
     nodes: list[BrowserNode], samples_by_node: dict, *, window: timedelta
 ) -> list[Warning]:
-    """Roadmap B3.3 — a node whose every recent sample shows real headroom
-    (RAM or CPU) as the binding constraint, not the operator's own
-    OPENRBI_AGENT_CAPACITY ceiling. Deliberately never fires for
-    "ceiling": that's a deliberate admin config choice, the same reason
-    DRAINING/MAINTENANCE aren't health concerns either.
+    """Roadmap B3.3 — a node that has had no free session slot for every
+    recent sample, with real headroom (RAM or CPU) as the reason, not the
+    operator's own OPENRBI_AGENT_CAPACITY ceiling. Deliberately never
+    fires for "ceiling": that's a deliberate admin config choice, the same
+    reason DRAINING/MAINTENANCE aren't health concerns either.
+
+    "RAM-bound"/"CPU-bound" alone is not a problem: without a ceiling one
+    of the two is *always* the tighter constraint, so warning on that
+    alone fired for every idle node (findings addendum 3, #12). Only a
+    node that is actually full (active_sessions >= capacity) for the whole
+    window needs an operator.
     """
     warnings: list[Warning] = []
     for node in nodes:
         samples = samples_by_node.get(node.id, [])
-        recent = [s for s in samples if s.capacity_bound is not None]
+        recent = [s for s in samples if s.capacity_bound is not None and s.capacity is not None]
         if len(recent) < 2:
             continue
-        if all(s.capacity_bound in ("ram", "cpu") for s in recent):
+        if all(s.capacity_bound in ("ram", "cpu") and s.active_sessions >= s.capacity for s in recent):
             reason = recent[-1].capacity_bound
             warnings.append(
                 Warning(
                     kind="capacity_bound",
                     worker_hostname=node.hostname,
-                    message=f"{node.hostname} has been {reason.upper()}-bound for over {int(window.total_seconds() / 60)} minutes",
+                    message=(
+                        f"{node.hostname} has had no free session slots for over "
+                        f"{int(window.total_seconds() / 60)} minutes ({reason.upper()}-bound)"
+                    ),
                 )
             )
     return warnings

@@ -14,6 +14,11 @@ class Policy(UUIDPKMixin, TimestampMixin, Base):
     """A named, versioned policy (see docs/policies.md). The concrete rules
     live on PolicyVersion; a Policy is just the stable identity groups
     attach to.
+
+    Never hard-deleted: browser_sessions and quarantine_files keep a
+    foreign key to the exact PolicyVersion that decided them, so deleting
+    a policy would erase the audit trail of every past decision it made.
+    `archived_at` hides a retired policy from the default list instead.
     """
 
     __tablename__ = "policies"
@@ -24,6 +29,7 @@ class Policy(UUIDPKMixin, TimestampMixin, Base):
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("policy_versions.id", use_alter=True, name="fk_policy_current_version")
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PolicyVersion(UUIDPKMixin, CreatedAtMixin, Base):

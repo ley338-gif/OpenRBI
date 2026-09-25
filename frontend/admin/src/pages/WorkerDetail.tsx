@@ -184,7 +184,7 @@ export function WorkerDetail() {
           <div>
             <dt>Sessions</dt>
             <dd>
-              {node.active_sessions} / {node.capacity}
+              {node.active_sessions} running / {node.capacity} slots total ({Math.max(0, node.capacity - node.active_sessions)} free)
             </dd>
           </div>
           {node.capacity_bound && (
@@ -194,9 +194,12 @@ export function WorkerDetail() {
                 {node.capacity_bound === "ceiling" ? (
                   "Capacity ceiling (OPENRBI_AGENT_CAPACITY) — real headroom would allow more"
                 ) : node.capacity_bound === "ram" ? (
-                  `RAM (${node.ram_capacity} slots) — CPU headroom alone would allow ${node.cpu_capacity}`
+                  `RAM — room for ${node.ram_capacity} sessions in total; CPU alone would allow ${node.cpu_capacity}`
                 ) : (
-                  `CPU (${node.cpu_capacity} slots) — RAM headroom alone would allow ${node.ram_capacity}`
+                  `CPU — room for ${node.cpu_capacity} sessions in total; RAM alone would allow ${node.ram_capacity}`
+                )}
+                {node.capacity_bound !== "ceiling" && node.ram_capacity !== null && node.cpu_capacity !== null && node.capacity < Math.min(node.ram_capacity, node.cpu_capacity) && (
+                  <small className="muted"> Slot count held at {node.capacity} until the higher headroom holds for several polls.</small>
                 )}
               </dd>
             </div>

@@ -238,6 +238,7 @@ export interface PolicySummaryDto {
   created_at: string;
   updated_at: string;
   updated_by: string | null;
+  archived_at: string | null;
 }
 
 export interface PolicyListResponseDto {
@@ -245,7 +246,7 @@ export interface PolicyListResponseDto {
   total: number;
   offset: number;
   limit: number;
-  stats: { total: number; published: number; drafts: number; in_use: number; total_versions: number; last_updated_at: string | null; last_updated_by: string | null };
+  stats: { total: number; published: number; drafts: number; in_use: number; total_versions: number; archived: number; last_updated_at: string | null; last_updated_by: string | null };
 }
 
 export interface FileRuleResponseDto {

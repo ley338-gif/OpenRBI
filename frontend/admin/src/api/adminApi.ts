@@ -94,7 +94,7 @@ export const adminApi = {
   killSession: (id: string) => api.post<AdminSessionDto>(`/admin/sessions/${id}/kill`),
 
   // Policies
-  listPolicies: (params?: { search?: string; policy_type?: string; status_filter?: string; usage?: string; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) => api.get<PolicyListResponseDto>(`/admin/policies${queryString(params ?? {})}`),
+  listPolicies: (params?: { search?: string; policy_type?: string; status_filter?: string; usage?: string; archived?: "true"; sort_by?: string; sort_dir?: string; offset?: number; limit?: number }) => api.get<PolicyListResponseDto>(`/admin/policies${queryString(params ?? {})}`),
   getPolicy: (id: string) => api.get<PolicyDetailDto>(`/admin/policies/${id}`),
   createPolicy: (name: string, policyType: string, description?: string) =>
     api.post<PolicySummaryDto>("/admin/policies", { name, policy_type: policyType, description: description || null }),
@@ -115,6 +115,10 @@ export const adminApi = {
     api.post<PolicySummaryDto>(`/admin/policies/${policyId}/rollback`, { version_id: versionId }),
   attachToGroup: (policyId: string, groupId: string) => api.post<void>(`/admin/policies/${policyId}/groups/${groupId}`),
   detachFromGroup: (policyId: string, groupId: string) => api.delete<void>(`/admin/policies/${policyId}/groups/${groupId}`),
+  // No deletePolicy on purpose: past sessions/quarantine decisions reference
+  // their exact policy version for audit, so a policy can only be archived.
+  archivePolicy: (policyId: string) => api.post<PolicySummaryDto>(`/admin/policies/${policyId}/archive`),
+  restorePolicy: (policyId: string) => api.post<PolicySummaryDto>(`/admin/policies/${policyId}/restore`),
 
   // Quarantine
   listQuarantine: (statusFilter?: string) =>

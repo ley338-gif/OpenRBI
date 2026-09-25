@@ -118,6 +118,7 @@ async def node_status() -> dict[str, str | int | float | bool]:
     cpu_count = psutil.cpu_count() or 1
     breakdown = _compute_capacity(
         settings,
+        active_sessions=active_sessions,
         cpu_percent=cpu_percent,
         cpu_count=cpu_count,
         memory_total_mb=memory.total / (1024 * 1024),
@@ -158,6 +159,11 @@ class CapacityBreakdown:
     what's actually capping it below what the host could otherwise
     support — the dashboard (app/services/dashboard.py) only ever warns
     on the first two, never on an admin's own deliberate ceiling.
+
+    All three numbers are *total* session slots for this node (sessions
+    already running plus headroom for new ones), the same unit the
+    backend's `active_sessions < capacity` scheduling check and the
+    Admin Portal's "active / capacity" display both assume.
     """
 
     capacity: int
@@ -167,7 +173,13 @@ class CapacityBreakdown:
 
 
 def _compute_capacity(
-    settings, *, cpu_percent: float, cpu_count: int, memory_total_mb: float, memory_available_mb: float
+    settings,
+    *,
+    cpu_percent: float,
+    cpu_count: int,
+    memory_total_mb: float,
+    memory_available_mb: float,
+    active_sessions: int = 0,
 ) -> CapacityBreakdown:
     """Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real
     capacity derived from this host's actual free CPU/RAM headroom right
@@ -190,6 +202,14 @@ def _compute_capacity(
     tests/test_capacity.py, and guarantees the capacity reported in one
     /v1/nodes/self response is computed from the exact same readings as
     that response's own cpu_percent/ram_total_mb/ram_used_mb fields.
+
+    Free headroom is measured *after* the RAM/CPU the already-running
+    sandboxes consume, so it only answers "how many more fit". Reporting
+    that alone as `capacity` counted every running session twice (once in
+    the usage, once again in `active_sessions < capacity`): a node with
+    one session and room for two more showed "1 / 1" and refused new
+    sessions. Adding `active_sessions` back turns headroom into the total
+    the scheduler and UI expect; `settings.capacity` caps that total.
     """
     used_ram_mb = memory_total_mb - memory_available_mb
     free_ram_mb = memory_total_mb - settings.reserved_ram_mb - used_ram_mb
@@ -203,6 +223,9 @@ def _compute_capacity(
     # to real load on any host with more than one core.
     free_cpu_percent = max(0.0, cpu_count * (100 - cpu_percent))
     cpu_capacity = max(0, int(free_cpu_percent // (settings.default_cpu_limit * 100)))
+
+    ram_capacity += active_sessions
+    cpu_capacity += active_sessions
 
     # Ties go to "ram" arbitrarily (both are equally binding) -- same
     # "pick a deterministic winner" spirit as select_node()'s own
