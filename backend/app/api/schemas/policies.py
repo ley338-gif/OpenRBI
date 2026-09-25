@@ -67,6 +67,7 @@ class PolicySummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     updated_by: str | None = None
+    archived_at: datetime | None = None
 
 
 class PolicyStats(BaseModel):
@@ -75,6 +76,7 @@ class PolicyStats(BaseModel):
     drafts: int
     in_use: int
     total_versions: int
+    archived: int = 0
     last_updated_at: datetime | None
     last_updated_by: str | None
 

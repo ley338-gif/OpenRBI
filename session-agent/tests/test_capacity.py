@@ -161,3 +161,39 @@ def test_tied_ram_and_cpu_capacity_is_reported_as_ram_bound():
     )
     assert breakdown.ram_capacity == breakdown.cpu_capacity == 4
     assert breakdown.bound == "ram"
+
+
+def test_capacity_counts_running_sessions_as_occupied_slots_not_twice():
+    # Findings addendum 3, #12: the RAM a running sandbox already uses is
+    # subtracted from free headroom, so headroom alone means "how many
+    # *more* fit". klabg-rbi-node1's real readings: 7949 MB total,
+    # 2448 MB used, 1 session running, 0% CPU. Headroom for 2 more ->
+    # capacity must be 3 total, not 2, and definitely not "1 / 1" with
+    # new sessions refused.
+    breakdown = _compute_capacity(
+        _settings(),
+        cpu_percent=0.0,
+        cpu_count=4,
+        memory_total_mb=7949,
+        memory_available_mb=7949 - 2448,
+        active_sessions=1,
+    )
+    assert breakdown.ram_capacity == 3
+    assert breakdown.cpu_capacity == 3
+    assert breakdown.capacity == 3
+    assert breakdown.capacity > 1  # the scheduler's active_sessions < capacity check admits another
+
+
+def test_ceiling_caps_total_sessions_including_running_ones():
+    # OPENRBI_AGENT_CAPACITY has always meant "at most this many sessions
+    # on this node", so it caps the total, not just the remaining headroom.
+    breakdown = _compute_capacity(
+        _settings(capacity=2),
+        cpu_percent=0.0,
+        cpu_count=32,
+        memory_total_mb=65536,
+        memory_available_mb=60000,
+        active_sessions=2,
+    )
+    assert breakdown.capacity == 2
+    assert breakdown.bound == "ceiling"

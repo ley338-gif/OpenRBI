@@ -133,10 +133,10 @@ async def test_session_history_buckets_real_samples(db):
 
 @pytest.mark.asyncio
 async def test_sustained_real_headroom_capacity_bound_generates_a_warning(db):
-    """Roadmap B3.3 — a node whose every recent sample shows RAM or CPU as
-    the binding constraint (real headroom, not an admin-set ceiling) for
-    the configured window surfaces a `capacity_bound` warning, the same
-    way sustained high CPU already does.
+    """Roadmap B3.3 — a node with no free session slot in every recent
+    sample, RAM or CPU being the reason (real headroom, not an admin-set
+    ceiling), for the configured window surfaces a `capacity_bound`
+    warning, the same way sustained high CPU already does.
     """
     node = await _get_the_node(db)
     now = datetime.now(UTC)
@@ -152,6 +152,7 @@ async def test_sustained_real_headroom_capacity_bound_generates_a_warning(db):
                 ram_total_mb=15543,
                 active_sessions=0,
                 capacity_bound="cpu",
+                capacity=0,
             )
         )
     await db.commit()
@@ -182,6 +183,7 @@ async def test_ceiling_bound_capacity_never_generates_a_warning(db):
                 ram_total_mb=15543,
                 active_sessions=0,
                 capacity_bound="ceiling",
+                capacity=0,
             )
         )
     await db.commit()
@@ -189,6 +191,37 @@ async def test_ceiling_bound_capacity_never_generates_a_warning(db):
     dashboard = await get_dashboard(db)
     matching = [w for w in dashboard.warnings if w.kind == "capacity_bound" and w.worker_hostname == node.hostname]
     assert not matching, "an admin-set ceiling must never generate a capacity_bound warning"
+
+
+@pytest.mark.asyncio
+async def test_ram_bound_node_with_free_slots_never_generates_a_warning(db):
+    """Findings addendum 3, #12: without a ceiling, RAM or CPU is *always*
+    the tighter of the two constraints, so "RAM-bound" alone says nothing
+    about pressure. klabg-rbi-node1 (31% RAM, 0% CPU, 1 session, room for
+    more) was flagged under Needs Attention for exactly that.
+    """
+    node = await _get_the_node(db)
+    now = datetime.now(UTC)
+
+    await db.execute(delete(WorkerMetricSample).where(WorkerMetricSample.node_id == node.id))
+    for minutes_ago in (8, 5, 2):
+        db.add(
+            WorkerMetricSample(
+                node_id=node.id,
+                recorded_at=now - timedelta(minutes=minutes_ago),
+                cpu_percent=0.0,
+                ram_used_mb=2448,
+                ram_total_mb=7949,
+                active_sessions=1,
+                capacity_bound="ram",
+                capacity=3,
+            )
+        )
+    await db.commit()
+
+    dashboard = await get_dashboard(db)
+    matching = [w for w in dashboard.warnings if w.kind == "capacity_bound" and w.worker_hostname == node.hostname]
+    assert not matching, "a node with free session slots must not be flagged just for being RAM-bound"
 
 
 @pytest.mark.asyncio

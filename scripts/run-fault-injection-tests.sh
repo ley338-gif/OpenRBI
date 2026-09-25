@@ -283,22 +283,27 @@ fi
 
 # Roadmap B3.4 — the fail-closed half of the acceptance claim: while
 # pressure is still real and ongoing, wait (a few more polls, since a
-# single sample can land on a momentary lull) until capacity is
-# genuinely 0, then confirm a real session creation is actually
+# single sample can land on a momentary lull) until no slot is free
+# (capacity counts running sessions too, so that is free_slots == 0, not
+# capacity == 0), then confirm a real session creation is actually
 # rejected with NoCapacityError, not just that the reported number is
 # smaller.
 attempt=1
-while [ "$DURING_CAPACITY" -gt 0 ] && [ "$attempt" -le 5 ]; do
+SNAPSHOT=$(probe capacity-snapshot)
+DURING_FREE=$(printf '%s' "$SNAPSHOT" | json_field free_slots)
+while [ "$DURING_FREE" -gt 0 ] && [ "$attempt" -le 5 ]; do
     sleep 1
-    DURING_CAPACITY=$(probe capacity-snapshot | json_field capacity)
+    SNAPSHOT=$(probe capacity-snapshot)
+    DURING_CAPACITY=$(printf '%s' "$SNAPSHOT" | json_field capacity)
+    DURING_FREE=$(printf '%s' "$SNAPSHOT" | json_field free_slots)
     attempt=$((attempt + 1))
 done
 FAIL_CLOSED_NOTE="a real session creation was rejected with NoCapacityError while genuinely exhausted"
-if [ "$DURING_CAPACITY" -eq 0 ]; then
+if [ "$DURING_FREE" -eq 0 ]; then
     probe capacity-exhausted-rejects-session
 else
-    echo "capacity dropped but never reached genuine 0 under this host's real CPU pressure (last=$DURING_CAPACITY) -- skipping the fail-closed assertion, not a fault" >&2
-    FAIL_CLOSED_NOTE="capacity never reached genuine 0, so the fail-closed assertion was skipped"
+    echo "capacity dropped but a slot stayed free under this host's real CPU pressure (last capacity=$DURING_CAPACITY, free=$DURING_FREE) -- skipping the fail-closed assertion, not a fault" >&2
+    FAIL_CLOSED_NOTE="no-free-slot state was never reached, so the fail-closed assertion was skipped"
 fi
 
 cleanup_cpu_pressure

@@ -187,7 +187,46 @@ async def rollback(db: AsyncSession, policy: Policy, target_version: PolicyVersi
     await db.flush()
 
 
+async def archive_policy(db: AsyncSession, policy: Policy, *, actor_id: uuid.UUID) -> None:
+    """Retires a policy without deleting it (see Policy's docstring for why
+    there is no hard delete). Refused while any group still has it
+    attached, so archiving can never silently change what a user's
+    sessions are allowed to do — detach it from every group first.
+    """
+    if policy.archived_at is not None:
+        raise PolicyServiceError("policy is already archived")
+    attached = await db.execute(select(GroupPolicy.id).where(GroupPolicy.policy_id == policy.id).limit(1))
+    if attached.first() is not None:
+        raise PolicyServiceError("policy is still attached to at least one group; detach it from every group first")
+    policy.archived_at = datetime.now(UTC)
+    db.add(policy)
+    await record_security_event(
+        db,
+        SecurityEventType.POLICY_CHANGED,
+        user_id=actor_id,
+        metadata={"policy_id": str(policy.id), "action": "archived"},
+    )
+    await db.flush()
+
+
+async def restore_policy(db: AsyncSession, policy: Policy, *, actor_id: uuid.UUID) -> None:
+    if policy.archived_at is None:
+        raise PolicyServiceError("policy is not archived")
+    policy.archived_at = None
+    db.add(policy)
+    await record_security_event(
+        db,
+        SecurityEventType.POLICY_CHANGED,
+        user_id=actor_id,
+        metadata={"policy_id": str(policy.id), "action": "restored"},
+    )
+    await db.flush()
+
+
 async def attach_policy_to_group(db: AsyncSession, *, group_id: uuid.UUID, policy_id: uuid.UUID) -> None:
+    policy = await db.get(Policy, policy_id)
+    if policy is not None and policy.archived_at is not None:
+        raise PolicyServiceError("an archived policy cannot be attached to a group; restore it first")
     result = await db.execute(
         select(GroupPolicy).where(GroupPolicy.group_id == group_id, GroupPolicy.policy_id == policy_id)
     )

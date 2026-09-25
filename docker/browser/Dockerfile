@@ -26,13 +26,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 # sqlite3, libxml2, ...) resolves against whatever OS security patches
 # Debian has actually released, not just what apt's default resolver would
 # otherwise pick (A5).
+#
+# fonts-liberation alone is not enough: fontconfig's generic
+# sans-serif/serif/system-ui lists never reach Liberation Sans (only the
+# literal "Arial" alias does), so Firefox's own UI and every page asking for
+# a generic family fell back to Liberation Mono. DejaVu heads every generic
+# list; Noto Color Emoji covers emoji. No CJK set by default (~50 MB+).
 RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         firefox-esr \
         xvfb \
         x11vnc \
         dbus-x11 \
+        fonts-dejavu-core \
         fonts-liberation \
+        fonts-noto-color-emoji \
+        fontconfig \
         ca-certificates \
         attr \
     && rm -rf /var/lib/apt/lists/*

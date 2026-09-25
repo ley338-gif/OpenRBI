@@ -161,3 +161,69 @@ async def test_update_policy_is_admin_only(db, client):
     )
 
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_there_is_no_hard_delete_for_policies(db, client):
+    """Findings addendum 3, #13 — deliberate, not a gap: past sessions and
+    quarantine decisions reference their exact PolicyVersion for audit.
+    """
+    admin, password = await make_user(db, role_name="ADMIN")
+    policy = await create_policy(db, name=f"{PREFIX}nodelete-{uuid.uuid4().hex}", policy_type="MIME", actor_id=admin.id)
+    await db.commit()
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+
+    response = await client.delete(f"/admin/policies/{policy.id}", cookies={"openrbi_session": cookie})
+
+    assert response.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_archive_hides_policy_from_default_list_and_restore_brings_it_back(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    unique_key = uuid.uuid4().hex
+    policy = await create_policy(db, name=f"{PREFIX}archive-{unique_key}", policy_type="MIME", actor_id=admin.id)
+    await db.commit()
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    cookies = {"openrbi_session": cookie}
+
+    archived = await client.post(f"/admin/policies/{policy.id}/archive", cookies=cookies)
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived_at"] is not None
+
+    default_view = (await client.get(f"/admin/policies?search={unique_key}", cookies=cookies)).json()
+    assert default_view["total"] == 0
+    assert default_view["stats"]["archived"] >= 1
+    archived_view = (await client.get(f"/admin/policies?search={unique_key}&archived=true", cookies=cookies)).json()
+    assert [item["id"] for item in archived_view["items"]] == [str(policy.id)]
+
+    again = await client.post(f"/admin/policies/{policy.id}/archive", cookies=cookies)
+    assert again.status_code == 409
+
+    restored = await client.post(f"/admin/policies/{policy.id}/restore", cookies=cookies)
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["archived_at"] is None
+    assert (await client.get(f"/admin/policies?search={unique_key}", cookies=cookies)).json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_is_refused_while_attached_and_archived_policy_cannot_be_attached(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    unique_key = uuid.uuid4().hex
+    policy = await create_policy(db, name=f"{PREFIX}attached-{unique_key}", policy_type="MIME", actor_id=admin.id)
+    await db.commit()
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+    cookies = {"openrbi_session": cookie}
+    group = await client.post("/admin/groups", json={"name": f"{PREFIX}group-{unique_key}"}, cookies=cookies)
+    assert group.status_code in (200, 201), group.text
+    group_id = group.json()["id"]
+
+    assert (await client.post(f"/admin/policies/{policy.id}/groups/{group_id}", cookies=cookies)).status_code == 204
+    refused = await client.post(f"/admin/policies/{policy.id}/archive", cookies=cookies)
+    assert refused.status_code == 409
+    assert "attached" in refused.json()["detail"]
+
+    assert (await client.delete(f"/admin/policies/{policy.id}/groups/{group_id}", cookies=cookies)).status_code == 204
+    assert (await client.post(f"/admin/policies/{policy.id}/archive", cookies=cookies)).status_code == 200
+    reattach = await client.post(f"/admin/policies/{policy.id}/groups/{group_id}", cookies=cookies)
+    assert reattach.status_code == 409

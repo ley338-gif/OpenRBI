@@ -24,12 +24,14 @@ from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.models.user import User
 from app.services.policies import (
     PolicyServiceError,
+    archive_policy,
     attach_policy_to_group,
     create_draft_version,
     create_policy,
     detach_policy_from_group,
     publish_version,
     rename_policy,
+    restore_policy,
     update_draft_version,
 )
 from app.services.policies import rollback as rollback_service
@@ -108,6 +110,7 @@ async def _policy_summary(policy: Policy, db: AsyncSession) -> PolicySummary:
         created_at=policy.created_at,
         updated_at=updated_at,
         updated_by=updated_by,
+        archived_at=policy.archived_at,
     )
 
 
@@ -117,6 +120,7 @@ async def list_policies(
     policy_type: str | None = None,
     status_filter: str | None = None,
     usage: str | None = None,
+    archived: bool = False,
     sort_by: str = "updated_at",
     sort_dir: str = "desc",
     offset: int = 0,
@@ -126,17 +130,21 @@ async def list_policies(
     if limit < 1 or limit > 100 or offset < 0:
         raise HTTPException(status_code=422, detail="invalid pagination")
     policies = (await db.execute(select(Policy))).scalars().all()
-    summaries = [await _policy_summary(policy, db) for policy in policies]
+    all_summaries = [await _policy_summary(policy, db) for policy in policies]
+    # Archived policies are out of every KPI and hidden from the default
+    # view; `archived=true` lists only them (to review or restore).
+    summaries = [item for item in all_summaries if item.archived_at is None]
     stats = PolicyStats(
         total=len(summaries),
         published=sum(item.current_version_id is not None for item in summaries),
         drafts=sum(item.has_draft for item in summaries),
         in_use=sum(bool(item.assigned_groups) for item in summaries),
         total_versions=sum(item.version_count for item in summaries),
+        archived=len(all_summaries) - len(summaries),
         last_updated_at=max((item.updated_at for item in summaries), default=None),
         last_updated_by=max(summaries, key=lambda item: item.updated_at).updated_by if summaries else None,
     )
-    filtered = summaries
+    filtered = [item for item in all_summaries if item.archived_at is not None] if archived else summaries
     if search:
         needle = search.casefold()
         filtered = [item for item in filtered if needle in item.name.casefold() or needle in (item.description or "").casefold()]
@@ -299,10 +307,53 @@ async def rollback_endpoint(
     return await _policy_summary(policy, db)
 
 
+@router.post("/{policy_id}/archive", response_model=PolicySummary)
+async def archive_policy_endpoint(
+    policy_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PolicySummary:
+    """There is deliberately no DELETE /admin/policies/{id}: past sessions
+    and quarantine decisions reference their exact PolicyVersion for
+    audit. Archiving hides a retired policy instead (409 while it is still
+    attached to any group).
+    """
+    policy = await _get_policy_or_404(db, policy_id)
+    try:
+        await archive_policy(db, policy, actor_id=current_user.id)
+    except PolicyServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(policy)
+    return await _policy_summary(policy, db)
+
+
+@router.post("/{policy_id}/restore", response_model=PolicySummary)
+async def restore_policy_endpoint(
+    policy_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PolicySummary:
+    policy = await _get_policy_or_404(db, policy_id)
+    try:
+        await restore_policy(db, policy, actor_id=current_user.id)
+    except PolicyServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await db.commit()
+    await db.refresh(policy)
+    return await _policy_summary(policy, db)
+
+
 @router.post("/{policy_id}/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def attach_to_group(policy_id: uuid.UUID, group_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
     await _get_policy_or_404(db, policy_id)
-    await attach_policy_to_group(db, group_id=group_id, policy_id=policy_id)
+    try:
+        await attach_policy_to_group(db, group_id=group_id, policy_id=policy_id)
+    except PolicyServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await db.commit()
 
 

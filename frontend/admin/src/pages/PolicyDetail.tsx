@@ -56,6 +56,7 @@ export function PolicyDetail() {
   const [clipboardMode, setClipboardMode] = useState<ClipboardMode>(DEFAULT_CLIPBOARD_MODE);
   const [busy, setBusy] = useState(false);
   const [pendingRollback, setPendingRollback] = useState<{ id: string; versionNumber: number } | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
@@ -186,6 +187,35 @@ export function PolicyDetail() {
     }
   }
 
+  async function archive() {
+    if (!id) return;
+    setBusy(true);
+    try {
+      await adminApi.archivePolicy(id);
+      notify("Policy archived");
+      load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not archive this policy", "error");
+    } finally {
+      setBusy(false);
+      setConfirmArchive(false);
+    }
+  }
+
+  async function restore() {
+    if (!id) return;
+    setBusy(true);
+    try {
+      await adminApi.restorePolicy(id);
+      notify("Policy restored");
+      load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not restore this policy", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function searchGroups(query: string): Promise<AttachListItem[]> {
     const groups = await adminApi.listGroups();
     const needle = query.toLowerCase();
@@ -277,11 +307,40 @@ export function PolicyDetail() {
             )
           }
           actions={
-            <button type="button" className="btn btn-secondary btn-sm" onClick={startEditingDetails}>
-              Rename / edit description
-            </button>
+            <>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={startEditingDetails}>
+                Rename / edit description
+              </button>
+              {policy.archived_at ? (
+                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void restore()}>
+                  Restore
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={busy || policy.assigned_groups.length > 0}
+                  title={policy.assigned_groups.length > 0 ? "Detach this policy from every group before archiving it" : undefined}
+                  onClick={() => setConfirmArchive(true)}
+                >
+                  Archive
+                </button>
+              )}
+            </>
           }
         />
+      )}
+
+      {policy.archived_at && (
+        <div className="inline-alert warning">
+          <div>
+            <strong>Archived {formatDateTime(policy.archived_at)}</strong>
+            <p>
+              Hidden from the default policy list and cannot be attached to groups. Kept, not deleted, because past
+              sessions and quarantine decisions reference its versions for audit. Restore it to use it again.
+            </p>
+          </div>
+        </div>
       )}
 
       <div className="card">
@@ -430,6 +489,17 @@ export function PolicyDetail() {
         </div>
       ))}
 
+      {confirmArchive && (
+        <ConfirmDialog
+          title={`Archive "${policy.name}"?`}
+          description="The policy is hidden from the default policy list and can no longer be attached to groups. It is not deleted: its versions stay in the audit trail of past sessions, and you can restore it at any time."
+          confirmLabel="Archive"
+          danger
+          busy={busy}
+          onConfirm={() => void archive()}
+          onCancel={() => setConfirmArchive(false)}
+        />
+      )}
       {pendingRollback && (
         <ConfirmDialog
           title={`Roll back to v${pendingRollback.versionNumber}?`}

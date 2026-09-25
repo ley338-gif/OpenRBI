@@ -320,10 +320,14 @@ async def capacity_snapshot() -> None:
     session-agent's own hysteresis behavior). Also reports Roadmap
     B3.3's real-headroom breakdown (capacity_bound/ram_capacity/
     cpu_capacity), unsmoothed straight from the same response.
+
+    `capacity` is the node's total slots (running sessions included), so
+    "exhausted" is free_slots == 0, not capacity == 0.
     """
     status = await session_agent_client.get_node_status()
     emit(
         capacity=status.capacity,
+        free_slots=max(0, status.capacity - status.active_sessions),
         capacity_bound=status.capacity_bound,
         ram_capacity=status.ram_capacity,
         cpu_capacity=status.cpu_capacity,
@@ -341,8 +345,10 @@ async def capacity_exhausted_rejects_session() -> None:
     Session Agent instead.
     """
     status = await session_agent_client.get_node_status()
-    if status.capacity != 0:
-        raise AssertionError(f"expected real capacity to be genuinely 0 under pressure, got {status.capacity}")
+    if status.capacity > status.active_sessions:
+        raise AssertionError(
+            f"expected no free slot under pressure, got {status.active_sessions}/{status.capacity}"
+        )
     async with async_session_factory() as db:
         user = await make_user(db, "fault-capacity-exhausted")
         before = await db.scalar(select(func.count(BrowserSession.id)))
@@ -355,7 +361,7 @@ async def capacity_exhausted_rejects_session() -> None:
             emit(
                 db_state="UNCHANGED",
                 session_state="NOT_CREATED",
-                worker_capacity=0,
+                worker_capacity=f"{status.active_sessions}/{status.capacity}",
                 user_error=str(exc),
             )
             return
