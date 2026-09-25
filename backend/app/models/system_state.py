@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -49,3 +49,8 @@ class SystemState(Base):
     # token.
     setup_token_hash: Mapped[str | None] = mapped_column(String(255))
     setup_token_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Names of the standard policy templates already handled once
+    # (app/services/standard_policies.py). A template is created at most
+    # once per installation, so renaming or archiving it sticks.
+    seeded_policy_templates: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)

@@ -15,6 +15,7 @@ up-to-date state (already initialized, or the same in-progress admin) and
 never creates a second admin or double-initializes the system.
 """
 
+import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -35,6 +36,7 @@ from app.models.system_state import SYSTEM_STATE_ID, SystemState
 from app.models.user import User
 from app.services.mfa import confirm_enrollment
 from app.services.security_events import record_security_event
+from app.services.standard_policies import seed_standard_policies
 from app.services.users import UserServiceError, create_user
 
 # Bootstrap has no real username yet, so the existing per-username
@@ -47,6 +49,8 @@ _SETUP_TOKEN_RATE_LIMIT_KEY = "__setup_bootstrap__"
 # a security-event JSON blob, not a foreign key), so a fixed sentinel UUID
 # is sufficient and never collides with a real user id in practice.
 BOOTSTRAP_SYSTEM_ACTOR_ID = uuid.UUID("00000000-0000-0000-0000-0000005e7057")
+
+logger = logging.getLogger(__name__)
 
 
 class SetupError(ValueError):
@@ -216,4 +220,13 @@ async def complete_bootstrap_mfa(db: AsyncSession, *, mfa_token: str, code: str,
     db.add(state)
 
     await record_security_event(db, SecurityEventType.SYSTEM_INITIALIZED, user_id=user.id)
+
+    # Standard policy templates come with every fresh install (unattached,
+    # so they change nothing until an admin assigns one). In a savepoint:
+    # a seeding problem must never block finishing setup; deploy.sh retries.
+    try:
+        async with db.begin_nested():
+            await seed_standard_policies(db)
+    except Exception:
+        logger.exception("seeding standard policy templates during first-run setup failed")
     return codes

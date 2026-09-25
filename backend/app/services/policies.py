@@ -43,7 +43,7 @@ def _build_file_rules(file_rules: list[dict]) -> list[FilePolicyRule]:
     return built
 
 
-async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_id: uuid.UUID, description: str | None = None) -> Policy:
+async def create_policy(db: AsyncSession, *, name: str, policy_type: str, actor_id: uuid.UUID | None, description: str | None = None) -> Policy:
     result = await db.execute(select(Policy).where(Policy.name == name))
     if result.scalar_one_or_none() is not None:
         raise PolicyServiceError(f"policy name already taken: {name}")
@@ -78,7 +78,7 @@ async def create_draft_version(
     *,
     content: dict,
     file_rules: list[dict],
-    actor_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
 ) -> PolicyVersion:
     result = await db.execute(
         select(PolicyVersion.version_number)
@@ -126,7 +126,7 @@ async def update_draft_version(
 
 
 async def publish_version(
-    db: AsyncSession, policy: Policy, version: PolicyVersion, *, actor_id: uuid.UUID
+    db: AsyncSession, policy: Policy, version: PolicyVersion, *, actor_id: uuid.UUID | None
 ) -> None:
     if version.policy_id != policy.id:
         raise PolicyServiceError("version does not belong to this policy")

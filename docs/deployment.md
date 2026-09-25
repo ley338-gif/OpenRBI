@@ -23,41 +23,26 @@ cp .env.example .env
 # #secrets-fail-closed-startup-validation-phase-20). Generate each with:
 #   openssl rand -hex 32
 
-# REQUIRED, host-specific — found by actually running the upgrade
-# acceptance test on real infrastructure, not by CI (whose runners paper
-# over this with their own chmod 666 workaround): session-agent runs
-# as a non-root user and cannot reach /var/run/docker.sock at all without
-# this. docker-compose.yml refuses to start session-agent without it set.
-echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
-
-docker compose up -d --build
-
-# REQUIRED on a genuinely fresh database — the backend does not run
-# migrations at startup itself (deliberately: a DB outage or an
-# not-yet-migrated schema must never crash the whole process, see the
-# comment on _lifespan in backend/app/main.py). Without this, every
-# query against system_state/browser_nodes fails with UndefinedTableError
-# on a fresh volume, and /setup/* never produces a setup token:
-docker exec $(docker compose ps -q backend) alembic upgrade head
-
-# Building this way reports version=1.0.0/commit_sha=unknown for every
-# image (each Dockerfile's ARG defaults, RBI-POST-014) — fine for a quick
-# local check, but useless for "which exact code is this" later. Use
-# scripts/build.sh instead of `docker compose build`/`up --build` for a
-# build that reports its real git version/commit/date:
-#   ./scripts/build.sh && docker compose up -d
-# See "Local build version metadata" below.
-
-# The browser sandbox image isn't a compose service — the Session Agent
-# spawns per-session containers from it directly. Build it once (and
-# whenever docker/browser/ changes):
-./scripts/build-browser-image.sh
-
-# Apply the browser-plane network egress blocklist (docs/security-model.md
-# #network-isolation) — requires root, and must be re-run after any change
-# to which docker networks exist on the host:
-sudo ./scripts/setup-network-isolation.sh
+# Everything else — build, database migrations, browser sandbox image,
+# standard policy templates, network isolation — is one idempotent script,
+# the same one used for every later update:
+sudo ./scripts/deploy.sh
 ```
+
+Then open the Admin Portal and complete **first-run setup** with the setup token the script tells you how to find (`docker compose logs backend | grep -A3 'initial setup token'`). Completing setup also creates the [standard policy templates](policies.md#standard-policy-templates), published but attached to no group.
+
+**What `scripts/deploy.sh` does**, in order (the manual equivalent, if you ever need to run a step by hand):
+
+1. Adds `OPENRBI_DOCKER_SOCKET_GID` to `.env` if it is missing (session-agent runs as a non-root user and cannot reach `/var/run/docker.sock` without it; `docker-compose.yml` refuses to start session-agent unset).
+2. On an existing installation only: `./scripts/backup.sh` (skip with `--no-backup`).
+3. `./scripts/build.sh` — builds all images with their real git version/commit/date (plain `docker compose build` reports `version=1.0.0/commit_sha=unknown`, RBI-POST-014).
+4. `docker compose up -d postgres redis clamav`, then `docker compose run --rm backend alembic upgrade head`. The backend deliberately never migrates at startup (a DB outage or an un-migrated schema must not crash the process, see `_lifespan` in `backend/app/main.py`); without this, a fresh database fails every query against `system_state`/`browser_nodes` and `/setup/*` never produces a setup token.
+5. `docker compose up -d`, then `./scripts/build-browser-image.sh`. The browser sandbox image is not a compose service — the Session Agent starts one container from it per session — so `docker compose up --build` never builds it.
+6. `docker compose restart reverse-proxy` (nginx caches upstream container IPs at worker start).
+7. `./scripts/seed-standard-policies.sh` — adds standard policy templates that are new to this installation; before first-run setup it does nothing.
+8. As root only: `./scripts/setup-network-isolation.sh` (the browser-plane egress blocklist, see [Network isolation](#network-isolation)). Without root the script prints the exact command instead. It must be re-run after any change to which docker networks exist on the host; `./scripts/install-network-isolation-timer.sh` does that automatically.
+
+Extra compose files (e.g. `docker-compose.prod.yml` from [TLS](#tls) below): set `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml` in `.env` — Docker Compose reads it itself, so `deploy.sh` and every manual `docker compose` command use the same stack.
 
 At this point the stack is reachable on `http://<host>:8080` — the **User Portal** at `/` and the **Admin Portal** at `/admin/` — fine for local evaluation, **not** for any real deployment (no TLS, session cookies never get `Secure`, port 8080 rather than 443). Continue below for an actual deployment.
 
@@ -261,13 +246,10 @@ and cleanup behavior are documented in
 
 ```bash
 git pull
-docker compose build backend session-agent frontend
-docker compose up -d
-docker exec <backend-container> alembic upgrade head
-docker compose restart reverse-proxy   # nginx caches upstream container IPs at worker start
+sudo ./scripts/deploy.sh
 ```
 
-Take a backup first (`./scripts/backup.sh`) — migrations in this project are additive where possible (see the Alembic-gotchas notes in `docs/development.md`), but a backup taken immediately before an update is the cheapest insurance against the one that isn't.
+The same script as the installation: it takes a backup first (`./scripts/backup.sh`; migrations in this project are additive where possible, see the Alembic-gotchas notes in `docs/development.md`, but a backup taken immediately before an update is the cheapest insurance against the one that isn't), rebuilds every image including the browser sandbox image, runs the database migrations, restarts the reverse proxy, and adds any standard policy templates introduced by the new release. Templates you have renamed, edited or archived are left alone. Additional worker nodes: `git pull && sudo ./scripts/deploy.sh --node` on each node host.
 
 **Upgrading from a deployment older than v1.0.1**: `.env` needs a new required line before `docker compose up -d` above will start `session-agent` at all —
 
@@ -353,8 +335,8 @@ See [docs/roadmap-b2-multinode.md](roadmap-b2-multinode.md) for the full phase-b
    OPENRBI_AGENT_CONTROL_PLANE_URL=<how this host reaches the control plane>
    OPENRBI_DOCKER_SOCKET_GID=<this host's own docker socket GID>
    ```
-3. `docker compose -f docker-compose.node.yml up -d` — this brings up *only* a Session Agent and its own local `browser-plane`, nothing else. It self-enrolls automatically on startup and appears in the Admin Portal's Workers page as `PENDING`.
-4. Run `sudo ./scripts/setup-network-isolation.sh` on this host (same as any single-node deployment — see [Network isolation](#network-isolation) above; install the systemd timer too).
+3. `sudo ./scripts/deploy.sh --node` — brings up *only* a Session Agent and its own local `browser-plane` (`docker-compose.node.yml`), builds this host's browser sandbox image, and applies the network-isolation rules. The agent self-enrolls automatically on startup and appears in the Admin Portal's Workers page as `PENDING`.
+4. Install the network-isolation systemd timer on this host too (`sudo ./scripts/install-network-isolation-timer.sh`, see [Network isolation](#network-isolation) above).
 5. Back on the control plane, an ADMIN approves the pending node in the Admin Portal (**Workers → Approve**, setting its externally-reachable `endpoint_url`) or revokes it if it shouldn't be trusted. An approved node is immediately schedulable; sessions land on it the same as any other node from that point on.
 
 **What this genuinely requires that no script here automates**, per the roadmap's own explicit "cross-host transport" decision: a private overlay network between the control-plane host and every node host (WireGuard recommended) so `OPENRBI_AGENT_CONTROL_PLANE_URL`/a node's `endpoint_url` are actually reachable. This project validates that a configured endpoint answers and authenticates every call to it — it does not set up or manage that host-to-host connectivity itself, the same boundary already drawn around firewall/VLAN enforcement for Segmented above.

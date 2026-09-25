@@ -22,9 +22,11 @@ from datetime import UTC, datetime, timedelta
 import pyotp
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 
+from app.models.policy import Policy
 from app.models.system_state import SYSTEM_STATE_ID, SystemState
+from app.services.standard_policies import STANDARD_POLICIES
 from app.models.user import User
 from app.services.setup_service import regenerate_setup_token
 from app.core.sessions import clear_login_failures
@@ -54,9 +56,21 @@ async def _reset_system_state(db):
         # attempts leak into the next.
         await clear_login_failures("__setup_bootstrap__")
 
+    # Snapshot the real row first and put it back afterwards: tests run
+    # against the shared dev stack, and ending on "no row" left that
+    # installation looking un-set-up (setup wizard instead of login).
+    original = await db.get(SystemState, SYSTEM_STATE_ID)
+    snapshot = (
+        {c.name: getattr(original, c.key) for c in SystemState.__table__.columns} if original is not None else None
+    )
+    if original is not None:
+        db.expunge(original)
     await _reset()
     yield
     await _reset()
+    if snapshot is not None:
+        db.add(SystemState(**snapshot))
+        await db.commit()
 
 
 async def _fresh_token(db) -> str:
@@ -119,6 +133,15 @@ async def test_full_bootstrap_flow_creates_admin_with_mfa_and_closes_setup(db, c
 
     r = await client.get("/setup/status")
     assert r.json()["setup_required"] is False
+
+    # A fresh install comes with the standard policy templates, published
+    # and unattached (app/services/standard_policies.py).
+    state = await db.get(SystemState, SYSTEM_STATE_ID)
+    await db.refresh(state)
+    template_names = {spec["name"] for spec in STANDARD_POLICIES}
+    assert template_names <= set(state.seeded_policy_templates)
+    existing = await db.execute(select(Policy.name).where(Policy.name.in_(template_names)))
+    assert set(existing.scalars()) == template_names
 
     result = await db.execute(
         text("SELECT r.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = :u"), {"u": username}

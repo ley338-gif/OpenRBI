@@ -20,6 +20,10 @@ procedure.
 
 ## Upgrade
 
+`scripts/deploy.sh` runs the sequence below (plus the backup from step 4 and
+seeding of new standard policy templates) in one idempotent command:
+`git checkout <tag> && sudo ./scripts/deploy.sh`. The individual commands:
+
 ```bash
 git fetch --tags origin
 git checkout <accepted-v1-tag-or-commit>
