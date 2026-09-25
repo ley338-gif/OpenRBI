@@ -32,6 +32,8 @@ docker compose up -d postgres redis clamav
 docker compose run --rm backend alembic upgrade head
 docker compose up -d backend session-agent frontend reverse-proxy
 docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
+docker compose restart reverse-proxy
+./scripts/seed-standard-policies.sh   # only templates new to this installation
 sudo ./scripts/setup-network-isolation.sh
 ```
 

@@ -46,7 +46,8 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is not 
 # Required since v1.0.1 (docs/deployment.md#update-procedure): without it
 # session-agent cannot reach the Docker socket.
 if ! grep -q '^OPENRBI_DOCKER_SOCKET_GID=' .env && [ -S /var/run/docker.sock ]; then
-    gid="$(stat -c '%g' /var/run/docker.sock)"
+    # GNU stat (Linux) first, BSD stat (macOS) as a fallback.
+    gid="$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock)"
     log "adding OPENRBI_DOCKER_SOCKET_GID=$gid to .env"
     printf '\nOPENRBI_DOCKER_SOCKET_GID=%s\n' "$gid" >> .env
 fi

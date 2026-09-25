@@ -6,7 +6,7 @@
 
 Gaps found and fixed during the first real DMZ rollout, kept here as a checklist in case any recur on a checkout that predates the fix:
 
-- **Fresh install has no data at all** — `docker compose up -d --build` alone does not create the schema; run `docker exec $(docker compose ps -q backend) alembic upgrade head` once afterward (now part of both the [README quick start](../README.md#quick-start) and [Installation](deployment.md#installation)). Symptom if skipped: `UndefinedTableError` repeating in the backend log and `/setup/*` never producing a setup token.
+- **Fresh install has no data at all** — `docker compose up -d --build` alone does not create the schema. Install and update with `./scripts/deploy.sh` ([Installation](deployment.md#installation)), which runs the migrations; by hand: `docker compose run --rm backend alembic upgrade head`. Symptom if skipped: `UndefinedTableError` repeating in the backend log and `/setup/*` never producing a setup token.
 - **`.env` edits not taking effect** — `docker compose restart <service>` reuses the environment captured when the container was created; it does **not** re-read `.env`. Every secret-rotation procedure in [deployment.md](deployment.md#update-procedure) uses `docker compose up -d <service>` instead, which does. If you changed `.env` by hand outside those documented procedures, use `up -d`, not `restart`.
 - **Setup bootstrap fails** — see "First-run setup" above.
 - **Port 8080 reachable after a production deploy** — fixed in `docker-compose.prod.yml` (`ports: !override`); confirm with `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` that `reverse-proxy` only publishes `80`/`443` before going live.
@@ -54,7 +54,7 @@ If the log instead shows an expired/invalid token, retrieve a fresh one (`docker
 
 ## Browser sandbox won't start
 
-Confirm the hardened browser image actually exists (`docker images | grep openrbi-browser`) — it's not a compose service, so `docker compose up` never builds it; run `./scripts/build-browser-image.sh` first (see docs/deployment.md).
+Confirm the hardened browser image actually exists (`docker images | grep openrbi-browser`) — it's not a compose service, so `docker compose up` never builds it. `./scripts/deploy.sh` builds it on every install and update; on its own: `./scripts/build-browser-image.sh` (see [deployment.md](deployment.md#installation)). After a change to `docker/browser/`, only sessions started afterwards use the new image.
 
 ## Locked out of every admin account, SSH access only
 
