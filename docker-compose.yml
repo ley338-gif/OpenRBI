@@ -150,7 +150,7 @@ services:
     networks: [control-plane]
 
   reverse-proxy:
-    image: nginx:1.27-alpine
+    image: nginx:1.31-alpine
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

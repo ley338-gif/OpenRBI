@@ -22,7 +22,7 @@ cd "$REPO_ROOT"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "not a git checkout — can't determine VERSION/COMMIT_SHA; falling back to Dockerfile defaults" >&2
-    exec docker compose build "$@"
+    exec docker compose build --pull "$@"
 fi
 
 # --tags --always: the exact release tag on a tagged commit (e.g.
@@ -47,7 +47,11 @@ export OPENRBI_BUILD_DATE="$BUILD_DATE"
 # docker-compose-file-level variable substitution won't reach these into
 # the build automatically. Pass them explicitly per service via
 # --build-arg instead, which works regardless of the compose file.
-exec docker compose build \
+#
+# --pull: always re-resolve the base images (python, node, nginx) so a
+# rebuild picks up their security patches instead of reusing a stale local
+# copy of the same tag.
+exec docker compose build --pull \
     --build-arg "OPENRBI_VERSION=$VERSION" \
     --build-arg "OPENRBI_COMMIT_SHA=$COMMIT_SHA" \
     --build-arg "OPENRBI_BUILD_DATE=$BUILD_DATE" \
