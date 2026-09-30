@@ -53,6 +53,17 @@ if ! grep -q '^OPENRBI_DOCKER_SOCKET_GID=' .env && [ -S /var/run/docker.sock ]; 
     printf '\nOPENRBI_DOCKER_SOCKET_GID=%s\n' "$gid" >> .env
 fi
 
+# The session cookie is only marked Secure when OPENRBI_ENVIRONMENT is not
+# "development" (the default). With the TLS overlay active, forgetting to
+# switch it silently drops that protection, so refuse instead of warning.
+compose_files="${COMPOSE_FILE:-$(sed -n 's/^COMPOSE_FILE=//p' .env | tail -n 1)}"
+case "$compose_files" in
+    *docker-compose.prod.yml*)
+        environment="$(sed -n 's/^OPENRBI_ENVIRONMENT=//p' .env | tail -n 1 | tr -d '"'"'"' ')"
+        [ "$environment" = production ] || die "the TLS overlay (docker-compose.prod.yml) is active but .env has OPENRBI_ENVIRONMENT=${environment:-<unset, i.e. development>}; session cookies would be sent without the Secure flag. Set OPENRBI_ENVIRONMENT=production in .env (docs/deployment.md#tls)"
+        ;;
+esac
+
 build_browser_image() {
     log "building browser sandbox image"
     "$SCRIPT_DIR/build-browser-image.sh"
