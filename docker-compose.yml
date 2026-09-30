@@ -27,7 +27,7 @@ services:
   # e2e assertions) address it by that name, and nothing about the
   # protocol or client library changed, only which image implements it.
   redis:
-    image: valkey/valkey:8-alpine
+    image: valkey/valkey:9-alpine
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
