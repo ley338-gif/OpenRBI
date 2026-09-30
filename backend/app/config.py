@@ -169,6 +169,14 @@ class Settings(BaseSettings):
     # touched — they're preserved for investigation on purpose.
     session_disconnected_timeout_seconds: float = 3600.0
     session_reaper_interval_seconds: float = 60.0
+    # Stuck-transition recovery (same job): a session that has sat in
+    # STARTING or TERMINATING this long (measured from updated_at) is torn
+    # down again through terminate_session(). A normal create/terminate
+    # finishes in seconds; a row only stays in either state if the backend
+    # died mid-transition (e.g. restarted by deploy.sh while the reaper was
+    # terminating a session), which otherwise leaves the sandbox running
+    # forever. 0 disables it.
+    session_stuck_transition_timeout_seconds: float = 600.0
 
     # Downloads/quarantine retention (app/core/quarantine_retention.py).
     # Two separate windows: RELEASED files are cheap to re-request (a fresh
