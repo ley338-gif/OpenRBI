@@ -113,3 +113,96 @@ async def test_timeout_zero_disables_reaping(db, monkeypatch):
     # Don't leave a live-looking row behind for other tests' global counts.
     session.status = SessionStatus.TERMINATED
     await db.commit()
+
+
+def _use_stuck_timeout(monkeypatch, seconds: float) -> None:
+    settings = get_settings().model_copy(update={"session_stuck_transition_timeout_seconds": seconds})
+    monkeypatch.setattr(session_reaper, "get_settings", lambda: settings)
+
+
+@pytest.mark.asyncio
+async def test_session_stuck_terminating_is_torn_down(db, monkeypatch):
+    """The window this recovery exists for: _reap_once() committed
+    TERMINATING, then the backend died before terminate_session() finished,
+    leaving the real container running under a TERMINATING row.
+    """
+    owner, _ = await make_user(db, role_name="USER")
+    session = await create_session_tolerating_transient_capacity(db, owner)
+    session.status = SessionStatus.TERMINATING
+    session.updated_at = datetime.now(UTC) - timedelta(hours=1)
+    await db.commit()
+    session_id = session.id
+    assert str(session_id) in await session_agent_client.list_active_sandboxes()
+
+    _use_stuck_timeout(monkeypatch, 600.0)
+    assert await session_reaper._recover_stuck_once() == 1
+
+    await db.refresh(session)
+    assert session.status == SessionStatus.TERMINATED
+    assert str(session_id) not in await session_agent_client.list_active_sandboxes()
+
+    result = await db.execute(
+        select(SecurityEvent).where(
+            SecurityEvent.event_type == SecurityEventType.SESSION_TIMED_OUT,
+            SecurityEvent.session_id == session_id,
+        )
+    )
+    event = result.scalars().first()
+    assert event is not None, "expected a SESSION_TIMED_OUT event"
+    assert event.metadata_json["reason"] == "stuck_terminating"
+
+
+@pytest.mark.asyncio
+async def test_session_stuck_starting_is_torn_down(db, monkeypatch):
+    owner, _ = await make_user(db, role_name="USER")
+    session = BrowserSession(user_id=owner.id, status=SessionStatus.STARTING)
+    db.add(session)
+    await db.flush()
+    session.updated_at = datetime.now(UTC) - timedelta(hours=1)
+    await db.commit()
+
+    _use_stuck_timeout(monkeypatch, 600.0)
+    assert await session_reaper._recover_stuck_once() == 1
+
+    await db.refresh(session)
+    assert session.status == SessionStatus.TERMINATED
+
+
+@pytest.mark.asyncio
+async def test_recent_transition_is_left_alone(db, monkeypatch):
+    """A create or terminate that is still genuinely in flight must not be
+    interfered with.
+    """
+    owner, _ = await make_user(db, role_name="USER")
+    session = BrowserSession(user_id=owner.id, status=SessionStatus.TERMINATING)
+    db.add(session)
+    await db.commit()
+
+    _use_stuck_timeout(monkeypatch, 600.0)
+    assert await session_reaper._recover_stuck_once() == 0
+
+    await db.refresh(session)
+    assert session.status == SessionStatus.TERMINATING
+
+    # Don't leave a live-looking row behind for other tests' global counts.
+    session.status = SessionStatus.TERMINATED
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_stuck_timeout_zero_disables_recovery(db, monkeypatch):
+    owner, _ = await make_user(db, role_name="USER")
+    session = BrowserSession(user_id=owner.id, status=SessionStatus.STARTING)
+    db.add(session)
+    await db.flush()
+    session.updated_at = datetime.now(UTC) - timedelta(days=1)
+    await db.commit()
+
+    _use_stuck_timeout(monkeypatch, 0)
+    assert await session_reaper._recover_stuck_once() == 0
+
+    await db.refresh(session)
+    assert session.status == SessionStatus.STARTING
+
+    session.status = SessionStatus.TERMINATED
+    await db.commit()

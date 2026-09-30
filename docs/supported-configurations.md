@@ -26,13 +26,14 @@ The version ranges above define compatibility policy. Release artifacts will add
 
 These configurations may be useful for evaluation, but they are not production-supported in v1 and are not release blockers:
 
-- **Segmented Deployment** (`docker-compose.segmented.yml`). Listener separation works, but separate reverse-proxy origins, database roles, Session Agent credentials, and complete network segmentation are intentionally incomplete.
+- **Segmented Deployment** (`docker-compose.segmented.yml`). Listener separation works, and per-listener database roles and scoped Session Agent tokens are available opt-in ([ADR 0025](adr/0025-segmented-credential-scoping.md)). Separate reverse-proxy origins and complete network segmentation are still incomplete.
+- **Multi-node** (`docker-compose.node.yml`, see [deployment.md](deployment.md)). Node enrollment, scheduling across nodes, the cross-host display relay and node-down handling are implemented and tested in CI. Not production-supported: no HA, no live session migration, and the cross-host display relay has not yet been verified on two real hosts ([ADR 0024](adr/0024-cross-host-display-relay.md)).
 - **gVisor/runsc**. The architecture discusses it as a stronger optional runtime, but the current release path does not install, configure, or continuously test it. Treat it as an operator experiment, not an OpenRBI-supported security boundary.
 
 ## Not supported in OpenRBI 1.0
 
 - Kubernetes, Helm, High Availability, multi-region, or automated failover
-- true multi-node scheduling or remote browser-worker orchestration
+- multi-node as a production path (see the technology preview above)
 - SAML, OIDC, or WebAuthn authentication
 - Chromium, Chrome, Edge, Safari, or multiple selectable browser engines
 - persistent browser profiles, cookies, or history

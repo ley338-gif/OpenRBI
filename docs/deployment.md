@@ -113,10 +113,12 @@ mkdir -p certs
 
 # Make every docker compose command (and deploy.sh) use the TLS overlay:
 echo "COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml" >> .env
+# ...and mark the session cookie Secure (HTTPS-only):
+sed -i 's/^OPENRBI_ENVIRONMENT=.*/OPENRBI_ENVIRONMENT=production/' .env
 sudo ./scripts/deploy.sh
 ```
 
-Set `OPENRBI_ENVIRONMENT=production` in `.env` once TLS is in place — this flips the session cookie to `Secure` (HTTPS-only), so it should not be set before a real certificate is actually serving traffic (see [ADR 0008](adr/0008-fail-closed.md)).
+`OPENRBI_ENVIRONMENT=production` flips the session cookie to `Secure` (HTTPS-only), so it belongs together with the TLS overlay, not before a real certificate is serving traffic (see [ADR 0008](adr/0008-fail-closed.md)). `deploy.sh` refuses to run when `COMPOSE_FILE` includes `docker-compose.prod.yml` but `OPENRBI_ENVIRONMENT` is anything other than `production`, so a TLS deployment can no longer silently send the cookie without `Secure`.
 
 `docker-compose.prod.yml` adds `80:80` and `443:443` alongside the base file's `8080:80` — the extra `8080` binding is harmless on the Docker host itself; see [Firewall](#firewall) below for what to actually expose.
 

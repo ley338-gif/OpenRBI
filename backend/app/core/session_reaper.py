@@ -21,6 +21,16 @@ What this deliberately does NOT do:
 - ISOLATED sessions are never touched — isolation preserves the sandbox
   for investigation on purpose (docs/session-lifecycle.md).
 
+The same job also recovers sessions stuck in STARTING or TERMINATING
+(_recover_stuck_once). The API paths only ever flush those states inside a
+request's transaction, so a crash there rolls back; but _reap_once() below
+*commits* TERMINATING before calling terminate_session(), so a backend
+restart or shutdown cancel in that window left the row TERMINATING — and
+the sandbox running — forever: orphan_reconciler deliberately treats
+TERMINATING as "being torn down already". STARTING is covered the same way
+defensively. Both are measured from updated_at and retried through the
+normal, idempotent terminate_session() path.
+
 The disconnect timestamp is last_activity_at, which app/api/display.py's
 disconnect handler and services/sessions.disconnect_session() both stamp
 at the moment a session becomes DISCONNECTED. A row that went DISCONNECTED
@@ -133,6 +143,84 @@ async def _reap_once() -> int:
     return reaped
 
 
+_STUCK_STATUSES = {
+    SessionStatus.STARTING: "stuck_starting",
+    SessionStatus.TERMINATING: "stuck_terminating",
+}
+
+
+async def _recover_stuck_once() -> int:
+    """Returns how many stuck sessions were terminated this cycle."""
+    settings = get_settings()
+    timeout = settings.session_stuck_transition_timeout_seconds
+    if timeout <= 0:
+        return 0
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=timeout)
+    stuck_statuses = tuple(_STUCK_STATUSES)
+
+    recovered = 0
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(BrowserSession.id, BrowserSession.status, BrowserSession.updated_at).where(
+                BrowserSession.status.in_(stuck_statuses), BrowserSession.updated_at < cutoff
+            )
+        )
+        candidates = list(result.all())
+
+        for session_id, stuck_status, stuck_since in candidates:
+            # Claim atomically by bumping updated_at: a second backend
+            # process (or a transition that just completed) matches nothing
+            # here and leaves the row alone. A failed recovery that still
+            # leaves the row stuck is retried one full timeout later, not
+            # every cycle.
+            claim = cast(
+                "CursorResult",
+                await db.execute(
+                    update(BrowserSession)
+                    .where(
+                        BrowserSession.id == session_id,
+                        BrowserSession.status == stuck_status,
+                        BrowserSession.updated_at < cutoff,
+                    )
+                    .values(updated_at=func.now())
+                    .execution_options(synchronize_session=False)
+                ),
+            )
+            if claim.rowcount == 0:
+                continue
+            await db.commit()
+
+            session = await db.get(BrowserSession, session_id, populate_existing=True)
+            if session is None:
+                continue
+            try:
+                await terminate_session(db, session, actor_id=SESSION_REAPER_ACTOR_ID)
+            except SessionServiceError:
+                # Now FAILED: admin-visible, and orphan_reconciler removes a
+                # FAILED row's container once the agent is reachable again.
+                logger.exception("failed to terminate stuck %s session %s", stuck_status.value, session_id)
+                await db.commit()
+                continue
+
+            await record_security_event(
+                db,
+                SecurityEventType.SESSION_TIMED_OUT,
+                user_id=session.user_id,
+                session_id=session.id,
+                metadata={
+                    "reason": _STUCK_STATUSES[stuck_status],
+                    "stuck_since": stuck_since.isoformat(),
+                    "timeout_seconds": timeout,
+                },
+            )
+            await db.commit()
+            recovered += 1
+            logger.info("terminated session %s stuck in %s since %s", session_id, stuck_status.value, stuck_since)
+
+    return recovered
+
+
 async def _poll_loop() -> None:
     settings = get_settings()
     while True:
@@ -141,6 +229,10 @@ async def _poll_loop() -> None:
             await _reap_once()
         except Exception:
             logger.exception("session reaper cycle failed unexpectedly")
+        try:
+            await _recover_stuck_once()
+        except Exception:
+            logger.exception("stuck-session recovery cycle failed unexpectedly")
 
 
 def start() -> None:
