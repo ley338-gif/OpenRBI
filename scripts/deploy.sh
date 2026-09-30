@@ -9,9 +9,10 @@
 #
 # Control plane, in the order docs/release/upgrade.md prescribes:
 #   1. backup (only when a stack is already running, i.e. an update)
-#   2. build images with real version metadata (scripts/build.sh)
+#   2. pull upstream images, build ours with fresh base images and real
+#      version metadata (scripts/build.sh)
 #   3. start postgres/redis/clamav, run database migrations, start the rest
-#   4. build the browser sandbox image (not a compose service)
+#   4. build the browser sandbox image uncached, so Firefox ESR is current
 #   5. restart reverse-proxy (nginx caches upstream container IPs)
 #   6. seed standard policy templates that are new in this release
 #   7. apply network isolation when run as root, otherwise say how
@@ -72,7 +73,8 @@ network_isolation() {
 
 if [ "$MODE" = node ]; then
     log "worker node: building and starting session-agent"
-    docker compose -f docker-compose.node.yml up -d --build
+    docker compose -f docker-compose.node.yml build --pull
+    docker compose -f docker-compose.node.yml up -d
     build_browser_image
     network_isolation
     log "done. A new node appears as PENDING under Admin Portal -> Workers until approved."
@@ -92,6 +94,12 @@ if [ "$UPDATE" -eq 1 ] && [ "$BACKUP" -eq 1 ]; then
     OPENRBI_BACKEND_CONTAINER="$(docker compose ps -q backend)" \
         "$SCRIPT_DIR/backup.sh"
 fi
+
+log "pulling upstream images"
+# `up -d` only pulls an image that is missing locally, so a stale
+# postgres/valkey/clamav/nginx copy would otherwise run forever, missing
+# every security release published under the same tag.
+docker compose pull --ignore-buildable
 
 log "building images"
 "$SCRIPT_DIR/build.sh"

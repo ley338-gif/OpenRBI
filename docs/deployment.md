@@ -253,7 +253,7 @@ git pull
 sudo ./scripts/deploy.sh
 ```
 
-The same script as the installation: it takes a backup first (`./scripts/backup.sh`; migrations in this project are additive where possible, see the Alembic-gotchas notes in `docs/development.md`, but a backup taken immediately before an update is the cheapest insurance against the one that isn't), rebuilds every image including the browser sandbox image, runs the database migrations, restarts the reverse proxy, and adds any standard policy templates introduced by the new release. Templates you have renamed, edited or archived are left alone. Additional worker nodes: `git pull && sudo ./scripts/deploy.sh --node` on each node host.
+The same script as the installation: it takes a backup first (`./scripts/backup.sh`; migrations in this project are additive where possible, see the Alembic-gotchas notes in `docs/development.md`, but a backup taken immediately before an update is the cheapest insurance against the one that isn't), pulls the current upstream images (postgres, valkey, clamav, nginx), rebuilds every image on fresh base images, including the browser sandbox image without build cache so it always gets the latest Firefox ESR security release from Debian, runs the database migrations, restarts the reverse proxy, and adds any standard policy templates introduced by the new release. Templates you have renamed, edited or archived are left alone. Additional worker nodes: `git pull && sudo ./scripts/deploy.sh --node` on each node host.
 
 **Upgrading from a deployment older than v1.0.1**: `.env` needs a new required line before `docker compose up -d` above will start `session-agent` at all —
 

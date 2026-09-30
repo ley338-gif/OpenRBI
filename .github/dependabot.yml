@@ -56,9 +56,14 @@ updates:
     schedule:
       interval: "weekly"
 
-  # No entry for docker/nginx: reverse-proxy uses the stock nginx:1.27-alpine
-  # image directly in docker-compose.yml, with no custom Dockerfile —
-  # Dependabot's docker ecosystem needs an actual Dockerfile at `directory`.
+  # Stock images used directly in compose files (reverse-proxy nginx,
+  # postgres, valkey, clamav) have no Dockerfile, so the docker ecosystem
+  # above never sees them — the reverse proxy sat on the unmaintained
+  # nginx 1.27 branch while the frontend image had moved on to 1.31.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
 
   - package-ecosystem: "github-actions"
     directory: "/"
