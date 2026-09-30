@@ -6,6 +6,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+## [1.0.2-rc.1] - 2026-09-30
+
 ### Security
 
 - **`deploy.sh` refuses a TLS deployment whose session cookie would not be `Secure`.** The cookie only gets the `Secure` flag when `OPENRBI_ENVIRONMENT` is not `development`, which is the default. With `COMPOSE_FILE` including `docker-compose.prod.yml` and `OPENRBI_ENVIRONMENT` anything but `production`, the script now stops with instructions instead of deploying. `docs/deployment.md#tls` now sets both in the same step. Closes (for `deploy.sh`-based deployments) gap 4 of `docs/security-self-assessment.md`.
