@@ -22,7 +22,7 @@ The build order and scope that produced this release are tracked as development 
 ## Quick start
 
 > See [docs/deployment.md](docs/deployment.md) for a full production deployment (TLS, firewall, backup/restore). The quick start below is local/evaluation only.
-> The deliberately narrow OpenRBI 1.0 platform and version scope is defined in [docs/supported-configurations.md](docs/supported-configurations.md). Segmented Deployment and gVisor are technology previews, not supported v1 production paths.
+> The deliberately narrow OpenRBI 1.0 platform and version scope is defined in [docs/supported-configurations.md](docs/supported-configurations.md). Segmented Deployment, multi-node and gVisor are technology previews, not supported v1 production paths.
 
 ```bash
 git clone <this-repo>
@@ -85,7 +85,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 
 ## Scope
 
-OpenRBI 1.0 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, real multi-node scheduling, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
+OpenRBI 1.0 deliberately excludes OIDC/SAML/WebAuthn federation, Kubernetes, HA, SIEM integration, threat intel feeds, full DLP, content disarm & reconstruction, persistent browser profiles, SSL inspection, and ML-based detection. The architecture avoids blocking these as future work without half-building them now.
 
 LDAP/LDAPS authentication against an existing Active Directory (Roadmap Phase B / B1) is implemented as an equal, parallel option alongside local login, fully configurable through the Admin Portal — no `.env` editing or backend restart needed (Roadmap B1.8, [ADR 0016](docs/adr/0016-ldap-admin-configuration.md)) — see [docs/admin-guide.md](docs/admin-guide.md#ldapldaps-authentication-roadmap-phase-b--b1) for configuration and [ADR 0015](docs/adr/0015-auth-provider-abstraction.md) for the underlying design.
 
