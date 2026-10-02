@@ -64,6 +64,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Major versions of the data stores are migrations, not bumps: a
+    # postgres major can't open the previous major's data directory
+    # (pg_upgrade or dump/restore, and postgres 18 also moved PGDATA), and
+    # valkey majors change persistence/replication formats. They get their
+    # own planned change with an upgrade runbook; patch/minor stay automatic.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "valkey/valkey"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
