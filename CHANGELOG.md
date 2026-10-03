@@ -6,6 +6,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Security
+
+- **`scripts/setup-network-isolation.sh` now uses the same browser-plane settings as the running stack, and refuses a wrong exemption.**
+  - Before, the script read `OPENRBI_AGENT_BROWSER_PLANE_IP` only from its own environment. Neither `deploy.sh` nor the systemd timer loaded `.env`. A host that set a non-default agent address in `.env` (as `.env.example` suggests) therefore kept exempting `172.30.0.2`. Docker could then hand that address to a sandbox, giving it an unrestricted `ACCEPT` into the control plane.
+  - The script now reads `OPENRBI_AGENT_BROWSER_PLANE_IP`, `OPENRBI_BROWSER_PLANE_NETWORK` and `COMPOSE_PROJECT_NAME` from the environment or the checkout's `.env`. The network name defaults to `<project>_browser-plane`, as compose names it.
+  - Before changing any rule, it verifies that each exempted address belongs to the `session-agent` container. Otherwise it leaves the existing rules untouched, doesn't refresh the marker (so health turns `DEGRADED`) and names the agent's real address.
+  - New `--check` mode runs the validation without root. `scripts/run-security-tests.sh` covers both the refusal and reading the value from `.env`.
+  - **Behavior change:** a host whose exemption didn't match the agent's address — so far a silent misconfiguration — now gets an error from `deploy.sh`/the timer until `OPENRBI_AGENT_BROWSER_PLANE_IP` is corrected. See [docs/deployment.md#network-isolation](docs/deployment.md#network-isolation).
+
 ### Documentation
 
 - Documentation consistency pass against the 1.0.2 code. No behavior change.
