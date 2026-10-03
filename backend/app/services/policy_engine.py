@@ -108,11 +108,18 @@ async def evaluate_file_action(
     for rule, version_id in rules:
         matched = False
         if rule.rule_type == FileRuleType.MIME:
-            matched = (
-                matches_mime_pattern(decision.declared_mime, rule.match_pattern)
-                or matches_mime_pattern(decision.detected_mime, rule.match_pattern)
-                or matches_mime_pattern(decision.extension, rule.match_pattern)
-            )
+            # The detected (magic-byte) MIME type is the only signal the
+            # file's sender cannot choose freely. The extension and a
+            # declared Content-Type are attacker-controlled, so they may
+            # only ever make a decision stricter: they count for DENY and
+            # QUARANTINE rules, never for AUTO_RELEASE — otherwise a
+            # `.docx -> AUTO_RELEASE` rule would release an executable
+            # renamed to report.docx.
+            matched = matches_mime_pattern(decision.detected_mime, rule.match_pattern)
+            if not matched and rule.action != FileAction.AUTO_RELEASE:
+                matched = matches_mime_pattern(decision.declared_mime, rule.match_pattern) or matches_mime_pattern(
+                    decision.extension, rule.match_pattern
+                )
         elif rule.rule_type == FileRuleType.SOURCE:
             if decision.source_hostname:
                 matched = matches_source_pattern(decision.source_hostname, rule.match_pattern)

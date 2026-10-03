@@ -25,12 +25,10 @@ from app.models.policy import Policy
 from app.models.system_state import SYSTEM_STATE_ID, SystemState
 from app.services.policies import create_draft_version, create_policy, publish_version
 
-# Real-world MIME types for the OOXML formats (docs/policies.md's own
-# examples use exactly this style: an exact type, or a dot-prefixed
-# extension as a fallback when a declared/detected MIME type is missing or
-# generic — matches_mime_pattern() (app/core/mime_matching.py) checks the
-# declared MIME, the scanner-detected MIME, and the extension, so either
-# form catches a real file).
+# Real-world MIME types for the OOXML formats. AUTO_RELEASE rules must use
+# MIME types: the policy engine (app/services/policy_engine.py) only lets a
+# file's detected (magic-byte) MIME type satisfy an AUTO_RELEASE rule, never
+# its extension or declared Content-Type.
 _OFFICE_MIME_TYPES = [
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
@@ -38,12 +36,23 @@ _OFFICE_MIME_TYPES = [
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # .pptx
 ]
 
-# Executables are frequently mislabeled or missing a declared Content-Type
-# entirely, so these rules lean on the extension fallback rather than a
-# MIME type — matches_mime_pattern() checks it as a third, independent
-# signal alongside declared/detected MIME (never the sole check upstream,
-# see that module's docstring).
+# DENY rules may match on the extension (it can only make a decision
+# stricter), which catches executables by name. The detected MIME types
+# below catch them when renamed (e.g. an .exe saved as report.pdf) — the
+# values libmagic reports for PE, DOS, MSI, ELF, Mach-O and script files.
 _EXECUTABLE_EXTENSIONS = [".exe", ".msi", ".bat", ".cmd", ".ps1", ".sh", ".com", ".scr"]
+_EXECUTABLE_MIME_TYPES = [
+    "application/vnd.microsoft.portable-executable",
+    "application/x-dosexec",
+    "application/x-msdownload",
+    "application/x-msi",
+    "application/x-executable",
+    "application/x-pie-executable",
+    "application/x-sharedlib",
+    "application/x-mach-binary",
+    "text/x-shellscript",
+    "text/x-msdos-batch",
+]
 
 STANDARD_POLICIES: list[dict] = [
     {
@@ -81,13 +90,15 @@ STANDARD_POLICIES: list[dict] = [
         "name": "Block Executables",
         "policy_type": "MIME",
         "description": (
-            "Hard DENY for common executable/script extensions, regardless of what any "
-            "other group policy allows — DENY outranks QUARANTINE and AUTO_RELEASE in "
-            "the engine's conflict resolution (docs/policies.md)."
+            "Hard DENY for common executable/script extensions and for files detected as "
+            "executables even when renamed, regardless of what any other group policy "
+            "allows — DENY outranks QUARANTINE and AUTO_RELEASE in the engine's conflict "
+            "resolution (docs/policies.md)."
         ),
         "content": {},
         "file_rules": [
-            {"rule_type": "MIME", "match_pattern": ext, "action": "DENY"} for ext in _EXECUTABLE_EXTENSIONS
+            {"rule_type": "MIME", "match_pattern": pattern, "action": "DENY"}
+            for pattern in _EXECUTABLE_EXTENSIONS + _EXECUTABLE_MIME_TYPES
         ],
     },
     {

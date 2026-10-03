@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.mime_matching import is_extension_pattern
 from app.models.enums import (
     FileAction,
     FileRuleType,
@@ -19,6 +20,11 @@ class PolicyServiceError(ValueError):
     pass
 
 
+class PolicyRuleError(PolicyServiceError):
+    """A file rule that is invalid on its own (as opposed to a valid request
+    against a policy/version in the wrong state)."""
+
+
 def _build_file_rules(file_rules: list[dict]) -> list[FilePolicyRule]:
     """Explicitly converts rule_type/action strings to their enum members
     rather than relying on SQLAlchemy to coerce a plain string at flush
@@ -31,7 +37,15 @@ def _build_file_rules(file_rules: list[dict]) -> list[FilePolicyRule]:
             rule_type = FileRuleType(rule["rule_type"])
             action = FileAction(rule["action"])
         except ValueError as exc:
-            raise PolicyServiceError(f"invalid file rule: {exc}") from exc
+            raise PolicyRuleError(f"invalid file rule: {exc}") from exc
+        if rule_type == FileRuleType.MIME and action == FileAction.AUTO_RELEASE and is_extension_pattern(rule["match_pattern"]):
+            # The policy engine never auto-releases on an extension match
+            # (app/services/policy_engine.py) — reject the rule instead of
+            # storing one that silently does nothing.
+            raise PolicyRuleError(
+                f"invalid file rule: AUTO_RELEASE needs a MIME type such as application/pdf, not the "
+                f"extension pattern '{rule['match_pattern']}' — extensions can only DENY or QUARANTINE"
+            )
         built.append(
             FilePolicyRule(
                 rule_type=rule_type,
