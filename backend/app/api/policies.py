@@ -23,6 +23,7 @@ from app.models.group import Group
 from app.models.policy import FilePolicyRule, GroupPolicy, Policy, PolicyVersion
 from app.models.user import User
 from app.services.policies import (
+    PolicyRuleError,
     PolicyServiceError,
     archive_policy,
     attach_policy_to_group,
@@ -223,13 +224,17 @@ async def create_version(
     db: AsyncSession = Depends(get_db),
 ) -> PolicyVersionResponse:
     policy = await _get_policy_or_404(db, policy_id)
-    version = await create_draft_version(
-        db,
-        policy,
-        content=payload.content,
-        file_rules=[r.model_dump() for r in payload.file_rules],
-        actor_id=current_user.id,
-    )
+    try:
+        version = await create_draft_version(
+            db,
+            policy,
+            content=payload.content,
+            file_rules=[r.model_dump() for r in payload.file_rules],
+            actor_id=current_user.id,
+        )
+    except PolicyServiceError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await db.commit()
     return await _version_response(db, version)
 
@@ -247,6 +252,9 @@ async def update_version(
         version = await update_draft_version(
             db, version, content=payload.content, file_rules=[r.model_dump() for r in payload.file_rules]
         )
+    except PolicyRuleError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except PolicyServiceError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

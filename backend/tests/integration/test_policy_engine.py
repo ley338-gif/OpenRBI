@@ -9,10 +9,12 @@ import pytest
 from sqlalchemy import select
 
 from app.core.source_matching import matches_source_pattern
-from app.models.enums import SecurityEventType
+from app.models.enums import FileAction, SecurityEventType
 from app.models.group import Group, UserGroup
+from app.models.policy import FilePolicyRule
 from app.models.security_event import SecurityEvent
 from app.services.policies import (
+    PolicyRuleError,
     attach_policy_to_group,
     create_draft_version,
     create_policy,
@@ -28,7 +30,10 @@ from app.services.policy_engine import (
     resolve_clipboard_policy,
     resolve_session_resolution,
 )
-from tests.conftest import PREFIX, create_session_tolerating_transient_capacity, make_user
+from app.services.standard_policies import STANDARD_POLICIES
+from tests.conftest import PREFIX, create_session_tolerating_transient_capacity, login_with_mfa_enrollment, make_user
+
+_PE_MIME = "application/vnd.microsoft.portable-executable"
 
 
 async def _make_group(db) -> Group:
@@ -187,6 +192,128 @@ async def test_pdf_auto_release_overridden_by_broader_quarantine_rule_in_second_
 
     result = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime="application/pdf"))
     assert result.action.value == "QUARANTINE"
+
+
+async def _user_in_group_with_policy(db, policy=None):
+    user, _ = await make_user(db, role_name="USER")
+    group = await _make_group(db)
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+    await db.commit()
+    if policy is not None:
+        await attach_policy_to_group(db, group_id=group.id, policy_id=policy.id)
+    return user, group
+
+
+@pytest.mark.asyncio
+async def test_auto_release_rule_with_extension_pattern_is_rejected(db):
+    """An extension can never satisfy an AUTO_RELEASE rule, so storing one
+    would be a rule that silently does nothing — rejected on save."""
+    admin, _ = await make_user(db, role_name="ADMIN")
+    policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="MIME", actor_id=admin.id)
+    with pytest.raises(PolicyRuleError):
+        await create_draft_version(
+            db,
+            policy,
+            content={},
+            file_rules=[{"rule_type": "MIME", "match_pattern": ".docx", "action": "AUTO_RELEASE"}],
+            actor_id=admin.id,
+        )
+    await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_auto_release_rule_with_extension_pattern_is_400_over_http(db, client):
+    admin, password = await make_user(db, role_name="ADMIN")
+    policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="MIME", actor_id=admin.id)
+    await db.commit()
+    cookie = await login_with_mfa_enrollment(client, admin.username, password)
+
+    response = await client.post(
+        f"/admin/policies/{policy.id}/versions",
+        json={"content": {}, "file_rules": [{"rule_type": "MIME", "match_pattern": ".pdf", "action": "AUTO_RELEASE"}]},
+        cookies={"openrbi_session": cookie},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "AUTO_RELEASE" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_extension_auto_release_rule_does_not_release_renamed_executable(db):
+    """A `.docx -> AUTO_RELEASE` rule stored before the save-time check
+    existed must not release an executable that is merely named
+    report.docx: only the detected MIME type can satisfy AUTO_RELEASE, so
+    the file falls through to the fail-closed QUARANTINE default."""
+    admin, _ = await make_user(db, role_name="ADMIN")
+    policy = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="MIME", actor_id=admin.id)
+    version = await create_draft_version(
+        db,
+        policy,
+        content={},
+        file_rules=[{"rule_type": "MIME", "match_pattern": "application/x-placeholder", "action": "AUTO_RELEASE"}],
+        actor_id=admin.id,
+    )
+    rule = (await db.execute(select(FilePolicyRule).where(FilePolicyRule.policy_version_id == version.id))).scalar_one()
+    rule.match_pattern = ".docx"  # what a pre-upgrade installation may already have stored
+    await publish_version(db, policy, version, actor_id=admin.id)
+    await db.commit()
+    user, _ = await _user_in_group_with_policy(db, policy)
+
+    result = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime=_PE_MIME, extension=".docx"))
+
+    assert result.action == FileAction.QUARANTINE
+    assert result.matched_rule_id is None
+
+
+@pytest.mark.asyncio
+async def test_declared_mime_cannot_auto_release(db):
+    """A declared Content-Type is chosen by the sender just like the file
+    name — it must not satisfy an AUTO_RELEASE rule either."""
+    admin, _ = await make_user(db, role_name="ADMIN")
+    policy = await _make_published_mime_policy(db, actor_id=admin.id, action="AUTO_RELEASE", pattern="application/pdf")
+    user, _ = await _user_in_group_with_policy(db, policy)
+
+    result = await evaluate_file_action(
+        db, user.id, FileDecisionInput(declared_mime="application/pdf", detected_mime=_PE_MIME, extension=".pdf")
+    )
+
+    assert result.action == FileAction.QUARANTINE
+
+
+@pytest.mark.asyncio
+async def test_extension_deny_rule_still_blocks(db):
+    """Extensions keep working in the strict direction."""
+    admin, _ = await make_user(db, role_name="ADMIN")
+    policy = await _make_published_mime_policy(db, actor_id=admin.id, action="DENY", pattern=".exe")
+    user, _ = await _user_in_group_with_policy(db, policy)
+
+    result = await evaluate_file_action(
+        db, user.id, FileDecisionInput(detected_mime="application/octet-stream", extension=".exe")
+    )
+
+    assert result.action == FileAction.DENY
+
+
+@pytest.mark.asyncio
+async def test_block_executables_template_denies_renamed_executable(db):
+    """The standard "Block Executables" template also matches executables
+    by detected MIME type, so an .exe saved as report.pdf is denied, even
+    for a user whose other group auto-releases PDFs."""
+    admin, _ = await make_user(db, role_name="ADMIN")
+    spec = next(t for t in STANDARD_POLICIES if t["name"] == "Block Executables")
+    template = await create_policy(db, name=f"{PREFIX}policy_{uuid.uuid4().hex[:8]}", policy_type="MIME", actor_id=admin.id)
+    version = await create_draft_version(db, template, content={}, file_rules=spec["file_rules"], actor_id=admin.id)
+    await publish_version(db, template, version, actor_id=admin.id)
+    await db.commit()
+    pdf_policy = await _make_published_mime_policy(db, actor_id=admin.id, action="AUTO_RELEASE", pattern="application/pdf")
+    user, group = await _user_in_group_with_policy(db, template)
+    await attach_policy_to_group(db, group_id=group.id, policy_id=pdf_policy.id)
+
+    renamed = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime=_PE_MIME, extension=".pdf"))
+    genuine_pdf = await evaluate_file_action(db, user.id, FileDecisionInput(detected_mime="application/pdf", extension=".pdf"))
+
+    assert renamed.action == FileAction.DENY
+    assert genuine_pdf.action == FileAction.AUTO_RELEASE
 
 
 @pytest.mark.asyncio

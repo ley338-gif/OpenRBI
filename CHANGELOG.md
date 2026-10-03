@@ -6,6 +6,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Security
+
+- **A file is never auto-released because of its extension or declared type any more.** A `MIME` policy rule used to match when the declared MIME type, the detected (magic-byte) MIME type *or* the file extension matched its pattern, so an `AUTO_RELEASE` rule with an extension pattern such as `.docx` released an executable renamed to `report.docx` as long as ClamAV found nothing. `AUTO_RELEASE` rules now match the detected MIME type only; extension and declared type still count for `DENY` and `QUARANTINE` rules (they can only make a decision stricter). See [docs/policies.md](docs/policies.md#mime-and-source-matching).
+- The **Block Executables** template also denies the MIME types detected for PE, DOS, MSI, ELF, Mach-O and script files, so a renamed executable is denied rather than only quarantined. Installations that already have the template keep their copy; the added patterns are listed in `backend/app/services/standard_policies.py` (`_EXECUTABLE_MIME_TYPES`) for adding by hand.
+
+### Changed
+
+- **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.
+
 ### Fixed
 
 - **Segmented DB role scoping ([ADR 0025](docs/adr/0025-segmented-credential-scoping.md)) could not actually be used.**
