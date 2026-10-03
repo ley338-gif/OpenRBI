@@ -10,7 +10,7 @@ Recorded: 2026-08-15
 Candidate baseline: `00a2f14922dfe9067b9aa7b9d24178032588245f`  
 Overall result: **PASS — 35/35 scenarios**  
 Authoritative automation: `.github/workflows/ci.yml` → `Release gates`
-Latest published-artifact acceptance: **`v1.0.2-rc.3` — PASS** (see [Published-artifact acceptance runs](#published-artifact-acceptance-runs))
+Latest published-artifact acceptance: **`v1.0.2` (GA) — PASS** (see [Published-artifact acceptance runs](#published-artifact-acceptance-runs))
 
 The baseline's [main CI run](https://github.com/ley338-gif/OpenRBI/actions/runs/31863930779)
 completed successfully, including the aggregate `Release gates` result. The
@@ -366,6 +366,20 @@ accepted against the images it actually published, not against local rebuilds:
 source, pulls each image by the registry digest recorded in the GitHub
 Release metadata, verifies its OCI version/revision labels and runs the same
 functional jobs that provide the evidence for the 35 scenarios above.
+
+### v1.0.2 (GA) — PASS
+
+- **Date:** 2026-10-03
+- **Run:** [Acceptance (published images) #37112717659](https://github.com/ley338-gif/OpenRBI/actions/runs/37112717659), all 12 jobs successful
+- **Tag target:** `2697514dc1cdca7829f01ac8ac3d350635f495c1` (its own `Release gates`: success); promoted from the accepted `v1.0.2-rc.3` with no product code change in between
+- **Images under test** (`ghcr.io/ley338-gif/openrbi-*:1.0.2`):
+  - backend `sha256:060df62ce504de96490032309dbbc2e1ca7e69a251e90ea4f8c463c0d08a4296`
+  - session-agent `sha256:44d2a2642fcc81ea15acf50cc3da91707bda9cea23d3625e1b365d5042c79d74`
+  - frontend `sha256:e523bb1a8c17491949e217e130523d7a836a8f1249d4280444b7f8c4210416a1`
+  - browser `sha256:634177cf37506b347c61fc7e2a67dfb95a65c5cd466eb2d84f81e615b38dbc97` (Firefox ESR 153.4.0esr)
+- **Results:** backend integration 191 passed (34 skipped); security regression 21/21; fault injection all scenarios recovered; LDAP provider 15 passed plus HTTP flows; Playwright E2E 31 passed; fresh install 17 ACCEPT steps; backup/restore BR-01 to BR-10; upgrade UP-01 to UP-09 (0.1.1 baseline → published 1.0.2, Alembic `d5e8a13c6f92` → `3c6f0e8b2a57`); Trivy CRITICAL clean on all four images
+- **Build check:** every application image pulled by digest, none built from source except the upgrade test's 0.1.1 baseline before UP-03.
+- **Deviations:** none.
 
 ### v1.0.2-rc.3 — PASS
 
