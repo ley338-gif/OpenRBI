@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Two notes since: (1) a distinct per-host `browser-plane` subnet (point 5 below) turned out not to be necessary — Docker bridge networks are host-local, so `docker-compose.node.yml` keeps the default subnet and `OPENRBI_BROWSER_PLANE_SUBNET` only needs overriding when one host runs more than one `browser-plane` or already uses the range. (2) The genuine two-host verification named under Consequences is still open; Roadmap B2.6/B2.7 were completed with single-host verification only, so the gap is now tracked in [supported-configurations.md](../supported-configurations.md) (multi-node stays a technology preview).
 
 ## Context
 

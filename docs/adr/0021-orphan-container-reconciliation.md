@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Amended by Roadmap B2.5: reconciliation now walks every `APPROVED` node's own inventory independently instead of the single default agent described below, and a session on an unreachable node becomes `FAILED` (tagged `node_unreachable`) after the grace period — see [roadmap-b2-multinode.md](../roadmap-b2-multinode.md) and [architecture.md](../architecture.md#multi-node-readiness).
 
 ## Context
 

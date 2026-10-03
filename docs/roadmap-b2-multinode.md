@@ -144,7 +144,9 @@ session ever created still needs no prior admin action. Fails closed
 with the same `NoCapacityError` as before when every candidate is
 excluded or full. Session Agent capacity is now real per-node deploy-time
 config (`OPENRBI_AGENT_CAPACITY`, default 10 — unchanged from the
-previous hardcoded value). Sessions remain sticky to their node for their
+previous hardcoded value; since [Roadmap B3](roadmap-b3-capacity-autoscaling.md)
+capacity is computed from host headroom and this variable is only an
+optional ceiling). Sessions remain sticky to their node for their
 whole lifetime; no live migration (see `docs/architecture.md#multi-node-readiness`).
 Verified with real HTTP listeners standing in for multiple nodes
 (`test_scheduling.py`): least-loaded selection, deterministic tie-break,
@@ -325,7 +327,8 @@ for this phase. `docs/deployment.md` gained a "Multi-node" section
 (marked experimental/technology preview, the same honesty pattern as
 Segmented) with the full add/remove-a-node operator walkthrough, and its
 `#sizing` section now covers N-node capacity as a sum of each node's own
-`OPENRBI_AGENT_CAPACITY`.
+`OPENRBI_AGENT_CAPACITY` (since rewritten for Roadmap B3's computed
+capacity).
 
 Verified end to end on the real single-host stack (a second Session
 Agent standing in for a second node, same technique every earlier B2
