@@ -48,7 +48,9 @@ If an operator upgrade fails:
 1. Stop the target `backend` and `session-agent`; retain failure logs.
 2. Keep the pre-upgrade `.sql.gz` and quarantine `.tar.gz` artifacts offline.
 3. Use the v1 `scripts/restore.sh` to restore both validated artifacts. This is
-   destructive and requires the literal `yes` confirmation.
+   destructive and requires the literal `yes` confirmation. `restore.sh`
+   restarts the existing (failed target) `backend`/`session-agent` containers
+   when it finishes; stop them again before the next step.
 4. Rebuild or redeploy the exact pinned 0.x source/images and the original
    `.env` secrets; never generate a different TOTP encryption key.
 5. Start Postgres/Valkey/ClamAV, then backend, Session Agent, frontend and proxy.
@@ -62,9 +64,10 @@ an application write freeze before production upgrades.
 
 - No 0.x registry artifacts exist, so CI builds the pinned source tree instead
   of pulling a historical signed/published image.
-- The baseline and current candidate presently share the same Alembic head; the
-  gate proves migration invocation/head integrity and persistent-state/image
-  replacement, but does not fabricate a schema delta that never existed.
+- The pinned 0.1.1 baseline predates several later Alembic migrations, so the
+  gate runs real upgrade migrations from the baseline schema to the candidate's
+  head. It qualifies only that 0.1.1 → candidate path, not upgrades between
+  intermediate releases (e.g. 1.0.1 → 1.0.2).
 - Compact single-host Docker is the only supported v1 upgrade path. Segmented,
   multi-host, HA, Kubernetes, and cross-architecture upgrades are not covered.
 - The gate uses generated test secrets and synthetic directory configuration;

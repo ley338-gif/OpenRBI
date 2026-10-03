@@ -1,6 +1,6 @@
 # Versioning and build metadata
 
-OpenRBI uses Semantic Versioning for v1 release tags (`v1.0.0-rc.N`, then `v1.0.0`). The root `VERSION` file is the authoritative source version. Python and Node package manifests keep the same value because their build tools require a local manifest version; `scripts/check-version-sync.py` makes drift a CI failure.
+OpenRBI uses Semantic Versioning for v1 release tags (`vX.Y.Z-rc.N`, then `vX.Y.Z`). The root `VERSION` file is the authoritative source version. Python and Node package manifests keep the same value because their build tools require a local manifest version; `scripts/check-version-sync.py` makes drift a CI failure.
 
 Every shipped image accepts the same build arguments:
 
@@ -21,6 +21,6 @@ images by hand around that workflow.
 1. Update `VERSION` and every package/image default reported by `python scripts/check-version-sync.py`.
 2. Update `CHANGELOG.md` for the release.
 3. Run the version check, release gates, and acceptance suite.
-4. Tag the exact green `main` commit as `v<version>`.
+4. Run the guarded release workflow ([`publishing.md`](publishing.md)) on the exact green `main` commit. The workflow creates the `v<version>` tag itself and refuses to run if that tag already exists — do not create it by hand.
 
 Do not infer a deployed version from `latest`, a branch name, or a mutable base-image tag.

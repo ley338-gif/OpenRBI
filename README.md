@@ -37,7 +37,7 @@ Then open the **Admin Portal** at `http://localhost:8080/admin/` — a fresh ins
 
 ## Architecture overview
 
-OpenRBI separates a **control plane** (backend API, database, policy engine) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). Sandbox, display, browser, and file-scanner integrations sit behind provider interfaces (`SandboxProvider`, `DisplayProvider`, `BrowserProvider`, `FileScanner`) so v1.0's concrete choices (Docker, noVNC, Firefox, ClamAV) can be swapped or extended (gVisor, KasmVNC, Chromium, ...) without touching core logic.
+OpenRBI separates a **control plane** (backend API, database, policy engine) from a **browser plane** (per-user sandboxed browser containers, reachable only via a dedicated, minimally privileged **Session Agent** — the web backend never touches the Docker socket directly). The sandbox runtime sits behind a provider interface (`SandboxProvider`, implemented by `DockerSandboxProvider`), and the display, browser and file-scanner integrations (noVNC, Firefox, ClamAV) are kept behind module boundaries, so alternatives (gVisor, KasmVNC, Chromium, ...) can be added later without touching core session/policy logic — see [ADR 0003](docs/adr/0003-provider-abstraction.md) for what exists today.
 
 Two separate frontends — a **User Portal** and an **Admin Portal** — sit in front of the API (`frontend/user/`, `frontend/admin/`, sharing common code from `frontend/shared/`), each talking only to the listener mode it's meant for. The backend itself can run as a `user`- or `admin`-only listener (`OPENRBI_LISTENER_MODE`, default `both`); in `user` mode, admin routes don't exist in that process at all (a `404`, not a `403`). This is preparation for a future Segmented deployment with genuinely separate portal origins, not yet the default — see [docs/architecture.md](docs/architecture.md) for the full component and trust-boundary breakdown, and [docs/deployment.md](docs/deployment.md#compact-vs-segmented-productization-v011) for Compact vs. Segmented.
 
@@ -76,12 +76,16 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/release/fault-injection-acceptance.md](docs/release/fault-injection-acceptance.md) | Destructive reliability scenarios and observed recovery state |
 | [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md) | Binding 35-scenario v1 release acceptance record |
 | [docs/release/release-process.md](docs/release/release-process.md) | RC and final-release decision/publishing sequence |
+| [docs/release/release-gates.md](docs/release/release-gates.md) | Required CI checks behind the `Release gates` aggregate |
+| [docs/release/versioning.md](docs/release/versioning.md) | Version source of truth and build metadata |
+| [docs/release/dependencies.md](docs/release/dependencies.md) | Dependency lockfiles (Python and npm) and the update procedure |
+| [docs/release/repository-protection.md](docs/release/repository-protection.md) | Release-tag protection settings |
 | [docs/release/upgrade.md](docs/release/upgrade.md) | Supported Compact upgrade runbook |
 | [docs/release/rollback.md](docs/release/rollback.md) | Backup-based rollback and recovery verification |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
 | [docs/api.md](docs/api.md) | API reference |
-| [docs/adr/](docs/adr/) | Architecture Decision Records |
+| [docs/adr/](docs/adr/README.md) | Architecture Decision Records (index) |
 
 ## Scope
 

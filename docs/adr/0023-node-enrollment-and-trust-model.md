@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Two implementation details differ from the text below: the enrollment token is stored in Redis as the key itself (with a 1-hour TTL, consumed atomically via `GETDEL`), not hashed (`app/core/node_enrollment_tokens.py`); and a `REVOKED` row is not terminal — when the same hostname enrolls again with a fresh enrollment token, `enroll_node()` resets that row to `PENDING` (with the new token and no endpoint), so it still has to be approved by an admin before it can be scheduled.
 
 ## Context
 

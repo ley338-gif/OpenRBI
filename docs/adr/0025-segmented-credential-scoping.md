@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Note: the startup guard described under "Interaction with LDAP auto-provisioning" checks only the `OPENRBI_LDAP_ENABLED` environment variable. LDAP enabled through the Admin Portal ([ADR 0016](0016-ldap-admin-configuration.md)) is not caught by it, so an operator combining DB role scoping on a `user`-mode listener with portal-enabled LDAP has to avoid that combination themselves.
 
 ## Context
 
@@ -71,7 +71,9 @@ the four new backend-side variables (§3 below) just need to be set there, once 
   on `users`, `roles`, `browser_nodes` (needed by the shared auth/MFA path and by `display.py`'s
   node-connection resolution — full-row `SELECT` is unavoidable here since login must read a
   candidate row, including its password/TOTP columns, before it knows whether the caller is who
-  they claim); INSERT-only on `security_events` (write the audit trail, never read or rewrite it);
+  they claim); SELECT/INSERT/UPDATE/DELETE on `recovery_codes` (a caller's own MFA enrollment
+  deletes and recreates its set, a login marks one used — user-owned data, not an escalation
+  surface); INSERT-only on `security_events` (write the audit trail, never read or rewrite it);
   column-level `UPDATE` on `users` restricted to exactly `password_hash`, `mfa_enabled`,
   `totp_secret_encrypted`, `updated_at` — the genuine self-service writes shared `auth.py`/`mfa.py`
   make on the *authenticated caller's own row* (change-my-password, enroll-my-own-MFA); **no**

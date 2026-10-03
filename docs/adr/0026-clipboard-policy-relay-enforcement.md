@@ -1,8 +1,8 @@
-# ADR 0022: Clipboard policy enforcement at the RFB relay, not full protocol parsing
+# ADR 0026: Clipboard policy enforcement at the RFB relay, not full protocol parsing
 
 ## Status
 
-Accepted
+Accepted. Originally numbered 0022, which collided with [ADR 0022](0022-quarantine-retention.md); renumbered to 0026 without content changes.
 
 ## Context
 
@@ -10,7 +10,7 @@ Accepted
 
 `app/api/display.py`'s WebSocket relay between the user's browser (noVNC) and the sandbox's VNC server does pure byte-for-byte forwarding in both directions today, with zero message parsing. A real, per-group clipboard control has to intercept RFB `ClientCutText`/`ServerCutText` messages somewhere in that stream — a UI-only control (hiding the "Send clipboard" button, ignoring the `clipboard` event) is trivially bypassed via the browser DevTools console and does not meet this project's fail-closed bar for a security control.
 
-The obstacle: `ServerCutText` (sandbox → user direction) is interleaved with `FramebufferUpdate` messages, whose rectangle payload length depends on the negotiated pixel encoding (Raw, CopyRect, RRE, Hextile, Tight, ZRLE, ...). Reliably finding message boundaries in that stream for the general case requires understanding every encoding's framing — effectively reimplementing significant parts of the RFB/VNC protocol, which this project has consistently avoided taking on (see ADR-0009's reasoning for choosing noVNC precisely because it's a thin, easy-to-reason-about client).
+The obstacle: `ServerCutText` (sandbox → user direction) is interleaved with `FramebufferUpdate` messages, whose rectangle payload length depends on the negotiated pixel encoding (Raw, CopyRect, RRE, Hextile, Tight, ZRLE, ...). Reliably finding message boundaries in that stream for the general case requires understanding every encoding's framing — effectively reimplementing significant parts of the RFB/VNC protocol, which this project has consistently avoided taking on (see ADR 0009's reasoning for choosing noVNC precisely because it's a thin, easy-to-reason-about client).
 
 ## Decision
 
@@ -24,7 +24,7 @@ Enforce clipboard policy at the relay's protocol level using a scoped, real pars
 
 ## Alternatives Considered
 
-- **Full RFB/VNC protocol parser for both directions** — rejected. Reimplementing every pixel encoding's framing (and keeping it correct as noVNC/x11vnc versions change) is exactly the scope this project has avoided by choosing noVNC's thin client in the first place (ADR-0009). High implementation and maintenance cost for a single policy dimension.
+- **Full RFB/VNC protocol parser for both directions** — rejected. Reimplementing every pixel encoding's framing (and keeping it correct as noVNC/x11vnc versions change) is exactly the scope this project has avoided by choosing noVNC's thin client in the first place (ADR 0009). High implementation and maintenance cost for a single policy dimension.
 - **UI-only control (hide/disable the button, ignore the event)** — rejected as the *primary* mechanism, since it does nothing against a user who bypasses the page (DevTools console, a custom noVNC-compatible client). Kept as defense-in-depth on top of the real relay-level control.
 - **Reconfigure/restrict the sandbox's VNC server (x11vnc) directly** — rejected. There's no portable, standard RFB capability to have the server unilaterally suppress `CutText` messages per-connection, and this would couple clipboard policy to VNC-server-specific configuration rather than the per-session policy resolution this project's other enforced policy types already use.
 - **Always restrict SetEncodings to Raw/CopyRect for every session** — rejected. This would impose the bandwidth/cursor-shape cost on every session regardless of whether its clipboard policy actually needs server-stream parsing. Scoping the rewrite to only the sessions that need `ServerCutText` blocked keeps the common, unrestricted case (`BIDIRECTIONAL_TEXT`, the default) at zero added cost or risk.

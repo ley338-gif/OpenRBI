@@ -20,8 +20,8 @@ The backend runs a per-session background poll loop (`app/core/download_poller.p
 2. Computes SHA-256 and size.
 3. Detects the actual MIME type via magic bytes (`python-magic`/`libmagic1`) — **never** the filename extension. Verified directly: a file named `report.txt` containing a PNG signature was correctly detected as *not* `text/plain`.
 4. Recovers a best-effort origin URL: Firefox on Linux (GIO/XDG convention) tags downloaded files with a `user.xdg.origin.url` extended attribute, read via `getfattr`. This is the **known gap** — it gives the final URL the browser actually fetched, not a full initial→final redirect chain, and no explicit "was this hop over TLS" signal beyond inferring it from the URL's scheme. Full redirect-chain capture would need deeper browser instrumentation (e.g. a WebExtension); tracked, not built.
-5. Runs the Phase 12 policy engine (`evaluate_file_action`) as a **pre-check** using detected MIME/extension/size/source-hostname — this is not the final decision (no scanner exists yet), just what governs today's `PENDING_SCAN` outcome.
-6. Stages the bytes locally, content-addressed by SHA-256 (`app/services/downloads.py:_stage_file`) — never under the original filename. Interim: Phase 15 replaces this with a real quarantine-storage abstraction.
+5. Runs the Phase 12 policy engine (`evaluate_file_action`) as a **pre-check** using detected MIME/extension/size/source-hostname — this is not the final decision; that is made after the scan (see [Scanning and the final decision](#scanning-and-the-final-decision-phase-14) below).
+6. Stages the bytes locally, content-addressed by SHA-256 (`app/services/downloads.py:_stage_file`) — never under the original filename. This local-disk staging is the quarantine storage in v1.0 (see the status note above).
 7. Creates a `QuarantineFile` row (`status=PENDING_SCAN`) and a `DOWNLOAD_REQUESTED` security event.
 8. Deletes the file from the sandbox. If that delete fails, the same content is deduplicated by SHA-256 on the next poll rather than creating a second row.
 
@@ -34,10 +34,10 @@ Verified end-to-end against the real running stack, including the tmpfs/archive-
 | Scan result | Policy pre-check | Final `QuarantineFile.status` |
 |---|---|---|
 | scanner unreachable/error | *(any)* | `QUARANTINED` — never released regardless of policy |
-| infected | *(any)* | `QUARANTINED` + `MALWARE_DETECTED` event + a `CRITICAL` Incident (§21's automatic-incident list) — never silently deleted, kept for review |
+| infected | *(any)* | `QUARANTINED` + `MALWARE_DETECTED` event + a `CRITICAL` Incident (§21's automatic-incident list) — kept for review, never deleted while that incident is open (see [Retention](#retention)) |
 | clean | `DENY` | `REJECTED` immediately (§16 step 11: "löschen/blockieren" — policy already decided, no human review needed) |
-| clean | `QUARANTINE` (or no policy matched) | `QUARANTINED`, awaiting admin review — release/reject mechanics are Phase 15 |
-| clean | `AUTO_RELEASE` | `RELEASED` — the row is marked cleared; the actual single-use download token for user retrieval is Phase 15 |
+| clean | `QUARANTINE` (or no policy matched) | `QUARANTINED`, awaiting admin review (see [Review and release](#review-and-release-phase-15)) |
+| clean | `AUTO_RELEASE` | `RELEASED` — the owning user can request a single-use download token (see [Review and release](#review-and-release-phase-15)) |
 
 Verified against the live stack: the standard EICAR test string is correctly flagged infected (`Eicar-Test-Signature`) and forced to `QUARANTINED` with a `CRITICAL` incident *even when its policy verdict was `AUTO_RELEASE`* — malware detection overrides policy, never the reverse. Also verified the fail-closed case directly: stopping the ClamAV container and re-running the same `AUTO_RELEASE`-eligible file correctly produces `QUARANTINED`/`ERROR`, not a release.
 
@@ -70,9 +70,9 @@ Verified end-to-end against the live stack: a clean upload with no group policy 
 2. File lands in a per-session staging area (not directly reachable by the client).
 3. File size determined.
 4. SHA-256 computed.
-5. Declared MIME type captured (from the browser/HTTP response).
-6. Actual file type detected (magic bytes), independent of the declared type and extension.
-7. Source/URL metadata captured: `initial_url`, `final_url`, `source_hostname`, `redirect_chain`, TLS-used flag.
+5. Declared MIME type: **not captured** in v1.0 — downloads are read from the sandbox's filesystem, where the HTTP `Content-Type` is no longer available, so `declared_mime` stays empty.
+6. Actual file type detected (magic bytes), independent of the extension.
+7. Source/URL metadata captured: only the final URL Firefox recorded in the file's `user.xdg.origin.url` attribute (stored as both `initial_url` and `final_url`), its `source_hostname`, and a TLS flag inferred from that URL's scheme. `redirect_chain` stays empty — see the known gap in step 4 of [How download interception actually works](#how-download-interception-actually-works-phase-13).
 8. Policy pre-check.
 9. File scanned (ClamAV via the `FileScanner` provider).
 10. Final policy decision made, using scan result + all metadata above + the active `PolicyVersion`.
@@ -87,11 +87,32 @@ Fail-closed at every step — see [ADR 0008](adr/0008-fail-closed.md): scanner u
 
 Quarantined files are **never** stored under their original filename on disk. Storage is content-addressed / keyed by an internal object ID, with all descriptive metadata held separately in the database:
 
-`id (UUID)`, `session`, `user`, `original_name`, `extension`, `declared_mime`, `detected_mime`, `size`, `sha256`, `initial_url`, `final_url`, `source_host`, `redirect_chain`, `scanner_status`, `scanner_result`, `policy_action`, `status`, `storage_object_id`, `created_at`, `reviewed_at`, `reviewed_by`, `review_comment`.
+`id (UUID)`, `session`, `user`, `original_name`, `extension`, `declared_mime`, `detected_mime`, `size`, `sha256`, `initial_url`, `final_url`, `source_host`, `redirect_chain`, `tls_used`, `scanner_status`, `scanner_result`, `policy_action`, `policy_version_id`, `status`, `storage_object_id`, `created_at`, `reviewed_at`, `reviewed_by`, `review_comment`. (`declared_mime` and `redirect_chain` exist in the schema but are not populated in v1.0, see the download pipeline above.)
 
 ### Status
 
-`PENDING_SCAN → SCANNING → QUARANTINED → (RELEASED | REJECTED | DELETED)`
+```
+PENDING_SCAN → QUARANTINED | RELEASED | REJECTED     (scan + final policy decision, table above)
+QUARANTINED  → RELEASED | REJECTED                   (reviewer action)
+RELEASED | QUARANTINED | REJECTED → DELETED          (retention, below)
+```
+
+`SCANNING` exists in the status enum but is not set by the current pipeline: the scan runs synchronously and its progress is tracked in `scanner_status` instead.
+
+### Retention
+
+A background job (`app/core/quarantine_retention.py`, [ADR 0022](adr/0022-quarantine-retention.md)) deletes the stored bytes once a file's retention window has passed and moves its row to `DELETED`. The row itself is kept for history and statistics, but its `storage_object_id`, original filename, source host and URLs are scrubbed. Each expiry is audited as `QUARANTINE_FILE_RETENTION_EXPIRED`.
+
+| Status | Kept for (from review time, or creation time if there was no review) | Setting |
+|---|---|---|
+| `RELEASED` | 24 hours | `OPENRBI_QUARANTINE_RETENTION_RELEASED_HOURS` |
+| `QUARANTINED`, `REJECTED` | 90 days | `OPENRBI_QUARANTINE_RETENTION_QUARANTINED_DAYS` |
+
+- A file referenced by an open Incident (`NEW`/`INVESTIGATING`) is never deleted, regardless of age.
+- Content-addressed bytes shared by several rows are only removed once no live row references them any more.
+- The job runs every `OPENRBI_QUARANTINE_RETENTION_INTERVAL_SECONDS` (default 3600).
+- Consequence for users: a released download has to be retrieved within the release window; afterwards it shows as deleted and cannot be downloaded again.
+- Consequence for backups: files expired before a backup are not in it, and restoring an older backup brings back files that have since expired until the next retention run removes them again.
 
 ### Reviewer actions
 
@@ -102,12 +123,12 @@ Quarantined files are **never** stored under their original filename on disk. St
 On `RELEASE`:
 
 1. Check the reviewer's permissions.
-2. Check the reviewer's own session/MFA is still valid.
-3. Capture a review reason/comment.
+2. Check the reviewer's own session is still valid.
+3. Capture a review reason/comment (optional).
 4. Emit a `FILE_RELEASED` audit event.
-5. Issue a time-limited download token.
-6. Token is single-use.
-7. The original requesting user retrieves the file using that token.
+5. The original requesting user can then request a time-limited (5 minute) download token (`POST /files/{id}/download-token`) — within the `RELEASED` retention window (see [Retention](#retention)).
+6. The token is single-use and bound to that user.
+7. The user retrieves the file with that token (`GET /files/download/{token}`).
 
 A release token cannot be replayed after first use or after expiry — both are enforced server-side, not just by hiding the download link in the UI.
 
@@ -117,8 +138,8 @@ A release token cannot be replayed after first use or after expiry — both are 
 2. File goes to the OpenRBI Upload Gateway (not a direct mount into the sandbox).
 3. Hashing.
 4. File-type detection.
-5. Scan.
-6. Policy check.
+5. Policy check.
+6. Scan.
 7. Temporary, scoped availability inside the sandbox.
 8. Upload proceeds from the sandbox to the destination website.
 
