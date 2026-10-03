@@ -21,6 +21,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
     - `UPDATE` on the append-only `security_events` is now revoked.
   - A role-scoped user listener no longer reads the LDAP configuration and treats LDAP as unavailable, also when LDAP was enabled through the Admin Portal.
   - New `backend/tests/integration/test_segmented_role_scoping.py` runs the real code paths under both roles in CI.
+  - The script itself also failed on Debian/Ubuntu with `.: .env: not found`. Their `/bin/sh` (dash) looks up a bare `.env` in `PATH` rather than in the current directory; the script now sources `./.env`.
   - **Re-run `./scripts/provision-segmented-db-roles.sh`** on any deployment that opted in.
 
 ### Documentation

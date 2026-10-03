@@ -28,6 +28,12 @@
 set -eu
 
 ENV_FILE="${OPENRBI_ENV_FILE:-.env}"
+# POSIX `.` looks a name without a slash up in PATH, not in the current
+# directory (dash, /bin/sh on Debian/Ubuntu, fails with ".env: not found").
+case "$ENV_FILE" in
+    */*) ;;
+    *) ENV_FILE="./$ENV_FILE" ;;
+esac
 POSTGRES_CONTAINER="${OPENRBI_POSTGRES_CONTAINER:-openrbi-postgres-1}"
 POSTGRES_DB_NAME="${POSTGRES_DB:-openrbi}"
 POSTGRES_ADMIN_USER="${POSTGRES_USER:-openrbi}"
