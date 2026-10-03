@@ -16,7 +16,7 @@ An equal, parallel login option alongside local accounts — never a replacement
 
 ### Configuring LDAP via the Admin Portal (recommended)
 
-Go to **Settings → Authentication → LDAP** (`ADMIN` role required — `SECURITY_REVIEWER` cannot read or change this). The page is available whether or not LDAP has ever been configured before; a fresh install shows an empty form.
+Go to **Administration → LDAP / identity** (page title "LDAP / Active Directory"; `ADMIN` role required — `SECURITY_REVIEWER` cannot read or change this). The page is available whether or not LDAP has ever been configured before; a fresh install shows an empty form.
 
 The modernized administration view separates the persisted connection form, stateless connection diagnostics, actual configuration status, and exact group-to-role mappings. It validates the supported `ldap://`/`ldaps://` schemes, requires a base DN and a `{username}` placeholder in the user filter, prevents combining LDAPS with StartTLS, and rejects plain LDAP without StartTLS. Technical results are disclosed step by step without returning credentials or raw stack traces. The bind-password field only reveals newly typed text; an empty field preserves an existing encrypted secret.
 
@@ -24,13 +24,13 @@ Fill in the connection fields (server URI, StartTLS, bind DN, bind password, bas
 
 Click **Save configuration**. If the `Enabled` checkbox is on, the save itself re-runs that same connection test server-side first — a broken configuration is rejected (the form stays as you left it, with a toast explaining the test failed) and the **previously saved, working configuration is left completely untouched**. Saving with `Enabled` off never requires a passing test, so you can save a work-in-progress configuration without risking the currently-active one.
 
-**Secret handling**: the bind password is never returned by any API response and never appears in the audit log — the field is always shown empty, with a "Bind password: configured — leave empty to keep the existing password" hint once one has been saved. Leaving it empty on a later save keeps the existing password; typing a new value replaces it. It is encrypted at rest using the same key that protects TOTP secrets (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`).
+**Secret handling**: the bind password is never returned by any API response and never appears in the audit log — the field is always shown empty, with a "Password configured. Leave empty to keep the stored secret." hint once one has been saved. Leaving it empty on a later save keeps the existing password; typing a new value replaces it. It is encrypted at rest using the same key that protects TOTP secrets (`OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`).
 
-**Group → role mapping** is an editable table on the same page — LDAP group DN → OpenRBI role. It replaces `OPENRBI_LDAP_GROUP_ROLE_MAPPING` for any installation that has saved a configuration through the portal (see priority below); the matching semantics are unchanged (exact-string DN match, `ADMIN` > `SECURITY_REVIEWER` > `USER` precedence, no match → `USER`).
+**Group → role mapping** is an editable table on the same page — LDAP group DN → OpenRBI role. It replaces `OPENRBI_LDAP_GROUP_ROLE_MAPPING` for any installation that has saved a configuration through the portal (see priority below); the matching semantics are unchanged (DN match that is case-insensitive per RFC 4514 — see **Group DN matching** below —, `ADMIN` > `SECURITY_REVIEWER` > `USER` precedence, no match → `USER`).
 
 Mappings are edited in a focused dialog and remain part of the single atomic configuration save. Removing a mapping can change an LDAP-only user's role at their next successful directory login. OpenRBI does not synchronize directory users or groups in the background: LDAP identities are provisioned just in time, and the optional test username is only a diagnostic lookup.
 
-Once any configuration has been saved through the Admin Portal, it is fully authoritative — the `OPENRBI_LDAP_*` environment variables are no longer consulted at all, not even for fields left at their default. LDAP can be enabled, reconfigured, or disabled entirely from the portal, with no backend restart required.
+Once any configuration has been saved through the Admin Portal, it is fully authoritative for the connection settings and the group → role mapping — those `OPENRBI_LDAP_*` environment variables are no longer consulted for logins, not even for fields left at their default. Two things still come from the environment: `OPENRBI_LDAP_CA_CERT_FILE` (a deployment-level trust anchor, see [LDAP TLS trust](#ldap-tls-trust-rbi-post-001)), and the backend's startup validation, which still refuses to start if `OPENRBI_LDAP_ENABLED=true` is set in `.env` with an invalid or placeholder environment configuration. LDAP can be enabled, reconfigured, or disabled entirely from the portal, with no backend restart required.
 
 ### Configuring LDAP via environment variables (bootstrap / fresh install only)
 
@@ -144,11 +144,17 @@ The current state model uses `ACTIVE` and `DISCONNECTED` as mutually exclusive s
 
 The Workers page is the operational inventory for every registered `BrowserNode`. It refreshes every 30 seconds and supports server-side hostname search, computed-health and scheduling-state filters, sorting, and pagination. The KPI row is calculated from the complete worker set and reports total/healthy/attention-needed workers, live sessions and capacity, plus average reported CPU and RAM. No worker, environment, IP address, or trend is fabricated when the platform has not recorded it.
 
-Health is the shared server-side classification based on heartbeat freshness, telemetry, and operator state. **Needs attention** is deliberately limited to degraded or offline workers; draining and maintenance are intentional states and remain visible without being counted as faults. Select **Details** for exact telemetry, historical samples, and the real Drain/Undrain and Maintenance actions. Draining stops new sessions from being scheduled without disturbing sessions already running. Workers register automatically through the Session Agent, so there is no misleading manual “Add worker” action.
+Health is the shared server-side classification based on heartbeat freshness, telemetry, and operator state. **Needs attention** is deliberately limited to degraded or offline workers; draining and maintenance are intentional states and remain visible without being counted as faults. Select **Details** for exact telemetry, historical samples, the capacity breakdown (a "RAM-bound"/"CPU-bound" tag shows which resource currently limits the session slots, see [deployment.md#sizing](deployment.md#sizing)), and the real Drain/Undrain and Maintenance actions. Draining stops new sessions from being scheduled without disturbing sessions already running.
+
+The Compact deployment's own Session Agent appears here automatically. Additional nodes (multi-node, an **experimental technology preview** — see [deployment.md](deployment.md#multi-node--experimental--technology-preview-not-a-complete-production-guide)) are added through an explicit, admin-gated enrollment flow, all `ADMIN`-only:
+
+- **Register node** generates a single-use enrollment token (valid for one hour) to put into the new node's `.env` as `OPENRBI_AGENT_ENROLLMENT_TOKEN`. The node's Session Agent enrolls itself on startup and appears here as `PENDING` — never scheduled while pending.
+- **Approve** (shown for `PENDING` nodes) asks for the node's endpoint URL, i.e. how the control plane reaches that node's Session Agent; from then on the node is schedulable.
+- **Revoke** (shown for approved nodes) clears the node's stored token immediately, so nothing can authenticate as that node any more. It acts at once, without a confirmation dialog. A revoked host can only come back by enrolling again with a fresh token, which puts it back to `PENDING`.
 
 <details><summary>Underlying API</summary>
 
-`GET /admin/nodes/overview` accepts `search`, `health`, `node_status`, `sort_by` (`hostname`, `health`, `cpu`, `ram`, `sessions`, `heartbeat`), `sort_dir`, `offset`, and `limit` (maximum 100). It returns the selected page and global statistics. Existing `GET /admin/nodes`, `GET /admin/nodes/{id}`, `GET /admin/nodes/{id}/metrics`, and ADMIN-only drain/maintenance mutations remain unchanged.
+`GET /admin/nodes/overview` accepts `search`, `health`, `node_status`, `sort_by` (`hostname`, `health`, `cpu`, `ram`, `sessions`, `heartbeat`), `sort_dir`, `offset`, and `limit` (maximum 100). It returns the selected page and global statistics. Also: `GET /admin/nodes`, `GET /admin/nodes/{id}`, `GET /admin/nodes/{id}/metrics`, the ADMIN-only `POST /admin/nodes/{id}/{drain,undrain,maintenance,unmaintenance}`, and the ADMIN-only enrollment endpoints `POST /admin/nodes/enrollment-tokens`, `POST /admin/nodes/{id}/approve` (`{"endpoint_url": "..."}`) and `POST /admin/nodes/{id}/revoke`. The node itself calls the unauthenticated, token- and rate-limit-guarded `POST /admin/nodes/enroll` ([ADR 0023](adr/0023-node-enrollment-and-trust-model.md)).
 </details>
 
 ## Policies
@@ -183,7 +189,7 @@ Real `GET /admin/health` output, component by component — never a hardcoded gr
 
 <details><summary>Underlying API</summary>
 
-`GET /admin/health` aggregates independent checks of every dependency: API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser-image availability, ClamAV, and quarantine-storage writability. Overall `status` is `HEALTHY` only if every component is; `UNAVAILABLE` if the API or PostgreSQL itself is down; otherwise `DEGRADED`. See [architecture.md#health-monitoring-phase-19](architecture.md#health-monitoring-phase-19) for why this endpoint — unlike the plain unauthenticated `GET /health` liveness probe — is itself unreachable during a full PostgreSQL outage.
+`GET /admin/health` aggregates independent checks of every dependency: API, PostgreSQL, Redis (Valkey), Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine-storage writability, and network isolation (`NOT_CONFIGURED`/`DEGRADED`/`HEALTHY` from the marker file, see [deployment.md#network-isolation](deployment.md#network-isolation)). Overall `status` is `HEALTHY` only if every component is; `UNAVAILABLE` if the API or PostgreSQL itself is down; otherwise `DEGRADED`. See [architecture.md#health-monitoring-phase-19](architecture.md#health-monitoring-phase-19) for why this endpoint — unlike the plain unauthenticated `GET /health` liveness probe — is itself unreachable during a full PostgreSQL outage.
 </details>
 
 ## Audit

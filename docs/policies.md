@@ -31,7 +31,7 @@ This ordering is deliberately conservative: any single group requiring denial or
 
 A file decision is never based on extension or HTTP `Content-Type` alone. Inputs considered: user, groups, source, declared MIME type, detected MIME type (magic bytes / actual file type), extension, file size, scanner result, and the policy version in force.
 
-Source rules are normalized, not string-contains matched. A rule like `*.microsoft.com` must match `download.microsoft.com` and `office.microsoft.com`, but must **not** match `microsoft.com.attacker.org` or `evil-microsoft.com`. Matching is done against a parsed hostname's registrable-domain/subdomain structure, not substring search. Stored per download/upload: `initial_url`, `final_url`, `source_hostname`, `redirect_chain`, and whether TLS was used.
+Source rules are normalized, not string-contains matched. A rule like `*.microsoft.com` must match `download.microsoft.com` and `office.microsoft.com`, but must **not** match `microsoft.com.attacker.org` or `evil-microsoft.com`. Matching is done against a parsed hostname's registrable-domain/subdomain structure, not substring search. For downloads, the source is the final URL Firefox recorded for the file (no redirect chain is captured in v1.0, see [quarantine.md](quarantine.md#download-pipeline)); it is stored with the file as `final_url`/`source_host` plus a TLS flag inferred from the URL's scheme. Uploads have no source URL, so `SOURCE` rules never match an upload.
 
 ## What a Policy's `policy_type` actually does
 

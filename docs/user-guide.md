@@ -7,7 +7,7 @@
 Open the User Portal (Compact: the reverse proxy's root, e.g. `http://localhost:8080/`; Segmented: your organization's dedicated User Portal origin) and enter your username and password.
 
 - If your account has no MFA yet and isn't in an MFA-mandatory role, you're taken straight to the dashboard.
-- If MFA is already enabled, you're asked for a 6-digit code from your authenticator app.
+- If MFA is already enabled, you're asked for a 6-digit code from your authenticator app. If you don't have the app at hand, enter one of your recovery codes in the same field instead.
 - If your role requires MFA and you haven't enrolled yet, the portal walks you through enrollment (QR code, confirm code, one-time recovery codes) before you get a session — no separate step needed.
 
 A wrong password, an unknown username, and a disabled account all show the identical "invalid credentials" message — this is deliberate, not a bug: there's no way to tell from the outside which of the three happened. Ten wrong attempts against the same username in 15 minutes locks it out, even if the very next attempt would have had the correct password (see [security-model.md#login-brute-force-protection-phase-20](security-model.md#login-brute-force-protection-phase-20)).
@@ -25,7 +25,7 @@ Returns `{"status": "ok"}` (session cookie set), `{"status": "mfa_required", "mf
 
 The portal shows a QR code — scan it with any TOTP authenticator app, then enter the 6-digit code it generates to confirm. **Your recovery codes are shown exactly once, immediately after** — the portal makes this explicit ("Store these recovery codes now. They will not be shown again.") and offers a one-click copy-to-clipboard. Each recovery code is single-use, for when you don't have your authenticator app available; there is no way to view them again later, by design — if you lose them, an administrator must reset your MFA and you'll enroll again.
 
-Voluntary enrollment (if your role doesn't require it) works the same way from **Profile / MFA** while already logged in.
+Voluntary enrollment (if your role doesn't require it) works the same way from **Profile & Security** while already logged in.
 
 ## Dashboard
 
@@ -33,7 +33,7 @@ Shows your current MFA status, how many files you have on record, and your most 
 
 ## Secure Browser
 
-Click **Start Secure Browser**. You'll see the session progress through its real states — "Waiting for capacity…", "Preparing sandbox…", "Connecting display…" — before the remote browser actually appears. This is a genuine isolated Firefox instance running server-side; only pixels reach your browser over noVNC, and your session can reach the public internet but never the organization's internal network. The viewer uses all the space your window gives it — resize your browser and it recalculates to fill it, with no dead black borders.
+Click **Start Secure Browser**. You'll see the session progress through its real states — "Waiting for capacity…", "Preparing sandbox…", "Connecting display…" — before the remote browser actually appears. If no browser capacity is free at that moment, the portal says so ("No browser capacity is available right now. Try again shortly.") instead of starting a session. This is a genuine isolated Firefox instance running server-side; only pixels reach your browser over noVNC, and your session can reach the public internet but never the organization's internal network. The viewer uses all the space your window gives it — resize your browser and it recalculates to fill it, with no dead black borders.
 
 A toolbar sits above the remote screen while a session is running:
 
@@ -48,11 +48,17 @@ You can upload a file into your active session from the same page — every uplo
 
 ## Downloads
 
-Every file your session downloads is intercepted, scanned, and policy-checked before you can ever get it back (see [quarantine.md](quarantine.md)) — the Downloads page shows all of them with their real status. A file marked **Released** has a **Download** button that requests a genuine single-use link and immediately starts the download; a file still **Quarantined** shows "Awaiting review" — an administrator must release it first.
+Every file your session downloads is intercepted, scanned, and policy-checked before you can ever get it back (see [quarantine.md](quarantine.md)) — the Downloads page shows all of them with their real status, filterable by status, date and name, with a **Details** dialog per file. The status labels are **APPROVED** (released — has a **Download** button that requests a genuine single-use link and immediately starts the download), **PENDING** / **PENDING REVIEW** (still being scanned, or quarantined until an administrator decides), **BLOCKED** (rejected by policy, scanner result or reviewer) and **DELETED** (removed by the retention policy).
 
-## Profile / MFA
+Approved files are kept for a limited time only — by default 24 hours after release — and are then deleted automatically (see [quarantine.md#retention](quarantine.md#retention)). Download a file you need soon after it is approved.
 
-Shows your username, role, and current MFA status, with a **Set up MFA** action if you haven't enrolled yet. There is no self-service MFA *reset* here — that's an administrator-only action, correctly absent from this portal (and from the User API it talks to) entirely, not just hidden in the UI.
+## Profile & Security
+
+Shows your username, role, and account details, plus:
+
+- **Multi-factor authentication** — **Set up MFA** if you haven't enrolled yet. Once enrolled, **Replace** lets you move to a new authenticator yourself: confirm with a current authenticator or recovery code, then **Reset and sign out** disables your MFA and signs you out on every device. If your role requires MFA, you enroll again at your next login. If you have lost both your authenticator and your recovery codes, an administrator has to reset your MFA instead.
+- **Change password** — for accounts with an OpenRBI-managed (local) password, at least 12 characters. All your other login sessions are signed out afterwards. Directory (LDAP) accounts change their password in the directory, not here.
+- **Secure Browser sessions** — your live sessions, each with an **End session** action (also useful for ending an isolated session).
 
 ## Logging out
 
@@ -65,8 +71,12 @@ Shows your username, role, and current MFA status, with a **Set up MFA** action 
 ```
 POST /mfa/setup/enroll    {"mfa_token": "..."}   -> {"otpauth_uri": "...", "qr_code_png_base64": "..."}
 POST /mfa/setup/confirm   {"mfa_token": "...", "code": "123456"}  -> {"status": "ok", "recovery_codes": [...]}
-POST /mfa/enroll / /mfa/enroll/confirm   (same shape, for a role that doesn't mandate MFA, while already logged in)
-POST /auth/mfa/verify     {"mfa_token": "...", "code": "123456"}
+POST /mfa/enroll                       -> {"otpauth_uri": "...", "qr_code_png_base64": "..."}   (logged in, no mfa_token)
+POST /mfa/enroll/confirm  {"code": "123456"}  -> {"recovery_codes": [...]}
+POST /mfa/reset-self      {"code": "..."}     (current TOTP or recovery code; disables MFA and signs out every session)
+POST /auth/mfa/verify     {"mfa_token": "...", "code": "123456"}   (code may also be a recovery code)
+GET  /auth/me
+POST /auth/change-password  {"current_password": "...", "new_password": "..."}   (local accounts only)
 
 POST /sessions                        -> SessionResponse (QUEUED -> STARTING -> ACTIVE)
 GET  /sessions/me                     -> your own sessions only
@@ -75,6 +85,7 @@ POST /sessions/{id}/terminate
 POST /sessions/{id}/uploads   (multipart, field "file")
 
 GET  /files/me
+GET  /files/me/page                   -> paginated, filterable list used by the Downloads page
 POST /files/{id}/download-token       -> {"token": "...", "expires_in_seconds": 300}
 GET  /files/download/{token}          -> single-use; a second request with the same token gets 401
 

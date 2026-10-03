@@ -2,9 +2,10 @@
 # RBI-POST-014: a plain `docker compose build` passes no OPENRBI_VERSION/
 # OPENRBI_COMMIT_SHA/OPENRBI_BUILD_DATE build args, so every image built
 # this way silently falls back to each Dockerfile's ARG defaults
-# (OPENRBI_VERSION=1.0.0, OPENRBI_COMMIT_SHA=unknown,
-# OPENRBI_BUILD_DATE=unknown) — a locally-built image reports the same
-# version number release-after-release and no real commit/date at all,
+# (OPENRBI_VERSION=<the last release in VERSION, kept in sync by
+# scripts/check-version-sync.py>, OPENRBI_COMMIT_SHA=unknown,
+# OPENRBI_BUILD_DATE=unknown) — a locally-built image reports the last
+# release number for any checkout and no real commit/date at all,
 # useless for "which exact code is this admin looking at" during support
 # or an incident. .github/workflows/release.yml already sets these
 # correctly for an official release build (git tag, $GITHUB_SHA, a real
@@ -28,7 +29,7 @@ fi
 # --tags --always: the exact release tag on a tagged commit (e.g.
 # "v1.0.1"), or "<tag>-<N>-g<sha>" / a bare short SHA if there's no tag
 # reachable yet — always something more informative than the Dockerfile's
-# static "1.0.0" default, never a failure just because no tag exists yet.
+# static release-number default, never a failure just because no tag exists yet.
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
 COMMIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"

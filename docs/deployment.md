@@ -18,8 +18,8 @@ cp .env.example .env
 # Edit .env: every secret must be a real generated value. This is enforced
 # in code, not just convention — backend/app/config.py and
 # session-agent/app/config.py refuse to start if a critical secret (the
-# backend<->session-agent shared token, the TOTP encryption key) is empty
-# or still the literal placeholder text (see docs/security-model.md
+# backend<->session-agent shared token, the TOTP encryption key, the CSRF
+# signing key) is empty or still the literal placeholder text (see docs/security-model.md
 # #secrets-fail-closed-startup-validation-phase-20). Generate each with:
 #   openssl rand -hex 32
 
@@ -35,12 +35,12 @@ Then open the Admin Portal and complete **first-run setup** with the setup token
 
 1. Adds `OPENRBI_DOCKER_SOCKET_GID` to `.env` if it is missing (session-agent runs as a non-root user and cannot reach `/var/run/docker.sock` without it; `docker-compose.yml` refuses to start session-agent unset).
 2. On an existing installation only: `./scripts/backup.sh` (skip with `--no-backup`).
-3. `./scripts/build.sh` — builds all images with their real git version/commit/date (plain `docker compose build` reports `version=1.0.0/commit_sha=unknown`, RBI-POST-014).
+3. `./scripts/build.sh` — builds all images with their real git version/commit/date (plain `docker compose build` reports only the Dockerfiles' default release number and `commit_sha=unknown`, RBI-POST-014).
 4. `docker compose up -d postgres redis clamav`, then `docker compose run --rm backend alembic upgrade head`. The backend deliberately never migrates at startup (a DB outage or an un-migrated schema must not crash the process, see `_lifespan` in `backend/app/main.py`); without this, a fresh database fails every query against `system_state`/`browser_nodes` and `/setup/*` never produces a setup token.
 5. `docker compose up -d`, then `./scripts/build-browser-image.sh`. The browser sandbox image is not a compose service — the Session Agent starts one container from it per session — so `docker compose up --build` never builds it.
 6. `docker compose restart reverse-proxy` (nginx caches upstream container IPs at worker start).
 7. `./scripts/seed-standard-policies.sh` — adds standard policy templates that are new to this installation; before first-run setup it does nothing.
-8. As root only: `./scripts/setup-network-isolation.sh` (the browser-plane egress blocklist, see [Network isolation](#network-isolation)). Without root the script prints the exact command instead. It must be re-run after any change to which docker networks exist on the host; `./scripts/install-network-isolation-timer.sh` does that automatically.
+8. As root only: `./scripts/setup-network-isolation.sh` (the browser-plane egress blocklist, see [Network isolation](#network-isolation)). Run without root, `deploy.sh` skips this step and prints the exact command instead. It must be re-run after any change to which docker networks exist on the host; `./scripts/install-network-isolation-timer.sh` does that automatically.
 
 Extra compose files (e.g. `docker-compose.prod.yml` from [TLS](#tls) below): set `COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml` in `.env` — Docker Compose reads it itself, so `deploy.sh` and every manual `docker compose` command use the same stack.
 
@@ -74,7 +74,7 @@ Without this timer (or an equivalent host-level automation you set up yourself),
 
 **Official release build** — `.github/workflows/release.yml` sets `OPENRBI_VERSION` (the actual release tag), `OPENRBI_COMMIT_SHA` (`$GITHUB_SHA`), and `OPENRBI_BUILD_DATE` (a real UTC timestamp) as build args for every image; `docker inspect`, `/health`, and `/admin/health` all report the real values for an image pulled from `ghcr.io`.
 
-**Local/development build** — a plain `docker compose build` (or `up --build`) passes none of these, so every locally-built image silently falls back to each Dockerfile's `ARG` defaults: `OPENRBI_VERSION=1.0.0` (hardcoded, never changes), `OPENRBI_COMMIT_SHA=unknown`, `OPENRBI_BUILD_DATE=unknown` — the same "1.0.0/unknown" regardless of what's actually checked out, which is close to useless for "which exact code is running" during local debugging or support. Use `scripts/build.sh` instead:
+**Local/development build** — a plain `docker compose build` (or `up --build`) passes none of these, so every locally-built image silently falls back to each Dockerfile's `ARG` defaults: `OPENRBI_VERSION` set to the last release in `VERSION` (kept in sync by `scripts/check-version-sync.py`), `OPENRBI_COMMIT_SHA=unknown`, `OPENRBI_BUILD_DATE=unknown` — the same values regardless of what's actually checked out, which is close to useless for "which exact code is running" during local debugging or support. Use `scripts/build.sh` instead:
 
 ```bash
 ./scripts/build.sh          # build every service
@@ -98,7 +98,7 @@ Enter that token together with a username and password for the first administrat
 
 Completing setup also creates the [standard policy templates](policies.md#standard-policy-templates) (`PDF Only`, `Block Executables`, `Full HD`, …): published, but attached to no group, so they change nothing until an admin assigns one.
 
-**Keep at least one local `ADMIN` account with a real password at all times** — see `docs/admin-guide.md`'s break-glass note. There is currently no separate account-recovery process if every local administrator is lost.
+**Keep at least one local `ADMIN` account with a real password at all times** — see `docs/admin-guide.md`'s break-glass note. If that account's password is lost, an operator with shell access to the Docker host can reset it with `./scripts/reset-local-password.sh <username>` (audited, see [troubleshooting.md](troubleshooting.md#locked-out-of-every-admin-account-ssh-access-only)). There is no host-side recovery if the account's TOTP device *and* its recovery codes are lost as well.
 
 ## TLS
 
@@ -120,7 +120,7 @@ sudo ./scripts/deploy.sh
 
 `OPENRBI_ENVIRONMENT=production` flips the session cookie to `Secure` (HTTPS-only), so it belongs together with the TLS overlay, not before a real certificate is serving traffic (see [ADR 0008](adr/0008-fail-closed.md)). `deploy.sh` refuses to run when `COMPOSE_FILE` includes `docker-compose.prod.yml` but `OPENRBI_ENVIRONMENT` is anything other than `production`, so a TLS deployment can no longer silently send the cookie without `Secure`.
 
-`docker-compose.prod.yml` adds `80:80` and `443:443` alongside the base file's `8080:80` — the extra `8080` binding is harmless on the Docker host itself; see [Firewall](#firewall) below for what to actually expose.
+`docker-compose.prod.yml` replaces the base file's evaluation binding `8080:80` with `80:80` and `443:443` (`ports: !override` — Compose would otherwise merge the lists and keep `8080` published). Check with `docker compose config` that `reverse-proxy` only publishes `80`/`443`; see [Firewall](#firewall) below for what to actually expose.
 
 ## Firewall
 
@@ -128,7 +128,7 @@ Only expose what needs to be internet-reachable:
 
 - **443** (HTTPS) — required.
 - **80** (HTTP) — optional, only needed for the redirect to 443 and/or certbot's HTTP-01 challenge.
-- Everything else (5432/Postgres, 6379/Redis, 3310/ClamAV, 8100/Session Agent, the Docker socket, the compose file's own `8080` dev binding) must **not** be reachable from outside the host — they're only ever meant to be reached container-to-container on `control-plane`, which `docker-compose.yml` already keeps off the host network. A host-level firewall (e.g. `ufw`, cloud security groups) should still explicitly deny all of these as a second layer, since a compose misconfiguration or a future added `ports:` entry should not be the only thing standing between them and the internet.
+- Everything else (5432/Postgres, 6379/Valkey (`redis`), 3310/ClamAV, 8100/Session Agent, the Docker socket, and — on a deployment without the TLS overlay — the base compose file's `8080` evaluation binding) must **not** be reachable from outside the host — they're only ever meant to be reached container-to-container on `control-plane`, which `docker-compose.yml` already keeps off the host network. A host-level firewall (e.g. `ufw`, cloud security groups) should still explicitly deny all of these as a second layer, since a compose misconfiguration or a future added `ports:` entry should not be the only thing standing between them and the internet.
 
 ## Storage layout
 
@@ -255,9 +255,11 @@ git pull
 sudo ./scripts/deploy.sh
 ```
 
-The same script as the installation: it takes a backup first (`./scripts/backup.sh`; migrations in this project are additive where possible, see the Alembic-gotchas notes in `docs/development.md`, but a backup taken immediately before an update is the cheapest insurance against the one that isn't), pulls the current upstream images (postgres, valkey, clamav, nginx), rebuilds every image on fresh base images, including the browser sandbox image without build cache so it always gets the latest Firefox ESR security release from Debian, runs the database migrations, restarts the reverse proxy, and adds any standard policy templates introduced by the new release. Templates you have renamed, edited or archived are left alone. Additional worker nodes: `git pull && sudo ./scripts/deploy.sh --node` on each node host.
+The same script as the installation: it takes a backup first (`./scripts/backup.sh`; migrations in this project are additive where possible, but a backup taken immediately before an update is the cheapest insurance against the one that isn't), pulls the current upstream images (postgres, valkey, clamav, nginx), rebuilds every image on fresh base images, including the browser sandbox image without build cache so it always gets the latest Firefox ESR security release from Debian, runs the database migrations, restarts the reverse proxy, and adds any standard policy templates introduced by the new release. Templates you have renamed, edited or archived are left alone. Additional worker nodes: `git pull && sudo ./scripts/deploy.sh --node` on each node host.
 
-**Upgrading from a deployment older than v1.0.1**: `.env` needs a new required line before `docker compose up -d` above will start `session-agent` at all —
+**Release-specific upgrade notes** are listed under **Changed** (entries marked **Breaking**) in [CHANGELOG.md](../CHANGELOG.md) — read them for every version you skip. For 1.0.2: `OPENRBI_BACKEND_BROWSER_PLANE_IP` was renamed `OPENRBI_AGENT_BROWSER_PLANE_IP`, and an unset `OPENRBI_AGENT_CAPACITY` now means "computed from host headroom" instead of a flat 10 (see [Sizing](#sizing)). The full operator sequence is the [upgrade runbook](release/upgrade.md).
+
+**Upgrading from a deployment older than v1.0.1**: `.env` needs `OPENRBI_DOCKER_SOCKET_GID`. `deploy.sh` adds it automatically (step 1 of [Installation](#installation)); only when you start the stack by hand with `docker compose up -d` do you need to add it yourself first —
 
 ```bash
 grep -q '^OPENRBI_DOCKER_SOCKET_GID=' .env || echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env

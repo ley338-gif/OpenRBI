@@ -14,7 +14,7 @@ Admin-forced Disconnect closes the user's live display WebSocket immediately via
 |---|---|
 | `QUEUED` | Session requested, waiting on node/capacity selection |
 | `STARTING` | Sandbox + display are being created/started |
-| `ACTIVE` | Sandbox running, display connected, session usable |
+| `ACTIVE` | Sandbox running and its display ready, session usable — set once the display is ready (before any viewer connects), on reconnect, and after a restore |
 | `DISCONNECTED` | Remote-display connection dropped; sandbox still running |
 | `ISOLATING` | Isolation in progress (network/clipboard/file-transfer being locked down) |
 | `ISOLATED` | Network egress, clipboard (both directions), uploads, new downloads, and new file shares are all denied; sandbox still exists |
@@ -26,21 +26,19 @@ Admin-forced Disconnect closes the user's live display WebSocket immediately via
 
 ```
 QUEUED → STARTING → ACTIVE ⇄ DISCONNECTED
-                        │           │
-                        ▼           ▼
-                    ISOLATING → ISOLATED
-                        │           │
-                        └─────┬─────┘
-                              ▼
-                        TERMINATING → TERMINATED
+                       │           │
+                       ▼           ▼
+                   ISOLATING → ISOLATED ──restore──▶ ACTIVE
+
+any state except TERMINATED ──kill / end session──▶ TERMINATING → TERMINATED
 
 any state → FAILED (on unrecoverable error)
 ```
 
-- `ACTIVE → DISCONNECTED`: the remote-display connection drops (client closed tab, network blip). The sandbox is not touched. A user or admin can reconnect (`DISCONNECTED → ACTIVE`). If nobody does within `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it), `app/core/session_reaper.py` moves it to `TERMINATING → TERMINATED` automatically and records `SESSION_TIMED_OUT`. The disconnect time is `last_activity_at`, stamped when the display connection drops. There is no idle timeout for an `ACTIVE` session, and `ISOLATED` sessions are never timed out.
-- `ACTIVE/DISCONNECTED → ISOLATING → ISOLATED`: admin- or Security-Reviewer-triggered, or automatic on policy violation. Always generates a Security Event; automatic isolation also opens/updates an Incident.
+- `ACTIVE → DISCONNECTED`: the remote-display connection drops (client closed tab, network blip). The sandbox is not touched. The session owner can reconnect by opening the Secure Browser again (`DISCONNECTED → ACTIVE`); admins have no viewer and cannot reconnect to someone else's session. If nobody does within `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it), `app/core/session_reaper.py` moves it to `TERMINATING → TERMINATED` automatically and records `SESSION_TIMED_OUT`. The disconnect time is `last_activity_at`, stamped when the display connection drops. There is no idle timeout for an `ACTIVE` session (including one whose display was never connected), and `ISOLATED` sessions are never timed out.
+- `ACTIVE/DISCONNECTED → ISOLATING → ISOLATED`: admin- or Security-Reviewer-triggered only — there is no automatic isolation in v1.0. Always generates a `SESSION_ISOLATED` Security Event and opens a `MEDIUM` Incident.
 - `ISOLATED → ACTIVE`: explicit "restore" action by an authorized admin/reviewer — logged as its own Security Event, distinct from the original isolation.
-- `ISOLATED/ACTIVE/DISCONNECTED → TERMINATING → TERMINATED`: Kill. Must be idempotent — killing an already-terminated or already-terminating session succeeds (or no-ops) rather than erroring.
+- `any state except TERMINATED → TERMINATING → TERMINATED`: Kill (ADMIN) or **End session** (the owning user, `POST /sessions/{id}/terminate`). Idempotent — killing an already-terminated or already-terminating session succeeds (or no-ops) rather than erroring. The backend accepts this for `QUEUED`, `STARTING` and `FAILED` sessions too, although the Admin Portal currently hides Kill for `FAILED` sessions.
 - Any state can move to `FAILED` if the underlying `SandboxProvider`/`DisplayProvider` call fails unrecoverably; `FAILED` sessions still require cleanup (best-effort termination) and are surfaced to admins, not silently dropped.
 
 ## Admin actions
