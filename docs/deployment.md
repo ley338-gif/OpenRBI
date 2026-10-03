@@ -70,6 +70,13 @@ The helper writes the unit with `WorkingDirectory=` set to this checkout's real 
 
 Without this timer (or an equivalent host-level automation you set up yourself), re-run `sudo ./scripts/setup-network-isolation.sh` manually after every: host reboot, Docker daemon restart, `docker compose down && up` that recreates the `browser-plane` network, and any change to `OPENRBI_BROWSER_PLANE_NETWORK`/`OPENRBI_AGENT_BROWSER_PLANE_IP`. `./scripts/setup-network-isolation.sh --remove` clears both the iptables rules and the marker file (health immediately reports `NOT_CONFIGURED`, never a stale `HEALTHY`).
 
+**Which settings the script uses.** It reads the same values `docker compose` uses, from the exported environment first and otherwise from this checkout's `.env` (`OPENRBI_ENV_FILE` points it at another file). So `deploy.sh`, the systemd timer and a manual run all agree with the running stack without exporting anything:
+
+- `OPENRBI_AGENT_BROWSER_PLANE_IP` — the session agent's pinned `browser-plane` address, the only address allowed to open new connections into that network (default `172.30.0.2`).
+- `OPENRBI_BROWSER_PLANE_NETWORK` — the Docker network to protect. It defaults to `<project>_browser-plane`, where the project is `COMPOSE_PROJECT_NAME` or, as for `docker compose` itself, the lower-cased name of the checkout directory.
+
+Before it changes any rule, the script checks that every address it would exempt belongs to the `session-agent` container on that network. If the address belongs to another container (e.g. a sandbox) or to nobody while the agent sits elsewhere, it refuses: the previous rules stay as they were, the marker is not refreshed, and the error names the agent's actual address. An exempted address that a sandbox holds would let that sandbox open connections into the control plane. Only when no session agent is attached yet (e.g. the timer firing during boot) does it proceed, with a warning. `./scripts/setup-network-isolation.sh --check` runs the same validation without root and without touching iptables.
+
 ## Local build version metadata (RBI-POST-014)
 
 **Official release build** — `.github/workflows/release.yml` sets `OPENRBI_VERSION` (the actual release tag), `OPENRBI_COMMIT_SHA` (`$GITHUB_SHA`), and `OPENRBI_BUILD_DATE` (a real UTC timestamp) as build args for every image; `docker inspect`, `/health`, and `/admin/health` all report the real values for an image pulled from `ghcr.io`.
