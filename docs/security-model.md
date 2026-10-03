@@ -13,6 +13,10 @@ Each browser session runs in its own container (see [ADR 0010](adr/0010-docker-s
 - seccomp/AppArmor profiles appropriate to a browser workload
 - a dedicated temporary browser-profile path, destroyed at session end (see [ADR 0007](adr/0007-no-persistent-browser-profiles.md))
 
+Inside that container, Firefox's own content-process sandbox runs as a second layer: content processes install Firefox's seccomp-bpf filter on top of the container's. The user-namespace part of Firefox's sandbox is unavailable under `cap_drop: ALL` and is skipped. Images up to and including 1.0.2-rc.2 disabled the content sandbox (`MOZ_DISABLE_CONTENT_SANDBOX=1`).
+
+Firefox enterprise policies (`docker/browser/policies.json`) switch off telemetry, studies, first-run/onboarding pages, sponsored content and update checks, so an isolated session doesn't contact Mozilla services on its own.
+
 ## Control-plane container hardening (Phase 20)
 
 The sandbox hardening baseline above was always container-per-session and dynamically applied by the Session Agent. Phase 20 extends the same "no component runs unnecessarily privileged" principle to the *static* `docker-compose.yml` services:
