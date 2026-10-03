@@ -52,6 +52,11 @@ RUN apt-get update && apt-get upgrade -y \
 RUN groupadd -g 10001 openrbi \
     && useradd -u 10001 -g openrbi -M -d /tmp/home -s /usr/sbin/nologin openrbi
 
+# Enterprise policies: no first-run "Privacy Notice" tab, no telemetry,
+# studies, sponsored content or update checks. An isolated session must not
+# phone home to Mozilla, and every session starts a fresh profile, so
+# first-run pages would appear every single time.
+COPY policies.json /usr/lib/firefox-esr/distribution/policies.json
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
@@ -59,12 +64,14 @@ USER openrbi
 ENV HOME=/tmp/home
 ENV DISPLAY=:99
 # Container-level isolation (ADR 0010) is this platform's primary sandbox
-# boundary; Firefox's own content-process sandbox additionally wants
-# capabilities (e.g. unprivileged user namespaces) that conflict with
-# cap_drop=ALL + no-new-privileges. Disabling it here avoids Firefox
-# silently failing to start under those constraints — documented, not a
-# silent security downgrade, since the container boundary is unaffected.
-ENV MOZ_DISABLE_CONTENT_SANDBOX=1
+# boundary. Firefox's own content-process sandbox runs on top of it as a
+# second layer: its seccomp-bpf filter works under cap_drop=ALL +
+# no-new-privileges (verified with Firefox ESR 153: content processes carry
+# an extra seccomp filter). Only the user-namespace part is unavailable
+# ("CanCreateUserNamespace() clone() failure: EPERM" in the log is
+# expected), which Firefox handles by skipping that layer. Earlier images
+# set MOZ_DISABLE_CONTENT_SANDBOX=1, which Firefox 153 answers with a
+# permanent "security sandbox is disabled" infobar in every session.
 
 # Not published to the host or any public network by the SandboxProvider;
 # reachable only from whatever network the session's container is attached

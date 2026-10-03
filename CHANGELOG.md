@@ -6,6 +6,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Security
+
+- **Firefox's own content sandbox is back on** in the browser sandbox image. It was disabled with `MOZ_DISABLE_CONTENT_SANDBOX=1` on the assumption that it can't run under `cap_drop=ALL` + `no-new-privileges`. With Firefox ESR 153 it does: content processes install Firefox's seccomp-bpf filter on top of the container's (only the user-namespace layer is skipped). That gives a renderer exploit a second barrier inside the container, and it removes the permanent "The security sandbox is disabled" infobar Firefox 153 shows in every session.
+- **No telemetry, no first-run tab.** Firefox enterprise policies (`docker/browser/policies.json`) switch off telemetry, data reporting, studies, Pocket/sponsored content, onboarding, default-browser and update checks. Every session used to open a second "Firefox Privacy Notice" tab, because each session starts with a fresh profile.
+
 ## [1.0.2-rc.2] - 2026-10-03
 
 ### Security
