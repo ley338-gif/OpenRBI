@@ -360,8 +360,14 @@ is successful, P0 is zero, and no known P1 release blocker remains.
 
 ## Published-artifact acceptance runs
 
-Per [`release-process.md`](release-process.md) step 6, every RC and GA is
-accepted against the images it actually published, not against local rebuilds:
+Per [`release-process.md`](release-process.md) step 6, every RC and GA since
+`v1.0.2-rc.3` (when this workflow was introduced) is accepted against the images
+it actually published, not against local rebuilds. Earlier releases were
+accepted with the CI jobs against images built from source; for 1.0.1, a manual
+v1.0.0 → v1.0.1 upgrade on a real host using the published images is recorded
+in [`v1.0.1-acceptance.md`](v1.0.1-acceptance.md). `v1.0.2-rc.1` and `rc.2`
+have no published-image run.
+
 `.github/workflows/acceptance-published.yml` checks out the release tag's
 source, pulls each image by the registry digest recorded in the GitHub
 Release metadata, verifies its OCI version/revision labels and runs the same

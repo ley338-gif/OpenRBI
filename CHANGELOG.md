@@ -53,6 +53,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
   - Documented download/quarantine retention (`docs/quarantine.md#retention`, previously only in ADR 0022) and the Workers page's node enrollment flow (Register / Approve / Revoke).
   - The second ADR 0022 (clipboard enforcement) is renumbered to ADR 0026. `docs/adr/README.md` is a new index of all ADRs, and ADRs overtaken by later work carry status notes.
   - Fixed a broken `printf` example in `docs/troubleshooting.md` that set a password with a trailing space, a log grep that never matched, and broken anchors and references.
+- Release documentation brought in line with the release workflows: the upgrade runbook's manual sequence now matches `deploy.sh` (refreshed base images, uncached browser image), the missing gate for upgrades between v1 releases is stated, `release-gates.md` lists the Playwright and Session Agent unit-test jobs, `release-process.md` no longer asks to match published digests against the dry run, `publishing.md` covers the published-image acceptance run, and `dependencies.md` states that the locks target Python 3.11 while the images run Python 3.14. The `[1.0.2]` section now records the Python 3.14/Node 26 base-image updates, `[1.0.0]` has one `Fixed` section, and `[1.0.0-rc.1]` has an entry.
 
 ## [1.0.2] - 2026-10-03
 
@@ -95,6 +96,7 @@ Consolidated GA release, promoted from `1.0.2-rc.3` after that candidate passed 
 
 - **Breaking:** `scripts/setup-network-isolation.sh`'s `OPENRBI_BACKEND_BROWSER_PLANE_IP` is renamed `OPENRBI_AGENT_BROWSER_PLANE_IP` (Phase B2.4 above) — the backend no longer has any `browser-plane` network presence to exempt, so continuing to honor the old name would let an existing override silently stop applying to anything. The default numeric address is unchanged (`172.30.0.2`), so an un-overridden single-node deployment needs no action; a deployment that explicitly set the old variable (e.g. in a systemd timer or Segmented setup) must rename it on upgrade. `browser-plane`'s subnet is also now overridable (`OPENRBI_BROWSER_PLANE_SUBNET`, default unchanged `172.30.0.0/24`).
 - **Breaking (Phase B3.1 above):** `OPENRBI_AGENT_CAPACITY` left unset used to mean a flat capacity of 10; it now means uncapped/purely computed from real host headroom. A deployment that never explicitly set this will see its reported capacity change on upgrade — set it explicitly to restore the old fixed-number behavior (as a ceiling, see the roadmap doc). A deployment that already set it explicitly is unaffected, since it now acts as a ceiling on the same computed value.
+- Container base images: backend and Session Agent now run on `python:3.14-slim` (was `3.11-slim`), and the frontend is built on `node:26-slim` (was `22-slim`) — Dependabot updates merged after 1.0.1. The Python lockfiles are still resolved for Python 3.11, and CI lints and audits with Python 3.11 and Node 22; see [`docs/release/dependencies.md`](docs/release/dependencies.md).
 
 ### Fixed
 
@@ -180,7 +182,7 @@ Consolidated GA release, promoted from `1.0.2-rc.3` after that candidate passed 
 
 ## [1.0.1] - 2026-08-15
 
-Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record.
+Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes were re-verified end-to-end against the real published images on genuine infrastructure (see [`docs/release/v1.0.1-acceptance.md`](docs/release/v1.0.1-acceptance.md)). Full change list below is the union of `1.0.1-rc.1` and `1.0.1-rc.2`, kept as their own dated sections further down for the historical record. Release notes: [`docs/release/v1.0.1-release-notes.md`](docs/release/v1.0.1-release-notes.md).
 
 ### Security
 
@@ -256,14 +258,6 @@ Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes
 - Added a persisted, configurable 30-minute expiry for the console-issued first-run setup token.
 - Centralized session-cookie issuance/removal and added coverage for `Secure`, `HttpOnly`, `SameSite=Lax`, path, max-age, and server-side expiry.
 - Expanded the live security gate across sandbox hardening, control-plane reachability, IPv6 bypass prevention, benign/EICAR/outage file outcomes, upload fail-closed behavior, complete-history secret scanning, and frontend bundle secret checks.
-
-### Fixed
-
-- Fault-injection reliability: hard-killed or startup-interrupted browser containers are now discovered even when stopped, removed before their DB session is finalized as failed, retried if cleanup is temporarily unavailable, audited with explicit lost/start-failure events, and surfaced as Admin Dashboard warnings. A required destructive CI acceptance now exercises Browser/Agent/backend/PostgreSQL/Valkey/ClamAV failures, orphan cleanup, startup interruption, Drain, Maintenance, and control-plane network loss.
-
-- V1-005 reproducible dependencies: backend and Session Agent production/dev dependency graphs are now committed as exact, hash-verified Linux/Python 3.11 lockfiles. Production images, integration runners, and `pip-audit` consume those locks; CI rejects stale Python locks. The frontend image now uses the committed workspace lock through `npm ci`. The pinned regeneration and review procedure is documented in `docs/release/dependencies.md`.
-- V1-001 LDAP CI stability: the HTTP-level LDAP runner no longer rewrites `.env` or invokes `docker compose up -d --build backend` mid-test. The latter was the exact command returning exit 137 in main CI; the available logs do not establish `OOMKilled`, so the failure is not labelled as OOM. The suite now starts a short-lived LDAP-enabled backend from the already-built Compose image, preserves the normal stack, emits backend logs on readiness failure, and removes both throwaway containers on every exit.
-- V1-002 release gates: CI now lint-checks all shipped Python code, tests, and migrations with Ruff; type-checks backend and Session Agent independently with mypy; audits resolved production dependencies for both Python components with `pip-audit`; and exposes a single fail-closed `Release gates` result that succeeds only when every required build, scan, integration, security, LDAP, lint, and type-check job succeeded. The authoritative gate mapping is documented in `docs/release/release-gates.md`.
 
 ### Added
 
@@ -395,6 +389,10 @@ Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes
 
 ### Fixed
 
+- Fault-injection reliability: hard-killed or startup-interrupted browser containers are now discovered even when stopped, removed before their DB session is finalized as failed, retried if cleanup is temporarily unavailable, audited with explicit lost/start-failure events, and surfaced as Admin Dashboard warnings. A required destructive CI acceptance now exercises Browser/Agent/backend/PostgreSQL/Valkey/ClamAV failures, orphan cleanup, startup interruption, Drain, Maintenance, and control-plane network loss.
+- V1-005 reproducible dependencies: backend and Session Agent production/dev dependency graphs are now committed as exact, hash-verified Linux/Python 3.11 lockfiles. Production images, integration runners, and `pip-audit` consume those locks; CI rejects stale Python locks. The frontend image now uses the committed workspace lock through `npm ci`. The pinned regeneration and review procedure is documented in `docs/release/dependencies.md`.
+- V1-001 LDAP CI stability: the HTTP-level LDAP runner no longer rewrites `.env` or invokes `docker compose up -d --build backend` mid-test. The latter was the exact command returning exit 137 in main CI; the available logs do not establish `OOMKilled`, so the failure is not labelled as OOM. The suite now starts a short-lived LDAP-enabled backend from the already-built Compose image, preserves the normal stack, emits backend logs on readiness failure, and removes both throwaway containers on every exit.
+- V1-002 release gates: CI now lint-checks all shipped Python code, tests, and migrations with Ruff; type-checks backend and Session Agent independently with mypy; audits resolved production dependencies for both Python components with `pip-audit`; and exposes a single fail-closed `Release gates` result that succeeds only when every required build, scan, integration, security, LDAP, lint, and type-check job succeeded. The authoritative gate mapping is documented in `docs/release/release-gates.md`.
 - A quota-exceeded session-create attempt was mapped to `502 Bad Gateway` instead of a proper client error — added a dedicated `QuotaExceededError` mapped to `429 Too Many Requests`.
 - `POST /admin/policies/{id}/versions/{id}/publish` and `POST /admin/policies/{id}/rollback` 500'd on **every real call** — found while manually clicking "Publish" in the Admin Portal during the resolution-per-policy work above, since no existing test exercised the actual HTTP endpoint (only the underlying service function directly, bypassing the bug). Same root cause already documented below for `Incident.updated_at`: `Policy.updated_at` also has `onupdate=func.now()` (`TimestampMixin`), and both endpoints mutate `policy.current_version_id` then call `db.commit()` before a response-serialization helper does a bare `policy.updated_at` read — triggering the same `MissingGreenlet` from an implicit lazy-load outside the async bridge. The database mutation itself had already succeeded by the time of the crash; only the response serialization failed, so the underlying data was silently correct despite the 500. Fixed with an explicit `await db.refresh(policy)` in both endpoints, same pattern as the earlier fix.
 - Two test-cleanup fixtures were missing FK-safe deletion of `group_policies`/`policy_versions.created_by`, both only surfacing once a test actually attached a policy to a group and left it there at teardown: `backend/tests/conftest.py`'s session-scoped `_cleanup_test_data` never deleted `group_policies` at all before deleting `groups`/`policies`, and `scripts/e2e-seed.py`'s `down()` never nulled `policy_versions.created_by` before deleting `users` — both left a dangling FK reference that failed the *next* test run's cleanup (or seed) instead of the run that caused it, making the actual cause easy to miss. Fixed both to match the FK-safe ordering already used elsewhere in each file.
@@ -409,7 +407,9 @@ Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes
 - `components.css`'s `.stat-card` referenced `var(--space-5)`, which the token scale never defined (it jumped straight from `--space-4` to `--space-6`) — found while extending the design tokens for the UI polish pass. Added `--space-5`/`--space-10`.
 - The login form's password `<input>` had no accessible name of its own, so browsers computed it from the wrapping `<label>`'s full content — including the show/hide toggle button nested inside it — giving the field the accessible name "Password Show password" instead of "Password", a genuine screen-reader regression, not just a test-tooling quirk. Fixed by giving the input an explicit `aria-label="Password"`, which takes precedence over label-content computation; E2E locators that queried it by label were updated to `{ exact: true }` so they can't also match the toggle button's own "Show/Hide password" label.
 
-### Fixed
-
 - `clamav/clamav:1.3` in `docker-compose.yml` did not exist upstream; pinned to `1.5.4`.
 - Several nullable timestamp columns (`recovery_codes.used_at`, `users.disabled_at`, `browser_sessions.started_at`/`ended_at`/`last_activity_at`, `browser_nodes.last_heartbeat`, `policy_versions.published_at`, `quarantine_files.reviewed_at`) were timezone-naive while application code writes timezone-aware datetimes everywhere; this crashed the first time any of them was actually written to. Migrated all of them to `TIMESTAMP WITH TIME ZONE`.
+
+## [1.0.0-rc.1] - 2026-08-15
+
+Release candidate for 1.0.0. Its changes are those listed under `[1.0.0]` above, except the hardened LDAP overlay readiness check in `scripts/run-ldap-integration-tests.sh` (CI only), which was added between `v1.0.0-rc.1` and `v1.0.0`.

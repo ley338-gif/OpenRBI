@@ -15,12 +15,12 @@ OpenRBI has completed the v1 acceptance suite introduced by V1-008 and reached a
 | Database | PostgreSQL 16.x | The shipped image is `postgres:16-alpine`. Other PostgreSQL majors are not part of v1 qualification. |
 | Transient state | Valkey 8.x | The shipped image is `valkey/valkey:8-alpine`, addressed by the historical internal hostname `redis`. A Redis server is protocol-compatible in many cases but is not release-qualified for v1. |
 | Malware scanner | ClamAV 1.5.4 | The Compact deployment pins `clamav/clamav:1.5.4`. Scanner failure must remain fail-closed. |
-| Browser sandbox | The OpenRBI Firefox ESR image | Firefox ESR is installed from the Debian Bookworm repositories when `docker/browser/Dockerfile` is built. Only the release-published browser image is supported; arbitrary Firefox packages are not. |
+| Browser sandbox | The OpenRBI Firefox ESR image | Built from the release's `docker/browser/Dockerfile` by `scripts/deploy.sh` (`scripts/build-browser-image.sh`), which installs Debian Bookworm's current Firefox ESR security release, or the release-published `openrbi-browser` image pinned by digest. Other Firefox packages or browser images are not supported. |
 | Authentication | Local accounts and LDAP/LDAPS | Plain `ldap://` without StartTLS is rejected. LDAP outage and invalid credentials must not fall back to unauthorized local access. |
 | MFA | TOTP plus recovery codes | Privileged roles require TOTP enrollment. Admin MFA reset is supported and audited. WebAuthn is not part of v1. |
 | Edge | Shipped nginx reverse proxy with TLS | A valid operator-provided certificate, HTTPS, `OPENRBI_ENVIRONMENT=production`, and the documented host firewall are required for network-reachable deployments. |
 
-The version ranges above define compatibility policy. Release artifacts will additionally record exact image digests and build metadata so a deployed release can be reproduced and audited.
+The version ranges above define compatibility policy. Release artifacts additionally record exact image digests, CycloneDX SBOMs and build metadata (`release-metadata.json`, see [release/publishing.md](release/publishing.md)) so a published release can be reproduced and audited.
 
 ## Experimental / technology preview
 

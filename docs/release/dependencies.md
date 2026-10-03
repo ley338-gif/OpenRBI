@@ -11,10 +11,19 @@ The authoritative production and development locks are:
 - `backend/requirements.lock` and `backend/requirements-dev.lock`
 - `session-agent/requirements.lock` and `session-agent/requirements-dev.lock`
 
-They target Python 3.11 on x86_64 Linux, the supported v1 production platform,
+They are resolved for Python 3.11 on x86_64 Linux (`scripts/lock-python-dependencies.sh`)
 and include hashes for every artifact. Production images install the production
 lock with `pip --require-hashes`; integration runners install the development
 lock the same way.
+
+**Known mismatch:** since 1.0.2 the backend and Session Agent images run on
+`python:3.14-slim` (a Dependabot base-image update after 1.0.1), while the
+locks are still resolved for Python 3.11 and CI runs Ruff, mypy and
+`pip-audit` with Python 3.11. The images build and pass the functional gates,
+but the lock resolution and the dependency audit do not target the runtime
+that actually ships. Likewise the frontend image builds with `node:26-slim`,
+while CI audits and runs the E2E suite with Node 22. Aligning the lock target
+and CI toolchain with the shipped runtimes is an open follow-up.
 
 To update them, install the pinned compiler and regenerate all four files:
 

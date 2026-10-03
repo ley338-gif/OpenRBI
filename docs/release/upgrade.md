@@ -1,9 +1,17 @@
 # Supported v1 upgrade runbook
 
-Compact single-host Docker is the only supported v1 upgrade path. The automated
-qualification from the pinned 0.1.1 source is documented in
-[`upgrade-acceptance.md`](upgrade-acceptance.md); this page is the operator
-procedure.
+Compact single-host Docker is the only supported v1 upgrade path. This page is
+the operator procedure.
+
+## Qualification
+
+The automated `Upgrade acceptance` gate upgrades a pinned 0.1.1 installation to
+the release candidate ([`upgrade-acceptance.md`](upgrade-acceptance.md)). There
+is no automated gate for upgrades between two v1 releases (for example 1.0.1 →
+1.0.2). Such an upgrade runs the same migrations and procedure, but read the
+release-specific notes first: the **Breaking** entries under **Changed** in
+[`CHANGELOG.md`](../../CHANGELOG.md) for every version you skip, summarized in
+[`deployment.md`](../deployment.md#update-procedure).
 
 ## Before the change
 
@@ -17,29 +25,43 @@ procedure.
 5. Preserve every existing secret, especially
    `OPENRBI_TOTP_SECRET_ENCRYPTION_KEY`. Generating a replacement during an
    upgrade makes enrolled MFA and encrypted LDAP credentials unreadable.
+6. Apply the release-specific changes the CHANGELOG's **Breaking** entries ask
+   for (renamed or newly required `.env` settings, re-running
+   `scripts/provision-segmented-db-roles.sh` for an opted-in Segmented
+   deployment, …) before starting the new version.
 
 ## Upgrade
 
-`scripts/deploy.sh` runs the sequence below (plus the backup from step 4 and
-seeding of new standard policy templates) in one idempotent command:
-`git checkout <tag> && sudo ./scripts/deploy.sh`. The individual commands:
+The supported upgrade is one idempotent command:
+`git fetch --tags origin && git checkout <tag> && sudo ./scripts/deploy.sh`. It
+runs exactly this sequence; use the individual commands only to repeat a single
+step by hand:
 
 ```bash
 git fetch --tags origin
 git checkout <accepted-v1-tag-or-commit>
-docker compose build backend session-agent frontend
+./scripts/backup.sh                      # deploy.sh does this first (--no-backup skips it)
+docker compose pull --ignore-buildable   # refresh postgres/valkey/clamav/nginx under the same tags
+./scripts/build.sh                       # backend, session-agent, frontend: --pull, real version metadata
 docker compose up -d postgres redis clamav
 docker compose run --rm backend alembic upgrade head
-docker compose up -d backend session-agent frontend reverse-proxy
-docker build -t openrbi-browser:latest -f docker/browser/Dockerfile docker/browser
+docker compose up -d
+./scripts/build-browser-image.sh         # --pull --no-cache: Debian's current Firefox ESR security release
 docker compose restart reverse-proxy
-./scripts/seed-standard-policies.sh   # only templates new to this installation
+./scripts/seed-standard-policies.sh      # only templates new to this installation
 sudo ./scripts/setup-network-isolation.sh
 ```
 
-For published releases, deploy the recorded image digests instead of rebuilding
-source locally. Never use an unqualified floating `latest` tag as proof of
-identity.
+Do not shorten this to a plain `docker compose build` or a cached
+`docker build` of the browser image: both reuse stale base layers, and a cached
+browser build keeps shipping the previously installed Firefox ESR.
+
+The procedure builds the images from the tagged source. Running the
+release-published GHCR images instead is not wired into `docker-compose.yml` or
+`deploy.sh`; if you do, pin each image by the registry digest recorded in that
+release's `release-metadata.json` and verify its OCI version/revision labels.
+Never use a floating tag as proof of identity — releases deliberately publish
+no `latest`.
 
 ## Verification before reopening access
 

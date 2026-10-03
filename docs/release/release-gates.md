@@ -9,10 +9,11 @@ pinned compiler and fails on any diff. The frontend build and audit use
 
 | Required capability | GitHub Actions evidence |
 |---|---|
-| Backend integration tests | `Backend integration tests` runs the complete pytest integration suite against PostgreSQL, Valkey, Session Agent, and the real Docker runtime. |
+| Backend integration tests | `Backend integration tests` runs the complete pytest integration suite against PostgreSQL, Valkey, Session Agent, and the real Docker runtime, including the Segmented role-scoping tests against roles provisioned by `scripts/provision-segmented-db-roles.sh`. |
 | Security regression tests | Host-level security tests run inside `Backend integration tests` after network-isolation rules are applied. |
 | Fault-injection acceptance | The same isolated integration job destructively kills/restarts Browser Sandbox, Session Agent, backend, PostgreSQL, and Valkey; stops ClamAV; creates an orphan; interrupts startup and networking; and verifies Drain/Maintenance recovery with DB, container, capacity, audit, incident, warning, and user-error assertions. See [`fault-injection-acceptance.md`](fault-injection-acceptance.md). |
 | LDAP/LDAPS integration | `LDAP integration tests` covers the provider and real HTTP login/admin-configuration flows against a throwaway TLS-enabled OpenLDAP server. |
+| Browser end-to-end tests | `Frontend E2E tests (Playwright)` drives both portals in a real Chromium browser against a running Compact stack: login and MFA enrollment, a noVNC-connected Secure Browser session, logout, the admin pages and the user/admin listener boundary. |
 | Backend build | The backend entry of `Image vulnerability scan (Trivy)` builds `backend/Dockerfile` before scanning it. |
 | Session Agent build | The Session Agent entry of `Image vulnerability scan (Trivy)` builds `session-agent/Dockerfile` before scanning it. |
 | Frontend build and TypeScript check | The frontend entry of `Image vulnerability scan (Trivy)` builds `frontend/Dockerfile`; that build runs `tsc -b` and Vite for both portals. |
@@ -24,13 +25,14 @@ pinned compiler and fails on any diff. The frontend build and audit use
 | Python dependency vulnerabilities | Both entries of `Python dependency scan` audit the exact hash-verified backend and Session Agent production locks with `pip-audit --strict`. |
 | Python lint | `Python lint and type checking` runs Ruff over application code, tests, and migrations. |
 | Python type checking | The same job runs mypy independently for backend and Session Agent, avoiding their intentionally identical top-level `app` package names colliding. |
+| Session Agent unit tests | The same job runs the Session Agent's pytest suite (`session-agent/tests/`, e.g. the capacity computation). |
 | Version consistency | The same job runs `scripts/check-version-sync.py`, which fails if any package or image default differs from the root `VERSION`. |
 | V1 acceptance manifest | The same job runs `scripts/check-v1-acceptance.py`, which requires all 35 binding scenarios, every prescribed result field, a PASS result, and non-empty evidence. The evidence itself is produced by the functional jobs in this table. |
-| Documentation freeze | The same job runs `scripts/check-docs-freeze.py`, requiring the release/operator document set, rejecting known stale release claims, and resolving local Markdown link targets across repository documentation. |
-| Migration validation | Both integration jobs run `alembic upgrade head` against a fresh PostgreSQL database. Multiple heads, broken imports, or a migration that cannot build the current schema fail the job. |
+| Documentation freeze | The same job runs `scripts/check-docs-freeze.py`, requiring the release/operator document set, rejecting known stale release claims, and resolving the target files of local Markdown links in `README.md`, `CHANGELOG.md`, `DEPENDENCIES.md` and `docs/**` (not `#anchors`, and not `SECURITY.md`). |
+| Migration validation | The backend integration, LDAP integration and Playwright E2E jobs each run `alembic upgrade head` against a fresh PostgreSQL database. Multiple heads, broken imports, or a migration that cannot build the current schema fail the job. |
 | Fresh-install acceptance | `Fresh install acceptance` builds an isolated Compact installation from an empty volume, generates secrets, migrates, applies network isolation, bootstraps MFA, creates/logs in a user, and starts/terminates a real browser sandbox. |
 | Backup/restore acceptance | `Backup and restore acceptance` records current-schema baseline counts and concrete user, policy, audit and quarantine evidence; runs the production backup; corrupts database rows and bytes; restores; then proves exact data, login, sandbox lifecycle, health and proxy behavior. |
-| Upgrade acceptance | `Upgrade acceptance` preserves a pinned, reproducibly built 0.1.1 deployment while replacing all four images with the target commit, running Alembic, and proving existing MFA/LDAP/users/policies/sessions/audit/quarantine/worker state plus live login/download/sandbox/proxy behavior. |
+| Upgrade acceptance | `Upgrade acceptance` preserves a pinned, reproducibly built 0.1.1 deployment while replacing all four images with the target commit, running Alembic, and proving existing MFA/LDAP/users/policies/sessions/audit/quarantine/worker state plus live login/download/sandbox/proxy behavior. It qualifies only that 0.1.1 → candidate path: an upgrade between two v1 releases (e.g. 1.0.1 → 1.0.2) has no automated gate; see [`upgrade.md`](upgrade.md#qualification). |
 
 ## Branch and release policy
 
@@ -39,6 +41,10 @@ pinned compiler and fails on any diff. The frontend build and audit use
 - A pull request may merge only after `Release gates` succeeds and relevant review feedback is resolved.
 - A tag or GitHub Release must point to a commit already present on `main` whose `Release gates` result succeeded.
 - Do not disable, soften, or bypass a failing check to publish a release.
+
+After publication, `.github/workflows/acceptance-published.yml` repeats the
+functional jobs above against the published images instead of local builds
+([`release-process.md`](release-process.md) step 6).
 
 The release workflow additionally re-verifies the successful `Release gates`
 check on its exact commit before it builds or publishes anything. Its digest
