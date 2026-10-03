@@ -23,6 +23,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Fixed
 
+- **Segmented DB role scoping ([ADR 0025](docs/adr/0025-segmented-credential-scoping.md)) could not actually be used.**
+  - With the grants from `scripts/provision-segmented-db-roles.sh`, a `backend-user` running as `openrbi_user` failed when starting a session, enforcing file policies, opening incidents, or writing any audit event; that last failure meant every login failed as well.
+  - A `backend-admin` running as `openrbi_admin` failed every operation that deletes rows: deleting groups, changing memberships, detaching policies, editing draft rules, admin MFA resets, and the node poller's metric pruning.
+  - A reproduction against a freshly migrated and provisioned database showed all of these as `permission denied`. The existing test only checked what the roles must *not* do.
+  - Corrected grants for `openrbi_user`:
+    - read-only access to the policy tables;
+    - only the column-level access to audit events, incidents and node telemetry that its code paths need;
+    - still no access to `ldap_configs`, audit metadata, node endpoints/tokens, or account privileges.
+  - Corrected grants for `openrbi_admin`:
+    - `DELETE` only on the six tables admin code removes rows from;
+    - `UPDATE` on the append-only `security_events` is now revoked.
+  - A role-scoped user listener no longer reads the LDAP configuration and treats LDAP as unavailable, also when LDAP was enabled through the Admin Portal.
+  - New `backend/tests/integration/test_segmented_role_scoping.py` runs the real code paths under both roles in CI.
+  - The script itself also failed on Debian/Ubuntu with `.: .env: not found`. Their `/bin/sh` (dash) looks up a bare `.env` in `PATH` rather than in the current directory; the script now sources `./.env`.
+  - **Re-run `./scripts/provision-segmented-db-roles.sh`** on any deployment that opted in.
 - **Multi-node (technology preview): enrolled nodes are now monitored, and revoking a node no longer misroutes its sessions.**
   - **Polling:** the node poller only ever polled the default node from `.env`. An enrolled node was refreshed only when a session was being scheduled, so it showed as Offline about 45 s later and recorded no metric samples (no graphs, no capacity warnings). Every approved, enrolled node is now polled each tick, concurrently and over its own connection. An unreachable node no longer holds up the others.
   - **Health:** `GET /admin/health` has a new `browser_nodes` component. It is `DEGRADED` while any enrolled node is degraded or offline.

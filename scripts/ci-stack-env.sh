@@ -26,6 +26,13 @@ sed -i "s#^OPENRBI_AGENT_API_TOKEN=.*#OPENRBI_AGENT_API_TOKEN=${AGENT_TOKEN}#" .
 sed -i "s#^OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=.*#OPENRBI_TOTP_SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)#" .env
 sed -i "s#^OPENRBI_CSRF_SECRET_KEY=.*#OPENRBI_CSRF_SECRET_KEY=$(openssl rand -hex 32)#" .env
 echo "OPENRBI_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+# docs/adr/0025: passwords for the opt-in Segmented roles. The stack itself
+# keeps using the single owner role; backend-integration-tests provisions
+# openrbi_user/openrbi_admin with these so
+# tests/integration/test_segmented_role_scoping.py can run real code paths
+# under each role.
+echo "OPENRBI_DB_USER_ROLE_PASSWORD=$(openssl rand -hex 32)" >> .env
+echo "OPENRBI_DB_ADMIN_ROLE_PASSWORD=$(openssl rand -hex 32)" >> .env
 
 # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — real capacity is
 # derived from the runner's actual free RAM/CPU. The integration suite's

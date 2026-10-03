@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Note: the startup guard described under "Interaction with LDAP auto-provisioning" checks only the `OPENRBI_LDAP_ENABLED` environment variable. LDAP enabled through the Admin Portal ([ADR 0016](0016-ldap-admin-configuration.md)) is not caught by it, so an operator combining DB role scoping on a `user`-mode listener with portal-enabled LDAP has to avoid that combination themselves.
+Accepted. Amended after 1.0.2: the grants as first shipped left both roles unable to run their own listener's code paths, and nothing tested that. `openrbi_user` could not start a session, evaluate file policies, open incidents or even write an audit event (Postgres needs SELECT for `INSERT ... RETURNING`). `openrbi_admin` had no `DELETE` at all, so group, membership, policy-attachment, draft-rule and MFA-reset operations and the metrics pruning failed. The role definitions below describe the corrected grants. `backend/tests/integration/test_segmented_role_scoping.py` now runs those code paths under both roles in CI. A role-scoped `user` listener also no longer reads `ldap_configs` at all: it treats LDAP as unavailable, which closes the gap that the env-only startup guard left for LDAP enabled through the Admin Portal ([ADR 0016](0016-ldap-admin-configuration.md)).
 
 ## Context
 
@@ -64,25 +64,34 @@ the four new backend-side variables (§3 below) just need to be set there, once 
   (SELECT/INSERT/UPDATE across every application table). No behavior change for `backend-admin` —
   it is already the intentionally-trusted control-plane role, and Segmented's admin process is
   meant to retain full application-data access, matching Compact's single role. No blanket
-  `DELETE` grant, consistent with the append-only audit-log invariant
-  `docs/security-self-assessment.md`'s V7 section already relies on elsewhere.
+  `DELETE` grant: `DELETE` only on the tables admin code actually removes rows from (`groups`,
+  `user_groups`, `group_policies`, `file_policy_rules`, `recovery_codes`,
+  `worker_metric_samples`), and `UPDATE` on `security_events` is revoked — consistent with the
+  append-only audit-log invariant `docs/security-self-assessment.md`'s V7 section relies on.
 - **`openrbi_user`**: SELECT/INSERT/UPDATE on `browser_sessions` and `quarantine_files` only (the
   tables user-registered routes — `sessions.py`, `files.py`, `display.py` — actually own); SELECT
   on `users`, `roles`, `browser_nodes` (needed by the shared auth/MFA path and by `display.py`'s
   node-connection resolution — full-row `SELECT` is unavoidable here since login must read a
   candidate row, including its password/TOTP columns, before it knows whether the caller is who
-  they claim); SELECT/INSERT/UPDATE/DELETE on `recovery_codes` (a caller's own MFA enrollment
+  they claim); column-level `UPDATE` on `browser_nodes` for exactly the heartbeat/telemetry columns
+  `select_node()` refreshes when a session starts (never `endpoint_url`, `agent_token_encrypted` or
+  `enrollment_status`, and no `INSERT`); read-only `SELECT` on `policies`, `policy_versions`,
+  `group_policies`, `user_groups` and `file_policy_rules` (policy enforcement for sessions, uploads
+  and downloads); SELECT/INSERT/UPDATE/DELETE on `recovery_codes` (a caller's own MFA enrollment
   deletes and recreates its set, a login marks one used — user-owned data, not an escalation
-  surface); INSERT-only on `security_events` (write the audit trail, never read or rewrite it);
+  surface); `INSERT` on `security_events` plus column-level `SELECT` on only `id`, `event_type`,
+  `user_id`, `created_at` (what `INSERT ... RETURNING` and the repeated-violation count need — never
+  `metadata_json`); `INSERT` on `incidents` plus column-level `SELECT` on `id`, `user_id`, `title`,
+  `status`, `created_at`, `updated_at` (malware/repeated-violation incidents from the file
+  pipelines);
   column-level `UPDATE` on `users` restricted to exactly `password_hash`, `mfa_enabled`,
   `totp_secret_encrypted`, `updated_at` — the genuine self-service writes shared `auth.py`/`mfa.py`
   make on the *authenticated caller's own row* (change-my-password, enroll-my-own-MFA); **no**
   `INSERT` on `users` at all, and **no** `UPDATE` on `role_id`/`is_active`/`disabled_at`, so this
   role cannot create a new account or rewrite any account's privilege level even via a raw
-  SQL-injection primitive; **no grant at all** on `groups`, `user_groups`, `policies`,
-  `policy_versions`, `group_policies`, `ldap_configs`, `incidents`, or `worker_metric_samples`, and
-  no write access to `browser_nodes` (`agent_token_encrypted` and the rest of that table's
-  management columns stay admin-only).
+  SQL-injection primitive; **no grant at all** on `groups`, `ldap_configs`,
+  `worker_metric_samples` or `system_state`, and no write access to policies or to
+  `browser_nodes`' management columns.
 
 This makes the boundary real at the database engine level — a `backend-user` compromise attempting
 to read `ldap_configs` or write `users.role_id` gets Postgres's own permission-denied error, not
