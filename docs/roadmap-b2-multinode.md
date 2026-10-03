@@ -282,12 +282,16 @@ only ever fail while the node stays down, and would otherwise block the
 session from ever reaching `FAILED`), but is still attempted normally
 when the node answered this cycle and only that one cleanup call failed.
 `download_poller.py` and `worker_health.py`/`dashboard.py` needed no
-changes — both already iterate every `BrowserSession`/`BrowserNode` row
+changes here (but see the note below on `node_poller.py`) — both already iterate every `BrowserSession`/`BrowserNode` row
 without a single-node assumption (`download_poller.py` already resolves
 its own per-node connection via `app/services/downloads.py`, wired in
 B2.2; `worker_health.py`/`dashboard.py` already `select(BrowserNode)`
 with no node filtering, per their original B1.10.1 multi-node-shaped
-design). Verified against the real docker-compose stack: the existing
+design). *Note added after 1.0.2:* the data they read was only fresh for
+the default node — `node_poller.py` still polled the default agent alone,
+so an enrolled node turned OFFLINE about 45 s after the last session
+start and recorded no metric samples. Fixed by polling every approved,
+enrolled node each tick (`test_node_poller_multinode.py`). Verified against the real docker-compose stack: the existing
 single-node orphan-reconciliation suite passes unchanged, plus two new
 tests (`test_orphan_reconciler_multinode.py`) proving a session on an
 unreachable node reaches `FAILED` after the grace period with the right

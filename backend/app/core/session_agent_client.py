@@ -62,6 +62,9 @@ def _client(connection: NodeConnection | None = None) -> httpx.AsyncClient:
     if connection is None:
         settings = get_settings()
         connection = NodeConnection(base_url=settings.session_agent_base_url, token=settings.session_agent_api_token)
+    if not connection.token:
+        # A revoked node (app/services/nodes.py's connection_for_node()).
+        raise SessionAgentError(f"no agent credential for {connection.base_url} (node revoked)")
     return httpx.AsyncClient(
         base_url=connection.base_url,
         headers={"X-Openrbi-Agent-Token": connection.token},

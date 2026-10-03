@@ -9,12 +9,15 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import clamav_client, session_agent_client
 from app.core.redis import get_redis
+from app.models.browser_node import BrowserNode
+from app.models.enums import NodeEnrollmentStatus
+from app.services.worker_health import WorkerHealth, compute_worker_health
 
 
 class ComponentStatus(str, Enum):
@@ -85,6 +88,45 @@ async def check_session_agent() -> tuple[ComponentHealth, ComponentHealth, Compo
         )
     )
     return agent_health, runtime_health, image_health
+
+
+async def check_browser_nodes(db: AsyncSession) -> ComponentHealth:
+    """Roadmap B2: the session_agent/sandbox_runtime/browser_image components
+    above describe only the default node from .env. This one summarizes every
+    approved, enrolled node from the telemetry app/core/node_poller.py keeps
+    current, using the same classification as the Workers page — no extra
+    agent calls. Draining and maintenance are intentional, not faults.
+    """
+    try:
+        result = await db.execute(
+            select(BrowserNode)
+            .where(
+                BrowserNode.enrollment_status == NodeEnrollmentStatus.APPROVED,
+                BrowserNode.endpoint_url.is_not(None),
+            )
+            .order_by(BrowserNode.hostname)
+        )
+        nodes = list(result.scalars().all())
+    except Exception as exc:  # noqa: BLE001 - one check must never break the endpoint
+        return ComponentHealth(name="browser_nodes", status=ComponentStatus.UNAVAILABLE, detail=str(exc))
+    if not nodes:
+        return ComponentHealth(name="browser_nodes", status=ComponentStatus.HEALTHY, detail="no enrolled nodes")
+    problems = []
+    for node in nodes:
+        health = compute_worker_health(node)
+        if health in (WorkerHealth.DEGRADED, WorkerHealth.OFFLINE):
+            problems.append(f"{node.hostname} {health.value}")
+    if problems:
+        return ComponentHealth(
+            name="browser_nodes",
+            status=ComponentStatus.DEGRADED,
+            detail=f"{len(problems)} of {len(nodes)} enrolled nodes need attention: {', '.join(problems)}",
+        )
+    return ComponentHealth(
+        name="browser_nodes",
+        status=ComponentStatus.HEALTHY,
+        detail=f"{len(nodes)} enrolled node(s) healthy, draining or in maintenance",
+    )
 
 
 async def check_clamav() -> ComponentHealth:
@@ -187,6 +229,7 @@ async def get_system_health(db: AsyncSession) -> SystemHealth:
         agent_health,
         runtime_health,
         image_health,
+        await check_browser_nodes(db),
         await check_clamav(),
         await check_quarantine_storage(),
         await check_network_isolation(),

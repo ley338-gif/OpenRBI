@@ -106,6 +106,9 @@ async def display_ws(
     # unchanged — the relay hop only ever carries bytes this handler has
     # already decided are allowed to cross it.
     connection = connection_for_node(await get_node(db, session.node_id))
+    if not connection.token:  # the session's node was revoked
+        await websocket.close(code=_CLOSE_SANDBOX_UNREACHABLE)
+        return
     relay_url = connection.base_url.rstrip("/") + f"/v1/sandboxes/{session_id}/display/ws"
     if relay_url.startswith("https://"):
         relay_url = "wss://" + relay_url[len("https://") :]

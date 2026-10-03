@@ -135,7 +135,7 @@ Only expose what needs to be internet-reachable:
 
 - **443** (HTTPS) — required.
 - **80** (HTTP) — optional, only needed for the redirect to 443 and/or certbot's HTTP-01 challenge.
-- Everything else (5432/Postgres, 6379/Valkey (`redis`), 3310/ClamAV, 8100/Session Agent, the Docker socket, and — on a deployment without the TLS overlay — the base compose file's `8080` evaluation binding) must **not** be reachable from outside the host — they're only ever meant to be reached container-to-container on `control-plane`, which `docker-compose.yml` already keeps off the host network. A host-level firewall (e.g. `ufw`, cloud security groups) should still explicitly deny all of these as a second layer, since a compose misconfiguration or a future added `ports:` entry should not be the only thing standing between them and the internet.
+- Everything else (5432/Postgres, 6379/Valkey (`redis`), 3310/ClamAV, 8100/Session Agent, the Docker socket, and — on a deployment without the TLS overlay — the base compose file's `8080` evaluation binding) must **not** be reachable from outside the host (the one exception: on an additional multi-node host, 8100 from the control plane over the private overlay, see [Multi-node](#multi-node--experimental--technology-preview-not-a-complete-production-guide)) — they're only ever meant to be reached container-to-container on `control-plane`, which `docker-compose.yml` already keeps off the host network. A host-level firewall (e.g. `ufw`, cloud security groups) should still explicitly deny all of these as a second layer, since a compose misconfiguration or a future added `ports:` entry should not be the only thing standing between them and the internet.
 
 ## Storage layout
 
@@ -347,8 +347,10 @@ See [docs/roadmap-b2-multinode.md](roadmap-b2-multinode.md) for the full phase-b
    OPENRBI_AGENT_API_TOKEN=<a real generated secret, distinct from every other node's>
    OPENRBI_AGENT_NODE_NAME=<a stable, distinct name for this node>
    OPENRBI_AGENT_ENROLLMENT_TOKEN=<the token from step 1>
-   OPENRBI_AGENT_CONTROL_PLANE_URL=<how this host reaches the control plane>
+   OPENRBI_AGENT_CONTROL_PLANE_URL=https://<control-plane host>/api   # see "Networking" below
    OPENRBI_DOCKER_SOCKET_GID=<this host's own docker socket GID>
+   # Publish the agent's port on this host's overlay address (see "Networking" below):
+   COMPOSE_FILE=docker-compose.node.yml:docker-compose.node.override.yml
    ```
 3. `sudo ./scripts/deploy.sh --node` — brings up *only* a Session Agent and its own local `browser-plane` (`docker-compose.node.yml`), builds this host's browser sandbox image, and applies the network-isolation rules. The agent self-enrolls automatically on startup and appears in the Admin Portal's Workers page as `PENDING`.
 4. Install the network-isolation systemd timer on this host too (`sudo ./scripts/install-network-isolation-timer.sh`, see [Network isolation](#network-isolation) above).
@@ -356,7 +358,24 @@ See [docs/roadmap-b2-multinode.md](roadmap-b2-multinode.md) for the full phase-b
 
 **What this genuinely requires that no script here automates**, per the roadmap's own explicit "cross-host transport" decision: a private overlay network between the control-plane host and every node host (WireGuard recommended) so `OPENRBI_AGENT_CONTROL_PLANE_URL`/a node's `endpoint_url` are actually reachable. This project validates that a configured endpoint answers and authenticates every call to it — it does not set up or manage that host-to-host connectivity itself, the same boundary already drawn around firewall/VLAN enforcement for Segmented above.
 
-**Removing a node:** revoke it in the Admin Portal (clears its stored token immediately; existing sessions on it are unaffected until they end or fail, per [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)'s and Roadmap B2.5's documented behavior), then `docker compose -f docker-compose.node.yml down` on that host whenever convenient.
+**Networking.** Two connections cross hosts, in opposite directions:
+
+- **Control plane → node** (every session call, the display relay, telemetry polling): the backend calls the node's Session Agent at the `endpoint_url` an admin enters on **Approve**, e.g. `http://10.8.0.2:8100` for a node whose overlay address is `10.8.0.2`. The agent speaks plain HTTP on port 8100, and the per-node token and the session's screen content travel over it, so this connection must only ever run inside the encrypted overlay. `docker-compose.node.yml` publishes no port, so add a local override file and list it in `COMPOSE_FILE` (step 2; `deploy.sh --node` honors it). Bind it to the overlay address only:
+  ```yaml
+  # docker-compose.node.override.yml — local, not tracked in git
+  services:
+    session-agent:
+      ports:
+        - "10.8.0.2:8100:8100"   # this node's overlay address only
+  ```
+  On the node host's firewall, allow 8100 only from the control plane's overlay address. This is the one exception to the [Firewall](#firewall) rule that 8100 must never be reachable from outside a host.
+- **Node → control plane** (one-time self-enrollment only): `OPENRBI_AGENT_CONTROL_PLANE_URL` must reach a listener in `admin` or `both` mode, because the enrollment endpoint only exists there. Through the shipped reverse proxy that is `https://<control-plane host>/api` — the `/api` prefix is required. Use the HTTPS URL: with `OPENRBI_ENVIRONMENT=production` the CSRF cookie the enrollment request has to echo back is `Secure`, so enrollment over plain `http://` fails. The proxy's certificate must be one the node's agent trusts.
+
+If the control plane rejects the enrollment (invalid or expired token, or the node name is already registered), the agent logs the reason and stops retrying; generate a new token, put it in `.env` and restart the agent (`sudo ./scripts/deploy.sh --node`). If the control plane is just unreachable, it keeps retrying.
+
+Once approved, the control plane polls each node every `OPENRBI_NODE_POLL_INTERVAL_SECONDS` (default 15). A node it can't reach shows as **Offline** on the Workers page within `OPENRBI_NODE_HEARTBEAT_STALE_SECONDS` and is reported by the `browser_nodes` component of `GET /admin/health`; new sessions are not scheduled onto it, and its running sessions become `FAILED` after the orphan-reconciliation grace period (no migration — sessions stay on their node).
+
+**Removing a node:** revoke it in the Admin Portal. That clears its stored token immediately, so the control plane can no longer reach that node's agent at all: its running sessions can't be shown or ended from the control plane any more and become `FAILED` after the orphan-reconciliation grace period, exactly like sessions on a node that is down. Their sandbox containers stay on that host until you stop its stack there (`docker compose down`, with the node's `COMPOSE_FILE`, or `docker compose -f docker-compose.node.yml down`). Drain the node first and wait for its sessions to end if you want to avoid cutting users off.
 
 ## Sizing
 

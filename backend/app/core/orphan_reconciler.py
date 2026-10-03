@@ -55,7 +55,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.display import discard_stale_connection
@@ -127,6 +127,12 @@ async def _reconcile_node(db: AsyncSession, node: BrowserNode, *, settings) -> b
     managed_ids_set: set[str] = set()
     managed_uuids: dict[str, uuid.UUID] = {}
     try:
+        if node.enrollment_status == NodeEnrollmentStatus.REVOKED:
+            # Its token is gone, so the control plane can no longer reach or
+            # clean up this node's sandboxes — handled exactly like a node
+            # that is down: its remaining sessions become FAILED after the
+            # grace period.
+            raise SessionAgentError(f"node {node.hostname} is revoked")
         running_ids = await session_agent_client.list_active_sandboxes(connection=connection)
         managed_ids = await session_agent_client.list_managed_sandboxes(connection=connection)
     except SessionAgentError:
@@ -137,7 +143,7 @@ async def _reconcile_node(db: AsyncSession, node: BrowserNode, *, settings) -> b
         # by a single transient outage. The reverse direction below still
         # runs — an unreachable node is exactly the "node down mid-session"
         # case this phase adds handling for.
-        logger.warning("orphan reconciliation: node %s unreachable this cycle", node.hostname)
+        logger.warning("orphan reconciliation: node %s unreachable or revoked this cycle", node.hostname)
         node_unreachable = True
     else:
         # Container labels are always our own str(session.id) (docker_provider.py's
@@ -311,7 +317,20 @@ async def _reconcile_once() -> None:
     settings = get_settings()
     async with async_session_factory() as db:
         result = await db.execute(
-            select(BrowserNode).where(BrowserNode.enrollment_status == NodeEnrollmentStatus.APPROVED)
+            select(BrowserNode).where(
+                or_(
+                    BrowserNode.enrollment_status == NodeEnrollmentStatus.APPROVED,
+                    # A revoked node only while sessions still claim to live
+                    # on it, so they don't stay ACTIVE forever.
+                    and_(
+                        BrowserNode.enrollment_status == NodeEnrollmentStatus.REVOKED,
+                        exists().where(
+                            BrowserSession.node_id == BrowserNode.id,
+                            BrowserSession.status.in_(_LOST_CANDIDATE_STATUSES),
+                        ),
+                    ),
+                )
+            )
         )
         nodes = list(result.scalars().all())
 

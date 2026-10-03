@@ -38,6 +38,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
   - New `backend/tests/integration/test_segmented_role_scoping.py` runs the real code paths under both roles in CI.
   - The script itself also failed on Debian/Ubuntu with `.: .env: not found`. Their `/bin/sh` (dash) looks up a bare `.env` in `PATH` rather than in the current directory; the script now sources `./.env`.
   - **Re-run `./scripts/provision-segmented-db-roles.sh`** on any deployment that opted in.
+- **Multi-node (technology preview): enrolled nodes are now monitored, and revoking a node no longer misroutes its sessions.**
+  - **Polling:** the node poller only ever polled the default node from `.env`. An enrolled node was refreshed only when a session was being scheduled, so it showed as Offline about 45 s later and recorded no metric samples (no graphs, no capacity warnings). Every approved, enrolled node is now polled each tick, concurrently and over its own connection. An unreachable node no longer holds up the others.
+  - **Health:** `GET /admin/health` has a new `browser_nodes` component. It is `DEGRADED` while any enrolled node is degraded or offline.
+  - **Revoke:** a revoked node's sessions were silently sent to the *default* agent, because revoke clears the node's token and the connection then fell back to the default agent. Terminate and display calls went to the wrong host, and the sessions were never reconciled. Calls for a revoked node now fail like calls to a node that is down, and the reconciler marks its remaining sessions `FAILED` after the grace period.
+  - **Node override:** `scripts/deploy.sh --node` honors `COMPOSE_FILE`, so a local `docker-compose.node.override.yml` can publish the agent's port on the overlay network without editing the tracked compose file.
+  - **Docs:** `docs/deployment.md` now covers the networking a node needs (endpoint URL, port publishing and firewall, the `https://…/api` control-plane URL) and the actual effect of revoking. `docs/troubleshooting.md` has a new multi-node section.
 
 ### Documentation
 
