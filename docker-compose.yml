@@ -122,9 +122,11 @@ services:
     networks:
       control-plane:
       browser-plane:
-        # Same variable scripts/setup-network-isolation.sh reads for its
-        # exemption default — one source of truth for "this node's relay
-        # address" between the two. Override together with
+        # Same variable scripts/setup-network-isolation.sh reads (from the
+        # environment or this checkout's .env) for its exemption — one
+        # source of truth for "this node's relay address" between the two;
+        # the script refuses to apply if the address it would exempt is not
+        # this container's. Override together with
         # OPENRBI_BROWSER_PLANE_SUBNET if you change that subnet; the
         # address must fall inside it.
         ipv4_address: ${OPENRBI_AGENT_BROWSER_PLANE_IP:-172.30.0.2}

@@ -27,7 +27,46 @@ set -eu
 
 MARKER="openrbi-network-isolation"
 MODE="${1:-apply}"
-BROWSER_PLANE_NETWORK="${OPENRBI_BROWSER_PLANE_NETWORK:-openrbi_browser-plane}"
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+# The settings below are the same ones docker compose reads from this
+# checkout's .env (docker-compose.yml/docker-compose.node.yml), so the
+# script reads them from there too: deploy.sh, the systemd unit and a
+# manual `sudo ./scripts/setup-network-isolation.sh` then all agree with
+# what `docker compose up` actually configured. An explicitly exported
+# variable still wins, which the acceptance runners rely on.
+ENV_FILE="${OPENRBI_ENV_FILE:-$REPO_DIR/.env}"
+
+# Prints KEY's value from $ENV_FILE (last assignment wins, as in docker
+# compose; surrounding quotes and an unquoted trailing " # comment" are
+# removed). The file is never sourced: it holds every secret of the
+# deployment and this script runs as root.
+env_file_value() {
+    [ -f "$ENV_FILE" ] || return 0
+    raw=$(sed -n "s/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | tail -n 1 | tr -d '\r')
+    case "$raw" in
+        \"*) raw=${raw#\"}; raw=${raw%%\"*} ;;
+        \'*) raw=${raw#\'}; raw=${raw%%\'*} ;;
+        *) raw=$(printf '%s' "$raw" | sed 's/[[:space:]]#.*$//') ;;
+    esac
+    printf '%s' "$raw" | sed 's/[[:space:]]*$//'
+}
+
+# setting KEY DEFAULT — the exported environment first, then $ENV_FILE,
+# then DEFAULT.
+setting() {
+    eval "value=\${$1:-}"
+    [ -n "$value" ] || value=$(env_file_value "$1")
+    [ -n "$value" ] || value="$2"
+    printf '%s' "$value"
+}
+
+# Compose names the network <project>_browser-plane, the project being
+# COMPOSE_PROJECT_NAME or, by default, the checkout directory's name
+# (lower-cased, reduced to the characters compose allows).
+COMPOSE_PROJECT=$(setting COMPOSE_PROJECT_NAME "$(basename "$REPO_DIR")" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
+BROWSER_PLANE_NETWORK=$(setting OPENRBI_BROWSER_PLANE_NETWORK "${COMPOSE_PROJECT}_browser-plane")
 # RBI-POST-002: a plain, self-attested marker file the backend can read
 # without any host privilege (bind-mounted read-only, docker-compose.yml)
 # to tell "isolation was verifiably applied, recently" apart from "docker
@@ -44,10 +83,10 @@ MARKER_FILE="$MARKER_DIR/marker"
 # Roadmap B2.4 (docs/adr/0024-cross-host-display-relay.md) moved the
 # noVNC/VNC relay connection from the backend to each node's own Session
 # Agent — it's the only process that still needs to open a *new* connection
-# into browser-plane, and the only one this script exempts. Space-separated,
-# so a deployment with more than one node's isolation applied from the same
-# place could list more than one address, though the normal case (one host,
-# one agent) needs only the default.
+# into browser-plane, and the only one this script exempts. Every address
+# listed (space-separated) must belong to a session-agent container on this
+# host's browser-plane (verify_agent_addresses below); normally that is
+# exactly one, the same value docker compose assigns from .env.
 #
 # Renamed from OPENRBI_BACKEND_BROWSER_PLANE_IP as of Roadmap B2.4 — this is
 # a deliberate breaking rename, not a silent repoint: the backend no longer
@@ -59,18 +98,93 @@ MARKER_FILE="$MARKER_DIR/marker"
 # deployment needs no operator action on upgrade. A multi-node deployment
 # (Roadmap B2.6) runs this script once per host, each exempting only that
 # host's own local agent address.
-AGENT_BROWSER_PLANE_IP="${OPENRBI_AGENT_BROWSER_PLANE_IP:-172.30.0.2}"
+AGENT_BROWSER_PLANE_IP=$(setting OPENRBI_AGENT_BROWSER_PLANE_IP 172.30.0.2)
 
 log() { echo "[setup-network-isolation] $*"; }
+
+# Refuses (returns 1) unless every exempted address belongs to a
+# session-agent container on $BROWSER_PLANE_NETWORK. An exempted address
+# that a sandbox holds would give that sandbox an unrestricted ACCEPT into
+# the control plane; one nobody holds could be handed to the next sandbox.
+# Only when no session agent is attached at all (e.g. the boot-time timer
+# running before the containers are up) does it proceed with a warning.
+verify_agent_addresses() {
+    for ip in $AGENT_BROWSER_PLANE_IP; do
+        if ! printf '%s\n' "$ip" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
+            echo "OPENRBI_AGENT_BROWSER_PLANE_IP: '$ip' is not an IPv4 address" >&2
+            return 1
+        fi
+    done
+    if ! members=$(docker network inspect "$BROWSER_PLANE_NETWORK" \
+        --format '{{range $id, $c := .Containers}}{{$id}} {{$c.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null); then
+        echo "docker network '$BROWSER_PLANE_NETWORK' not found — set OPENRBI_BROWSER_PLANE_NETWORK or COMPOSE_PROJECT_NAME (in the environment or $ENV_FILE)" >&2
+        return 1
+    fi
+    agent_ips=""
+    for id in $(printf '%s\n' "$members" | awk 'NF {print $1}'); do
+        service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id" 2>/dev/null || true)
+        if [ "$service" = "session-agent" ]; then
+            agent_ips="$agent_ips $(printf '%s\n' "$members" | awk -v id="$id" '$1 == id {split($2, a, "/"); print a[1]}')"
+        fi
+    done
+    if [ -z "$agent_ips" ]; then
+        log "warning: no session-agent container is attached to $BROWSER_PLANE_NETWORK yet — exempting $AGENT_BROWSER_PLANE_IP as configured"
+        return 0
+    fi
+    for ip in $AGENT_BROWSER_PLANE_IP; do
+        case " $agent_ips " in
+            *" $ip "*) ;;
+            *)
+                holder=$(printf '%s\n' "$members" | awk -v ip="$ip" '{split($2, a, "/"); if (a[1] == ip) print $1}')
+                if [ -n "$holder" ]; then
+                    what="it belongs to $(docker inspect --format '{{.Name}}' "$holder" | sed 's#^/##'), not to the session agent"
+                else
+                    what="no container holds it, so the next sandbox could be given it"
+                fi
+                echo "refusing to exempt $ip on $BROWSER_PLANE_NETWORK: $what. The session agent's address is:$agent_ips — set OPENRBI_AGENT_BROWSER_PLANE_IP to match (in the environment or $ENV_FILE). No iptables rule was changed." >&2
+                return 1
+                ;;
+        esac
+    done
+    for ip in $agent_ips; do
+        case " $AGENT_BROWSER_PLANE_IP " in
+            *" $ip "*) ;;
+            *)
+                echo "refusing to apply: the session agent on $BROWSER_PLANE_NETWORK has address $ip, which OPENRBI_AGENT_BROWSER_PLANE_IP ($AGENT_BROWSER_PLANE_IP) does not exempt — its display relay would be blocked. No iptables rule was changed." >&2
+                return 1
+                ;;
+        esac
+    done
+}
+
+case "$MODE" in
+    apply|--remove|--check) ;;
+    *)
+        echo "usage: $0 [--remove|--check]" >&2
+        exit 1
+        ;;
+esac
+
+log "browser-plane network: $BROWSER_PLANE_NETWORK, exempted session-agent address: $AGENT_BROWSER_PLANE_IP"
+
+# --check: validate the resolved settings against the running containers
+# without touching iptables (no root needed).
+if [ "$MODE" = "--check" ]; then
+    verify_agent_addresses
+    log "check passed"
+    exit 0
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "must run as root (iptables/ip require it)" >&2
     exit 1
 fi
 
-if [ "$MODE" != "apply" ] && [ "$MODE" != "--remove" ]; then
-    echo "usage: $0 [--remove]" >&2
-    exit 1
+# Validate before the old rules are removed below: a refused run leaves the
+# previous rules in place and the marker un-refreshed, so the health check
+# turns DEGRADED instead of the host silently running a wrong exemption.
+if [ "$MODE" = "apply" ]; then
+    verify_agent_addresses
 fi
 
 # --- Remove any rules we previously added (idempotent re-run). Deleting by
