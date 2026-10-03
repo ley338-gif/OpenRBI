@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Implementation status (v1.0): only `DockerSandboxProvider` exists. `GVisorSandboxProvider` has not been built; running sandboxes under gVisor/runsc is an unsupported operator experiment (see [supported-configurations.md](../supported-configurations.md)).
 
 ## Context
 

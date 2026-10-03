@@ -1,14 +1,14 @@
 # Troubleshooting
 
-> Start any investigation with `GET /admin/health` (ADMIN/SECURITY_REVIEWER) — it independently checks every dependency (API, PostgreSQL, Redis, Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine storage) and tells you which one is actually down, rather than guessing from symptoms. See [admin-guide.md#health-monitoring](admin-guide.md#health-monitoring).
+> Start any investigation with `GET /admin/health` (ADMIN/SECURITY_REVIEWER) — it independently checks every dependency (API, PostgreSQL, Redis/Valkey, Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine storage, network isolation) and tells you which one is actually down, rather than guessing from symptoms. See [admin-guide.md#system-health](admin-guide.md#system-health).
 
 ## Troubleshooting a fresh production rollout
 
 Gaps found and fixed during the first real DMZ rollout, kept here as a checklist in case any recur on a checkout that predates the fix:
 
 - **Fresh install has no data at all** — `docker compose up -d --build` alone does not create the schema. Install and update with `./scripts/deploy.sh` ([Installation](deployment.md#installation)), which runs the migrations; by hand: `docker compose run --rm backend alembic upgrade head`. Symptom if skipped: `UndefinedTableError` repeating in the backend log and `/setup/*` never producing a setup token.
-- **`.env` edits not taking effect** — `docker compose restart <service>` reuses the environment captured when the container was created; it does **not** re-read `.env`. Every secret-rotation procedure in [deployment.md](deployment.md#update-procedure) uses `docker compose up -d <service>` instead, which does. If you changed `.env` by hand outside those documented procedures, use `up -d`, not `restart`.
-- **Setup bootstrap fails** — see "First-run setup" above.
+- **`.env` edits not taking effect** — `docker compose restart <service>` reuses the environment captured when the container was created; it does **not** re-read `.env`. Every secret-rotation procedure in [deployment.md](deployment.md#secret-rotation) uses `docker compose up -d <service>` instead, which does. If you changed `.env` by hand outside those documented procedures, use `up -d`, not `restart`.
+- **Setup bootstrap fails** — see "First-run setup" below.
 - **Port 8080 reachable after a production deploy** — fixed in `docker-compose.prod.yml` (`ports: !override`); confirm with `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` that `reverse-proxy` only publishes `80`/`443` before going live.
 - **`./scripts/*.sh: Permission denied`** — all scripts in `scripts/` are tracked executable in git; a checkout predating that fix needs `chmod +x scripts/*.sh` once.
 
@@ -42,7 +42,7 @@ Backend endpoints touching sessions (`POST /sessions`, the display WebSocket) re
 
 ## First-run setup: "could not create the initial administrator"
 
-`POST /setup/admin` returns this same generic 400 for three distinct causes — an invalid/expired setup token, a username collision, and (as a `429` instead, so it's actually distinguishable by status code alone) a bootstrap rate-limit lockout — deliberately, to avoid giving an unauthenticated caller a way to enumerate which check failed (see `app/api/setup.py`). The backend logs the real reason server-side (never in the client response) at `WARNING` under the `openrbi.setup` logger — check `docker compose logs backend | grep openrbi.setup` first.
+`POST /setup/admin` returns this same generic 400 for three distinct causes — an invalid/expired setup token, a username collision, and (as a `429` instead, so it's actually distinguishable by status code alone) a bootstrap rate-limit lockout — deliberately, to avoid giving an unauthenticated caller a way to enumerate which check failed (see `app/api/setup.py`). The backend logs the real reason server-side (never in the client response) as a `WARNING` starting with `Setup bootstrap` — check `docker compose logs backend | grep "Setup bootstrap"` first. (The log line carries only the message, not the logger name `openrbi.setup`, so grepping for the logger name finds nothing.)
 
 If the log shows a rate-limit lockout, ten failed `POST /setup/admin` attempts lock the bootstrap flow out for 15 minutes (`_LOGIN_FAILURE_MAX_ATTEMPTS`/`_LOGIN_FAILURE_WINDOW_SECONDS` in `app/core/sessions.py`, the same mechanism as normal login lockout). It clears itself after the window, or immediately with:
 
@@ -67,8 +67,11 @@ Use the break-glass reset script instead, on the host, from the checkout:
 ./scripts/reset-local-password.sh <admin-username> --enable   # also re-enables the account if it was disabled
 ```
 
-It runs the same `reset_password()` service function the Admin Portal uses (Argon2 hash, `PASSWORD_RESET_BY_ADMIN` security event with a fixed break-glass actor id `00000000-0000-0000-0000-00000b7ea4c1`, so it stays fully audited — never hand-edit `users.password_hash` with SQL), and clears the account's login lockout if repeated attempts have tripped it (`ACCOUNT_UNLOCKED`). The password is read from the terminal, never passed as an argument. For a non-interactive run, pipe it in: `printf '%s
-' "$NEW_PASSWORD" | ./scripts/reset-local-password.sh <admin-username>`.
+It runs the same `reset_password()` service function the Admin Portal uses (Argon2 hash, `PASSWORD_RESET_BY_ADMIN` security event with a fixed break-glass actor id `00000000-0000-0000-0000-00000b7ea4c1`, so it stays fully audited — never hand-edit `users.password_hash` with SQL), and clears the account's login lockout if repeated attempts have tripped it (`ACCOUNT_UNLOCKED`). The password is read from the terminal, never passed as an argument. For a non-interactive run, pipe it in:
+
+```
+printf '%s\n' "$NEW_PASSWORD" | ./scripts/reset-local-password.sh <admin-username>
+```
 
 - **MFA is not touched.** The account's enrolled TOTP device is still required at the next login. If the TOTP device is lost too, sign in with one of that account's recovery codes; if those are gone as well, there is no host-side MFA reset yet.
 - **LDAP-provisioned accounts are refused** — their password belongs to the directory.
@@ -84,7 +87,7 @@ The most common cause is clock drift between the server and the device running t
 
 ## Portal: Secure Browser stuck at "Preparing sandbox…" or "Waiting for capacity…"
 
-The User Portal polls `GET /sessions/{id}` once a second and only advances once the session's real status changes — it never fabricates progress. "Waiting for capacity…" (`QUEUED`) staying up for a long time means no browser-node capacity is free; check `GET /admin/nodes` (Admin Portal → System) for whether the node is drained or already at its session limit. "Preparing sandbox…" (`STARTING`) staying up means the Session Agent hasn't reported the sandbox as ready yet — see "Session Agent unreachable" and "Browser sandbox won't start" above; check `docker logs openrbi-session-agent-1` for the specific session ID shown under the portal's status line.
+The User Portal polls `GET /sessions/{id}` once a second and only advances once the session's real status changes — it never fabricates progress. When no browser node has a free slot, the backend rejects `POST /sessions` with `503` before any session exists, and the portal says *"No browser capacity is available right now. Try again shortly."* — check **Admin Portal → Workers** (`GET /admin/nodes`) for nodes that are draining, in maintenance, offline, or already at their session limit, and [deployment.md#sizing](deployment.md#sizing) for how the slot count is computed. "Waiting for capacity…" (`QUEUED`) is only shown briefly while a node is being selected. "Preparing sandbox…" (`STARTING`) staying up means the Session Agent hasn't reported the sandbox as ready yet — see "Session Agent unreachable" and "Browser sandbox won't start" above; check `docker logs openrbi-session-agent-1` for the specific session ID shown under the portal's status line.
 
 The Admin Portal → Workers view uses the same backend health classification as scheduling and system health. An **Offline** worker normally has a heartbeat older than the configured stale threshold; verify Session Agent reachability and its logs. **Degraded** indicates reported CPU or RAM pressure. **Draining** and **Maintenance** are operator-controlled states rather than heartbeat failures; open the worker detail to restore scheduling when the operational reason has been resolved.
 

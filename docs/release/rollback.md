@@ -17,7 +17,10 @@ containers/images before changing state.
 2. Verify the chosen `.sql.gz` and quarantine `.tar.gz` artifacts before any
    destructive restore.
 3. Run `scripts/restore.sh` and provide its literal `yes` confirmation only
-   after checking the displayed target/artifact paths.
+   after checking the displayed target/artifact paths. When it finishes,
+   `restore.sh` starts the existing `backend`/`session-agent` containers again —
+   those are still the failed target version, so stop them right away
+   (`docker compose stop backend session-agent`) before continuing.
 4. Redeploy the exact previously recorded source or image digests and the
    original `.env`, including the browser sandbox image
    (`scripts/build-browser-image.sh` from the old checkout). Do not use

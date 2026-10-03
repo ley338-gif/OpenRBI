@@ -1,5 +1,14 @@
 # Prompt: Roadmap to Multi-Node (Roadmap B2, proposed)
 
+> **Historical planning input — superseded.** This brief was used to produce
+> [docs/roadmap-b2-multinode.md](../roadmap-b2-multinode.md), whose phases
+> B2.1–B2.7 have since been implemented. The "gaps" listed below describe the
+> codebase *before* that work and are no longer current; see the roadmap,
+> [ADR 0023](../adr/0023-node-enrollment-and-trust-model.md),
+> [ADR 0024](../adr/0024-cross-host-display-relay.md) and
+> [supported-configurations.md](../supported-configurations.md) for the
+> current state.
+
 > This document is written to be pasted into a planning session (the same way
 > the original Master-Auftrag was) to produce a phased implementation roadmap
 > for turning OpenRBI's already-"multi-node-ready" schema into an actually
