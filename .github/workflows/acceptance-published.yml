@@ -1,0 +1,331 @@
+name: Acceptance (published images)
+
+# docs/release/release-process.md step 6: run the v1 acceptance suite against
+# the *published* RC/GA images, not locally rebuilt substitutes. Every job
+# checks out the release tag's source (tests, migrations, compose files) and
+# then overlays only the acceptance harness from this workflow's own commit
+# (HARNESS_FILES), so a tag cut before the harness existed can still be
+# accepted. Images come from the GitHub Release's metadata: pulled by
+# registry digest, OCI labels checked against version and commit.
+#
+# ci.yml's functional jobs are mirrored here one to one; static checks
+# (lint, dependency audits, secret scan) are properties of the source and
+# already passed as the tag commit's own Release gates.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Published release tag to accept, e.g. v1.0.2-rc.3"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: acceptance-published-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  OPENRBI_ACCEPTANCE_IMAGES: /tmp/openrbi-release
+  HARNESS_FILES: >-
+    scripts/acceptance-images.sh
+    scripts/ci-stack-env.sh
+    scripts/run-fresh-install-acceptance.sh
+    scripts/run-backup-restore-acceptance.sh
+    scripts/run-upgrade-acceptance.sh
+    scripts/run-fault-injection-tests.sh
+
+jobs:
+  resolve:
+    name: Resolve published release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft == false' | grep -qx true
+          mkdir -p "$OPENRBI_ACCEPTANCE_IMAGES"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.metadata.json' --pattern 'SHA256SUMS' --dir "$OPENRBI_ACCEPTANCE_IMAGES"
+          cd "$OPENRBI_ACCEPTANCE_IMAGES"
+          sha256sum --check --ignore-missing SHA256SUMS
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
+          version="${RELEASE_TAG#v}"
+          for component in backend session-agent frontend browser; do
+            jq -e --arg v "$version" --arg sha "$tag_sha" '
+              .version == $v and .commit_sha == $sha and .published == true
+              and .digest_kind == "registry_manifest_digest"
+            ' "$component.metadata.json" >/dev/null \
+              || { echo "$component.metadata.json does not match $RELEASE_TAG ($tag_sha)" >&2; exit 1; }
+            jq -r '"\(.component): \(.image)@\(.digest)"' "$component.metadata.json"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release/*.metadata.json
+
+  backend-integration-tests:
+    name: Backend integration, security and fault injection
+    needs: resolve
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: openrbi
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Overlay acceptance harness
+        run: git checkout "$GITHUB_SHA" -- $HARNESS_FILES
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Start the stack from the published images
+        run: |
+          sh scripts/ci-stack-env.sh
+          . scripts/acceptance-images.sh
+          use_published_images openrbi
+          docker compose up -d --no-build
+      - name: Wait for backend and PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            [ "$i" -lt 30 ] || { echo "Backend did not become healthy within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            [ "$i" -lt 30 ] || { echo "PostgreSQL did not become ready within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+      - name: Apply database migrations
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Run integration tests
+        run: sh scripts/run-integration-tests.sh
+      - name: Apply network isolation rules
+        run: sudo sh scripts/setup-network-isolation.sh
+      - name: Run host-level security regression tests
+        run: sh scripts/run-security-tests.sh
+      - name: Run destructive fault-injection acceptance
+        run: sh scripts/run-fault-injection-tests.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
+
+  ldap-integration-tests:
+    name: LDAP integration tests
+    needs: resolve
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: openrbi
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Overlay acceptance harness
+        run: git checkout "$GITHUB_SHA" -- $HARNESS_FILES
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Start the stack from the published images
+        run: |
+          sh scripts/ci-stack-env.sh
+          . scripts/acceptance-images.sh
+          use_published_images openrbi
+          docker compose up -d --no-build
+      - name: Wait for backend and PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            [ "$i" -lt 30 ] || { echo "Backend did not become healthy within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            [ "$i" -lt 30 ] || { echo "PostgreSQL did not become ready within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+      - name: Apply database migrations
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Run LdapAuthProvider tests
+        run: sh scripts/run-ldap-tests.sh
+      - name: Run HTTP-level LDAP login/admin-config tests
+        run: sh scripts/run-ldap-integration-tests.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
+
+  frontend-e2e-tests:
+    name: Frontend E2E tests (Playwright)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE_PROJECT_NAME: openrbi
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Overlay acceptance harness
+        run: git checkout "$GITHUB_SHA" -- $HARNESS_FILES
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: Start the stack from the published images
+        run: |
+          sh scripts/ci-stack-env.sh
+          . scripts/acceptance-images.sh
+          use_published_images openrbi
+          docker compose up -d --no-build
+      - name: Wait for backend and PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" && break
+            [ "$i" -lt 30 ] || { echo "Backend did not become healthy within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker compose exec -T postgres pg_isready -U openrbi -d openrbi && break
+            [ "$i" -lt 30 ] || { echo "PostgreSQL did not become ready within 60 seconds" >&2; exit 1; }
+            sleep 2
+          done
+      - name: Apply database migrations
+        run: docker compose exec -T backend alembic upgrade head
+      - name: Install Playwright and its Chromium browser
+        working-directory: frontend
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+      - name: Run the real, no-mock Playwright E2E suite
+        run: sh scripts/e2e-run.sh
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Upload Playwright trace/screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-published
+          path: frontend/e2e/test-results
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
+
+  install-acceptance:
+    name: ${{ matrix.name }}
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Fresh install acceptance
+            script: scripts/run-fresh-install-acceptance.sh
+          - name: Backup and restore acceptance
+            script: scripts/run-backup-restore-acceptance.sh
+          - name: Upgrade acceptance
+            script: scripts/run-upgrade-acceptance.sh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Overlay acceptance harness
+        run: git checkout "$GITHUB_SHA" -- $HARNESS_FILES
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Allow session-agent's non-root user to reach the runner's docker.sock
+        run: sudo chmod 666 /var/run/docker.sock
+      - name: ${{ matrix.name }}
+        run: ./${{ matrix.script }}
+
+  image-scan:
+    name: Image vulnerability scan (${{ matrix.component }})
+    needs: resolve
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, session-agent, frontend, browser]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-metadata
+          path: /tmp/openrbi-release
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Resolve published image
+        id: image
+        run: |
+          meta="/tmp/openrbi-release/${{ matrix.component }}.metadata.json"
+          ref="$(jq -er '.image | sub(":[^:/]+$"; "")' "$meta")@$(jq -er '.digest' "$meta")"
+          docker pull --quiet "$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Scan for CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          scanners: vuln
+          severity: CRITICAL
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+  published-acceptance:
+    name: Published release acceptance
+    if: always()
+    needs:
+      - resolve
+      - backend-integration-tests
+      - ldap-integration-tests
+      - frontend-e2e-tests
+      - install-acceptance
+      - image-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every acceptance job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' >/dev/null

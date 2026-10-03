@@ -30,7 +30,13 @@ The exact candidate commit must be on `main` and satisfy all of the following:
    green commit with `OPENRBI_RELEASES_ENABLED=true`. Confirm GHCR manifest
    digests and the GitHub prerelease assets match the dry run.
 6. Execute the complete v1 acceptance suite against the published RC artifacts,
-   not locally rebuilt substitutes. Record any deviation as a defect.
+   not locally rebuilt substitutes: dispatch `.github/workflows/acceptance-published.yml`
+   on `main` with the release tag (`gh workflow run acceptance-published.yml --ref main
+   -f release_tag=vX.Y.Z-rc.N`). It checks out the tag's source, pulls every image by the
+   registry digest recorded in the release metadata, verifies its version/revision labels
+   and runs ci.yml's functional jobs (integration, security, fault injection, LDAP,
+   Playwright E2E, fresh install, backup/restore, upgrade, Trivy) against those images.
+   Record the run in [`v1-acceptance.md`](v1-acceptance.md). Record any deviation as a defect.
 7. Accept only release-blocking bug fixes. A fix requires `rc.2` (or later), a
    new full gate run, dry run and complete acceptance repetition.
 8. Promote to GA only from a green accepted RC tree, through the same

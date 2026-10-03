@@ -6,6 +6,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Added
+
+- **Acceptance against published images** (`.github/workflows/acceptance-published.yml`, `workflow_dispatch` with a release tag): runs ci.yml's functional jobs (integration, security, fault injection, LDAP, Playwright E2E, fresh install, backup/restore, upgrade, Trivy) against the images a GitHub Release actually published, pulled by registry digest from its metadata with their version/revision labels checked. `docs/release/release-process.md` step 6 requires this, but every acceptance runner could only build from source until now. The runners keep building from source unless `OPENRBI_ACCEPTANCE_IMAGES` points at a release's metadata (`scripts/acceptance-images.sh`). The `.env` generation that ci.yml repeated in three jobs moved to `scripts/ci-stack-env.sh`.
+
 ## [1.0.2-rc.3] - 2026-10-03
 
 ### Security
