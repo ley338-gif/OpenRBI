@@ -10,6 +10,7 @@ Recorded: 2026-08-15
 Candidate baseline: `00a2f14922dfe9067b9aa7b9d24178032588245f`  
 Overall result: **PASS — 35/35 scenarios**  
 Authoritative automation: `.github/workflows/ci.yml` → `Release gates`
+Latest published-artifact acceptance: **`v1.0.2-rc.3` — PASS** (see [Published-artifact acceptance runs](#published-artifact-acceptance-runs))
 
 The baseline's [main CI run](https://github.com/ley338-gif/OpenRBI/actions/runs/31863930779)
 completed successfully, including the aggregate `Release gates` result. The
@@ -356,3 +357,35 @@ All 35 required scenarios have observable PASS evidence. This record does not
 authorize a release from a different or failing commit: immediately before an
 RC tag, confirm that the tag target is on `main`, its own `Release gates` check
 is successful, P0 is zero, and no known P1 release blocker remains.
+
+## Published-artifact acceptance runs
+
+Per [`release-process.md`](release-process.md) step 6, every RC and GA is
+accepted against the images it actually published, not against local rebuilds:
+`.github/workflows/acceptance-published.yml` checks out the release tag's
+source, pulls each image by the registry digest recorded in the GitHub
+Release metadata, verifies its OCI version/revision labels and runs the same
+functional jobs that provide the evidence for the 35 scenarios above.
+
+### v1.0.2-rc.3 — PASS
+
+- **Date:** 2026-10-03
+- **Run:** [Acceptance (published images) #37090251829](https://github.com/ley338-gif/OpenRBI/actions/runs/37090251829), all 12 jobs successful
+- **Tag target:** `ef257ee19fe0bc7dc30886939970031d02858e6d` (its own `Release gates`: success)
+- **Images under test** (`ghcr.io/ley338-gif/openrbi-*:1.0.2-rc.3`):
+  - backend `sha256:6c6387543ca68f5733352f2318f2e4194c9d10850d5551130815950bb7fa34a8`
+  - session-agent `sha256:da48e719a9225628e1425dfd4e0ad3c2bbebf15e1201b823b3a366406a2ddb81`
+  - frontend `sha256:41d8f2e3a603c702494d0b91c2e63660ed15f76c21235ad9d85edb88d0db86b4`
+  - browser `sha256:0a274dcf6435b1a4ccdf54d65d04d7e1525b0f0fec05794e08b0126ac84bbaa4` (Firefox ESR 153.4.0esr, content sandbox enabled)
+- **Results:**
+  - Backend integration: 191 passed, 34 skipped
+  - Host-level security regression: 21 passed, 0 failed
+  - Fault injection: Faults 1–8 and 12–14 recovered without ghost state or lost capacity, including real CPU-pressure capacity exhaustion
+  - LDAP/LDAPS: provider 15 passed, HTTP login/admin-config passed
+  - Playwright E2E: 31 passed, including a noVNC-connected Secure Browser session
+  - Fresh install: 17 ACCEPT steps; application and browser images were the published ones (no build)
+  - Backup/restore: BR-01 to BR-10
+  - Upgrade: UP-01 to UP-09 from the pinned 0.1.1 baseline (built from its source) to the published rc.3 images; Alembic `d5e8a13c6f92` → `3c6f0e8b2a57`
+  - Trivy (CRITICAL) on all four published images: no findings outside `.trivyignore`
+- **Build check:** job logs show every application image pulled by digest and no image built from source, except the upgrade test's 0.1.1 baseline before step UP-03.
+- **Deviations:** none.
