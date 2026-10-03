@@ -11,8 +11,8 @@ The exact candidate commit must be on `main` and satisfy all of the following:
 - P0 defects: zero.
 - Known P1 release blockers: zero.
 - Its own required `Release gates` check is successful.
-- Security, LDAP, fault injection, clean installation, backup/restore and
-  upgrade jobs are green.
+- Security, LDAP, fault injection, browser end-to-end (Playwright), clean
+  installation, backup/restore and upgrade jobs are green.
 - [`v1-acceptance.md`](v1-acceptance.md) records all 35 scenarios as PASS.
 - The documentation freeze review is complete and no known contradiction
   between implementation, tests and documentation remains.
@@ -27,8 +27,11 @@ The exact candidate commit must be on `main` and satisfy all of the following:
 4. Run the release workflow in dry-run mode. Verify all four images, metadata,
    CycloneDX SBOMs, checksums and provenance before enabling publication.
 5. If publication is authorized, dispatch the same workflow for the exact
-   green commit with `OPENRBI_RELEASES_ENABLED=true`. Confirm GHCR manifest
-   digests and the GitHub prerelease assets match the dry run.
+   green commit with `OPENRBI_RELEASES_ENABLED=true`. The publishing run builds
+   the images again (with a new build date), so its registry manifest digests
+   cannot equal the dry run's local image IDs. Instead confirm that the version,
+   commit and set of artifacts match the dry run, and record the published
+   digests from the release metadata — those are what step 6 tests.
 6. Execute the complete v1 acceptance suite against the published RC artifacts,
    not locally rebuilt substitutes: dispatch `.github/workflows/acceptance-published.yml`
    on `main` with the release tag (`gh workflow run acceptance-published.yml --ref main

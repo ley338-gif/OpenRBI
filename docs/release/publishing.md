@@ -54,3 +54,13 @@ commit SHA, and build date as OCI provenance labels.
 
 SBOM format, validation, and limitations are documented in
 [`sbom.md`](sbom.md).
+
+## After publishing
+
+Run the v1 acceptance suite against the published images:
+`gh workflow run acceptance-published.yml --ref main -f release_tag=v<version>`.
+The workflow checks out the tag's source, pulls every image by the registry
+digest recorded in the release metadata, verifies its version/revision labels
+and runs the functional CI jobs against those images. Record the result in
+[`v1-acceptance.md`](v1-acceptance.md#published-artifact-acceptance-runs)
+(see [`release-process.md`](release-process.md) step 6).

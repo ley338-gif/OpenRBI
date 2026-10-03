@@ -80,7 +80,7 @@ chmod -R a+rX "$BASE_DIR"
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 AGENT_TOKEN="$(openssl rand -hex 32)"
 TOTP_KEY="$(openssl rand -hex 32)"
-# v1.0.0 (the pinned baseline, $BASE_DIR) predates RBI-POST-003 and has no
+# The pinned 0.1.1 baseline ($BASE_DIR) predates RBI-POST-003 and has no
 # such setting — harmless there (pydantic-settings ignores unrecognized
 # OPENRBI_* env vars), but required for the current checkout ($REPO_ROOT)
 # to boot at all. Same write_env() writes both on purpose (see below).
