@@ -4,7 +4,10 @@
 # engine level, not just documented — a genuine Postgres permission-denied
 # error for the openrbi_user role against admin-only surface, and a
 # genuine 401 from the Session Agent for a user-scoped token calling an
-# admin-scoped route.
+# admin-scoped route. The other half — that both roles can actually run
+# what their listener does (session start, policy enforcement, incidents,
+# admin deletes) — is backend/tests/integration/test_segmented_role_scoping.py,
+# which CI's backend-integration-tests job runs against provisioned roles.
 #
 # Unlike scripts/run-security-tests.sh, this is NOT wired into the default
 # CI job: it requires a stack actually brought up with
@@ -65,7 +68,9 @@ denied() {
 }
 
 denied "openrbi_user cannot read ldap_configs" "SELECT * FROM ldap_configs;"
-denied "openrbi_user cannot read policies" "SELECT * FROM policies;"
+denied "openrbi_user cannot change policies (read-only for enforcement)" "UPDATE policies SET name = name WHERE id IS NULL;"
+denied "openrbi_user cannot read audit-event metadata" "SELECT metadata_json FROM security_events WHERE id IS NULL;"
+denied "openrbi_user cannot repoint a node's endpoint" "UPDATE browser_nodes SET endpoint_url = endpoint_url WHERE id IS NULL;"
 denied "openrbi_user cannot self-promote via role_id" \
     "UPDATE users SET role_id = (SELECT id FROM roles WHERE name = 'ADMIN') WHERE username = 'nonexistent-probe-user';"
 denied "openrbi_user cannot insert a new users row" \
