@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amended by later roadmap work: node capacity is no longer a fixed placeholder but computed from host headroom ([Roadmap B3](../roadmap-b3-capacity-autoscaling.md)), and there can be several nodes ([Roadmap B2](../roadmap-b2-multinode.md), [ADR 0023](0023-node-enrollment-and-trust-model.md)). The poller described here still refreshes only the default (local) node; enrolled nodes are refreshed when `select_node()` schedules a session — a known gap tracked separately.
+Accepted. Amended by later roadmap work: node capacity is no longer a fixed placeholder but computed from host headroom ([Roadmap B3](../roadmap-b3-capacity-autoscaling.md)), and there can be several nodes ([Roadmap B2](../roadmap-b2-multinode.md), [ADR 0023](0023-node-enrollment-and-trust-model.md)). The poller described here now refreshes the default node and every approved, enrolled node each tick (each over its own connection, concurrently), and `GET /admin/health` has a `browser_nodes` component summarizing the enrolled nodes with this ADR's health classification.
 
 ## Context
 

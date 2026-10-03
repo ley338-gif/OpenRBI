@@ -84,8 +84,15 @@ network_isolation() {
 
 if [ "$MODE" = node ]; then
     log "worker node: building and starting session-agent"
-    docker compose -f docker-compose.node.yml build --pull
-    docker compose -f docker-compose.node.yml up -d
+    # COMPOSE_FILE in .env may add a local override to docker-compose.node.yml,
+    # e.g. publishing the agent's port on the overlay network
+    # (docs/deployment.md, Multi-node); docker compose then reads it itself.
+    case "$compose_files" in
+        *docker-compose.node.yml*) node_compose="docker compose" ;;
+        *) node_compose="docker compose -f docker-compose.node.yml" ;;
+    esac
+    $node_compose build --pull
+    $node_compose up -d
     build_browser_image
     network_isolation
     log "done. A new node appears as PENDING under Admin Portal -> Workers until approved."

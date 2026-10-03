@@ -35,6 +35,8 @@ quarantine-storage/
 session-agent/sessions/
 backups/
 certs/
+# Local, per-host override for an additional multi-node host (docs/deployment.md)
+docker-compose.node.override.yml
 
 # IDE / OS
 .vscode/
