@@ -28,6 +28,12 @@
 set -eu
 
 ENV_FILE="${OPENRBI_ENV_FILE:-.env}"
+# POSIX `.` looks a name without a slash up in PATH, not in the current
+# directory (dash, /bin/sh on Debian/Ubuntu, fails with ".env: not found").
+case "$ENV_FILE" in
+    */*) ;;
+    *) ENV_FILE="./$ENV_FILE" ;;
+esac
 POSTGRES_CONTAINER="${OPENRBI_POSTGRES_CONTAINER:-openrbi-postgres-1}"
 POSTGRES_DB_NAME="${POSTGRES_DB:-openrbi}"
 POSTGRES_ADMIN_USER="${POSTGRES_USER:-openrbi}"
@@ -90,6 +96,17 @@ docker exec -i \
 	-- matching the append-only audit-log invariant
 	-- docs/security-self-assessment.md's V7 section already relies on.
 	GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO openrbi_admin;
+	-- DELETE only where admin code paths actually remove rows: group
+	-- deletion and membership changes (app/services/groups.py, users.py),
+	-- detaching a policy and replacing a draft's rules (policies.py), an
+	-- admin MFA reset (mfa.py), and the node poller pruning old metric
+	-- samples (metrics_history.py). Never security_events.
+	GRANT DELETE ON groups, user_groups, group_policies, file_policy_rules,
+	    recovery_codes, worker_metric_samples TO openrbi_admin;
+	-- The audit trail is append-only (docs/security-model.md#audit): nothing
+	-- in the application updates a security event, so the blanket UPDATE
+	-- above is taken back for that one table.
+	REVOKE UPDATE ON security_events FROM openrbi_admin;
 	-- Applies the same grant automatically to a table a *future* Alembic
 	-- migration adds (migrations run as POSTGRES_USER) — without this,
 	-- a version upgrade adding a table would silently need this script
@@ -117,11 +134,33 @@ docker exec -i \
 	-- user-owned data.
 	GRANT SELECT, INSERT, UPDATE, DELETE ON recovery_codes TO openrbi_user;
 	GRANT SELECT ON roles TO openrbi_user;
-	-- Read-only: display.py resolves which node's Session Agent to
-	-- relay to. Enrollment/approval/agent_token_encrypted stay admin-only.
+	-- display.py resolves which node's Session Agent to relay to, and
+	-- select_node() (app/services/sessions.py) refreshes each candidate's
+	-- heartbeat/telemetry when a session starts — so UPDATE on exactly the
+	-- columns _apply_node_status() writes. endpoint_url,
+	-- agent_token_encrypted and enrollment_status stay admin-only, and
+	-- there is no INSERT: a node row only ever comes from an admin-capable
+	-- process (node poller or enrollment).
 	GRANT SELECT ON browser_nodes TO openrbi_user;
-	-- Write the audit trail, never read or rewrite it.
+	GRANT UPDATE (status, capacity, capacity_bound, ram_capacity, cpu_capacity,
+	    active_sessions, runtime, version, cpu_percent, ram_total_mb,
+	    ram_used_mb, node_started_at, last_heartbeat) ON browser_nodes TO openrbi_user;
+	-- Policy enforcement for sessions, uploads and downloads
+	-- (app/services/policy_engine.py) reads the published policies reachable
+	-- through the user's groups. Read-only — every write stays admin-only.
+	GRANT SELECT ON policies, policy_versions, group_policies, user_groups,
+	    file_policy_rules TO openrbi_user;
+	-- Write the audit trail, never rewrite it. The column-level SELECT
+	-- covers only what INSERT ... RETURNING and the repeated-violation
+	-- count (app/services/incidents.py) need — never metadata_json.
 	GRANT INSERT ON security_events TO openrbi_user;
+	GRANT SELECT (id, event_type, user_id, created_at) ON security_events TO openrbi_user;
+	-- Malware and repeated-violation incidents are opened from the upload
+	-- and download pipelines (app/services/scanning.py, incidents.py). The
+	-- column-level SELECT is what the "already open?" check and
+	-- INSERT ... RETURNING need — no description/resolution/assignee.
+	GRANT INSERT ON incidents TO openrbi_user;
+	GRANT SELECT (id, user_id, title, status, created_at, updated_at) ON incidents TO openrbi_user;
 	-- Full-row SELECT is unavoidable: a login must read a candidate row
 	-- (including password_hash/totp_secret_encrypted) before it knows
 	-- whether the caller is who they claim. UPDATE is restricted to the
@@ -138,9 +177,10 @@ docker exec -i \
 	    ON users TO openrbi_user;
 
 	-- No grant at all (openrbi_user cannot even SELECT) on: groups,
-	-- user_groups, policies, policy_versions, group_policies,
-	-- file_policy_rules, ldap_configs, incidents, worker_metric_samples,
-	-- system_state. Postgres's default-deny means simply never granting
+	-- ldap_configs, worker_metric_samples, system_state. A role-scoped user
+	-- listener never reads ldap_configs: it treats LDAP as unavailable
+	-- (app/services/ldap_config_service.py), since LDAP provisioning needs
+	-- writes this role is denied. Postgres's default-deny means simply never granting
 	-- these is sufficient — no explicit REVOKE needed on a role that
 	-- never received the privilege in the first place.
 EOSQL

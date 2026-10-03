@@ -243,6 +243,11 @@ jobs:
         # docs/deployment.md's own install/update procedures always call
         # this explicitly, it's never automatic on container start.
         run: docker compose exec -T backend alembic upgrade head
+      - name: Provision Segmented DB roles
+        # docs/adr/0025: creates openrbi_user/openrbi_admin (passwords from
+        # scripts/ci-stack-env.sh) so test_segmented_role_scoping.py can run
+        # real code paths under each role. The stack keeps the owner role.
+        run: sh scripts/provision-segmented-db-roles.sh
       - name: Build browser sandbox image
         # Must happen before the integration tests below: session-agent's
         # DockerSandboxProvider needs this image to exist to create a real
