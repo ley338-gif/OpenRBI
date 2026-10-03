@@ -2,7 +2,7 @@
   "name": "openrbi-frontend",
   "private": true,
   "license": "AGPL-3.0-only",
-  "version": "1.0.2-rc.2",
+  "version": "1.0.2-rc.3",
   "workspaces": [
     "shared",
     "user",
