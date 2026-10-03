@@ -19,7 +19,9 @@
 #      session (Roadmap Phase A / A3 — the threat-model.md "malicious
 #      normal user"/"compromised browser container" rows assume this
 #      holds, but it was previously only ever checked once by hand during
-#      Phase 9, never by an automated test).
+#      Phase 9, never by an automated test). Also: setup-network-isolation.sh
+#      refuses to exempt such a sandbox's address, whether it comes from
+#      the environment or from the .env file.
 #   5. DNS-rebinding: a hostname that resolves to a blocked address is
 #      still blocked, proving the egress rule is enforced against the
 #      resolved IP, not the hostname string that requested it (Roadmap
@@ -266,6 +268,23 @@ SANDBOX_IP=$(docker inspect "$SANDBOX_CONTAINER" --format '{{range .NetworkSetti
 # the identical rule a real second sandbox's traffic would hit.
 check "another browser-plane member cannot reach this sandbox's VNC port" 1 \
     docker run --rm --network "$BROWSER_PLANE_NETWORK" curlimages/curl:8.10.1 -sf --max-time 3 -o /dev/null "http://$SANDBOX_IP:5900"
+
+# The isolation script's only ACCEPT for new connections goes to the
+# session agent's address. If that setting named a sandbox's address (a
+# stale or mistyped OPENRBI_AGENT_BROWSER_PLANE_IP), that sandbox could
+# open connections into the control plane — the script must refuse.
+# --check validates without touching iptables.
+check "isolation script accepts the running session agent's own address" 0 \
+    env OPENRBI_BROWSER_PLANE_NETWORK="$BROWSER_PLANE_NETWORK" sh "$SCRIPT_DIR/setup-network-isolation.sh" --check
+check "isolation script refuses to exempt a sandbox's address" 1 \
+    env OPENRBI_BROWSER_PLANE_NETWORK="$BROWSER_PLANE_NETWORK" OPENRBI_AGENT_BROWSER_PLANE_IP="$SANDBOX_IP" \
+        sh "$SCRIPT_DIR/setup-network-isolation.sh" --check
+ENV_PROBE=$(mktemp)
+printf 'OPENRBI_AGENT_BROWSER_PLANE_IP="%s"\n' "$SANDBOX_IP" > "$ENV_PROBE"
+check "isolation script reads OPENRBI_AGENT_BROWSER_PLANE_IP from the .env file" 1 \
+    env -u OPENRBI_AGENT_BROWSER_PLANE_IP OPENRBI_ENV_FILE="$ENV_PROBE" OPENRBI_BROWSER_PLANE_NETWORK="$BROWSER_PLANE_NETWORK" \
+        sh "$SCRIPT_DIR/setup-network-isolation.sh" --check
+rm -f "$ENV_PROBE"
 
 docker rm -f "$SANDBOX_CONTAINER" >/dev/null 2>&1 || true
 
