@@ -297,6 +297,10 @@ fi
 # smaller.
 attempt=1
 SNAPSHOT=$(probe capacity-snapshot)
+# Capacity and free slots from the same snapshot: a drop applies on the very
+# next poll, so capacity can have fallen again since the check above, and
+# the hold assertion below must compare against the latest value.
+DURING_CAPACITY=$(printf '%s' "$SNAPSHOT" | json_field capacity)
 DURING_FREE=$(printf '%s' "$SNAPSHOT" | json_field free_slots)
 while [ "$DURING_FREE" -gt 0 ] && [ "$attempt" -le 5 ]; do
     sleep 1
@@ -325,7 +329,9 @@ cleanup_cpu_pressure
 # meaningful, deterministic claims are "not on the very next poll" and
 # "eventually, within a generous bound", not an exact count.
 JUST_AFTER_CAPACITY=$(probe capacity-snapshot | json_field capacity)
-if [ "$JUST_AFTER_CAPACITY" != "$DURING_CAPACITY" ]; then
+# Only a rise is a recovery. A poll that still caught the tail end of the
+# pressure may lower it once more, which is the fail-closed direction.
+if [ "$JUST_AFTER_CAPACITY" -gt "$DURING_CAPACITY" ]; then
     echo "capacity recovered instantly instead of being held (during=$DURING_CAPACITY just_after=$JUST_AFTER_CAPACITY)" >&2
     exit 1
 fi

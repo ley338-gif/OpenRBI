@@ -57,7 +57,17 @@ async def get_effective_ldap_config(db: AsyncSession) -> LdapConnectionConfig | 
     """None means "LDAP is off" — either explicitly (a saved row with
     enabled=False) or by omission (no row yet, and the env-var path is
     also disabled). Never partially resolves — see module docstring.
+
+    A role-scoped user listener (docs/adr/0025) never uses LDAP: just-in-
+    time provisioning needs writes its openrbi_user role is denied, and the
+    role cannot read ldap_configs (the encrypted bind password lives there).
+    Config validation already refuses OPENRBI_LDAP_ENABLED=true for that
+    combination; this also covers LDAP enabled through the Admin Portal.
     """
+    settings = get_settings()
+    if settings.listener_mode == "user" and settings.database_url_user:
+        return None
+
     row = await get_ldap_config_row(db)
     if row is not None:
         if not row.enabled:
@@ -65,7 +75,6 @@ async def get_effective_ldap_config(db: AsyncSession) -> LdapConnectionConfig | 
         password = decrypt_secret(row.bind_password_encrypted) if row.bind_password_encrypted else ""
         return config_from_row(row, password)
 
-    settings = get_settings()
     if not settings.ldap_enabled:
         return None
     return config_from_settings(settings)
