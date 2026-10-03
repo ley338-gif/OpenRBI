@@ -8,12 +8,18 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Security
 
+- **A file is never auto-released because of its extension or declared type any more.** A `MIME` policy rule used to match when the declared MIME type, the detected (magic-byte) MIME type *or* the file extension matched its pattern, so an `AUTO_RELEASE` rule with an extension pattern such as `.docx` released an executable renamed to `report.docx` as long as ClamAV found nothing. `AUTO_RELEASE` rules now match the detected MIME type only; extension and declared type still count for `DENY` and `QUARANTINE` rules (they can only make a decision stricter). See [docs/policies.md](docs/policies.md#mime-and-source-matching).
+- The **Block Executables** template also denies the MIME types detected for PE, DOS, MSI, ELF, Mach-O and script files, so a renamed executable is denied rather than only quarantined. Installations that already have the template keep their copy; the added patterns are listed in `backend/app/services/standard_policies.py` (`_EXECUTABLE_MIME_TYPES`) for adding by hand.
 - **`scripts/setup-network-isolation.sh` now uses the same browser-plane settings as the running stack, and refuses a wrong exemption.**
   - Before, the script read `OPENRBI_AGENT_BROWSER_PLANE_IP` only from its own environment. Neither `deploy.sh` nor the systemd timer loaded `.env`. A host that set a non-default agent address in `.env` (as `.env.example` suggests) therefore kept exempting `172.30.0.2`. Docker could then hand that address to a sandbox, giving it an unrestricted `ACCEPT` into the control plane.
   - The script now reads `OPENRBI_AGENT_BROWSER_PLANE_IP`, `OPENRBI_BROWSER_PLANE_NETWORK` and `COMPOSE_PROJECT_NAME` from the environment or the checkout's `.env`. The network name defaults to `<project>_browser-plane`, as compose names it.
   - Before changing any rule, it verifies that each exempted address belongs to the `session-agent` container. Otherwise it leaves the existing rules untouched, doesn't refresh the marker (so health turns `DEGRADED`) and names the agent's real address.
   - New `--check` mode runs the validation without root. `scripts/run-security-tests.sh` covers both the refusal and reading the value from `.env`.
   - **Behavior change:** a host whose exemption didn't match the agent's address — so far a silent misconfiguration — now gets an error from `deploy.sh`/the timer until `OPENRBI_AGENT_BROWSER_PLANE_IP` is corrected. See [docs/deployment.md#network-isolation](docs/deployment.md#network-isolation).
+
+### Changed
+
+- **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.
 
 ### Documentation
 
