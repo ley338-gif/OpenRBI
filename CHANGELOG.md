@@ -6,6 +6,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+### Security
+
+- **Browser sandbox: Firefox ESR 153.4** (from 140.16). Debian's bookworm-security moved `firefox-esr` to the 153 ESR branch on 2026-10-02 (instead of shipping a 140.17), which fixes the ESR 140.17 issues (MFSA 2026-99, several sandbox escapes). Verified under the production sandbox hardening (uid 10001, `cap_drop=ALL`, `no-new-privileges`, read-only rootfs, tmpfs `/tmp`, memory/pid limits): Xvfb, x11vnc and Firefox start, pages render, and downloads land silently in `~/downloads` for quarantine pickup, with the same per-type behaviour as Firefox 140. Images built before 2026-10-02, including `v1.0.2-rc.1`, still contain 140.16: rebuild with `./scripts/deploy.sh` or `./scripts/build-browser-image.sh`.
+- Dependabot no longer proposes **major** versions of `postgres` and `valkey/valkey`. A postgres major can't open the previous major's data directory, so it needs a planned migration rather than a tag bump. Patch and minor updates stay automatic.
+
 ## [1.0.2-rc.1] - 2026-09-30
 
 ### Security
