@@ -10,6 +10,8 @@ REDIS_CONTAINER="${OPENRBI_REDIS_CONTAINER:-openrbi-redis-1}"
 CLAMAV_CONTAINER="${OPENRBI_CLAMAV_CONTAINER:-openrbi-clamav-1}"
 CONTROL_PLANE_NETWORK="${OPENRBI_CONTROL_PLANE_NETWORK:-openrbi_control-plane}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=scripts/acceptance-images.sh
+. "$SCRIPT_DIR/acceptance-images.sh"
 START_LOG="/tmp/openrbi-startup-fault.log"
 HOST_PYTHON="${OPENRBI_HOST_PYTHON:-python3}"
 
@@ -202,6 +204,11 @@ networks:
       config:
         - subnet: 172.31.0.0/24
 EOF
+# docker-compose.node.yml builds the agent from source unless the image
+# already exists under this project's name.
+if acceptance_images_enabled; then
+    use_published_image session-agent "${NODE2_PROJECT}-session-agent:latest"
+fi
 docker compose -p "$NODE2_PROJECT" -f docker-compose.node.yml -f "$NODE2_OVERRIDE" up -d >/dev/null
 NODE2_CONTAINER="${NODE2_PROJECT}-session-agent-1"
 docker network connect "$CONTROL_PLANE_NETWORK" "$NODE2_CONTAINER"

@@ -5,6 +5,8 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/acceptance-images.sh
+. "$SCRIPT_DIR/acceptance-images.sh"
 PROJECT="${OPENRBI_ACCEPTANCE_PROJECT:-openrbi-acceptance}"
 ENV_FILE="$REPO_ROOT/.env"
 BROWSER_NETWORK="${PROJECT}_browser-plane"
@@ -77,8 +79,13 @@ echo "ACCEPT 02 private .env generated with mode 600"
 echo "ACCEPT 03 independent strong secrets generated without placeholders"
 
 compose config --quiet
-compose build
-echo "ACCEPT 04 all Compose application images built from source"
+if acceptance_images_enabled; then
+    use_published_images "$PROJECT"
+    echo "ACCEPT 04 all application images pulled from the published release by digest"
+else
+    compose build
+    echo "ACCEPT 04 all Compose application images built from source"
+fi
 
 compose up -d postgres redis clamav
 for attempt in $(seq 1 60); do
@@ -91,8 +98,12 @@ echo "[fresh-install] base services ready"
 compose run --rm backend alembic upgrade head
 echo "ACCEPT 06 Alembic migrated a genuinely empty PostgreSQL volume"
 
-docker build -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
-echo "ACCEPT 07 hardened browser sandbox image built"
+if acceptance_images_enabled; then
+    echo "ACCEPT 07 hardened browser sandbox image is the published release image"
+else
+    docker build -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
+    echo "ACCEPT 07 hardened browser sandbox image built"
+fi
 
 compose up -d
 for attempt in $(seq 1 60); do

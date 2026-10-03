@@ -5,6 +5,8 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/acceptance-images.sh
+. "$SCRIPT_DIR/acceptance-images.sh"
 BASELINE_SHA="2816cfadbcfbf580959b1e78190fd7bbbe47796b"
 PROJECT="${OPENRBI_UPGRADE_PROJECT:-openrbi-upgrade-acceptance}"
 ENV_FILE="$REPO_ROOT/.env"
@@ -168,15 +170,22 @@ target_compose config --quiet
 TARGET_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 TARGET_VERSION="$(tr -d ' \r\n' < "$REPO_ROOT/VERSION")"
 TARGET_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-target_compose build \
-    --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
-    --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
-    --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE"
-docker build \
-    --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
-    --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
-    --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE" \
-    -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
+if acceptance_images_enabled; then
+    # The 0.x baseline above is still built from its pinned source; only the
+    # upgrade target is the published release. The label checks below then
+    # also prove the checkout matches the release (TARGET_SHA/VERSION).
+    use_published_images "$PROJECT"
+else
+    target_compose build \
+        --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
+        --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
+        --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE"
+    docker build \
+        --build-arg OPENRBI_VERSION="$TARGET_VERSION" \
+        --build-arg OPENRBI_COMMIT_SHA="$TARGET_SHA" \
+        --build-arg OPENRBI_BUILD_DATE="$TARGET_BUILD_DATE" \
+        -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
+fi
 target_compose up -d postgres redis clamav
 for attempt in $(seq 1 60); do
     target_compose exec -T postgres pg_isready -U openrbi >/dev/null 2>&1 && break

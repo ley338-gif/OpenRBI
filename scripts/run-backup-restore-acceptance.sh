@@ -5,6 +5,8 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/acceptance-images.sh
+. "$SCRIPT_DIR/acceptance-images.sh"
 PROJECT="${OPENRBI_BACKUP_RESTORE_PROJECT:-openrbi-backup-restore-acceptance}"
 ENV_FILE="$REPO_ROOT/.env"
 BROWSER_NETWORK="${PROJECT}_browser-plane"
@@ -75,7 +77,11 @@ ENV_CREATED=1
 BACKUP_DIR="$(mktemp -d)"
 
 compose config --quiet
-compose build
+if acceptance_images_enabled; then
+    use_published_images "$PROJECT"
+else
+    compose build
+fi
 compose up -d postgres redis clamav
 for attempt in $(seq 1 60); do
     compose exec -T postgres pg_isready -U openrbi >/dev/null 2>&1 && break
@@ -83,7 +89,8 @@ for attempt in $(seq 1 60); do
     sleep 1
 done
 compose run --rm backend alembic upgrade head
-docker build -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
+acceptance_images_enabled \
+    || docker build -t openrbi-browser:latest -f "$REPO_ROOT/docker/browser/Dockerfile" "$REPO_ROOT/docker/browser"
 compose up -d
 for attempt in $(seq 1 60); do
     if compose exec -T backend python -c \
