@@ -622,6 +622,11 @@ function RuleEditor({ rows, setRows }: { rows: RuleRow[]; setRows: (rows: RuleRo
           </button>
         </div>
       ))}
+      <p className="hint">
+        MIME rules match a MIME type (application/pdf, image/*) or an extension (.exe). Extensions and the
+        declared content type can only DENY or QUARANTINE a file; AUTO_RELEASE needs a MIME type and is checked
+        against the type detected from the file's content.
+      </p>
       <button
         type="button"
         className="btn btn-secondary btn-sm"

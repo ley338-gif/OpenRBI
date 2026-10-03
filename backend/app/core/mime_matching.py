@@ -1,10 +1,17 @@
 """MIME/extension matching for MIME policy rules (docs/policies.md).
 
-A file decision never rests on extension or declared Content-Type alone
-(that's decided by the policy engine combining multiple signals — see
-app/services/policy_engine.py); this module only answers "does this one
-rule's pattern match this one candidate value."
+This module only answers "does this one rule's pattern match this one
+candidate value." Which candidate values a rule is compared against is the
+policy engine's decision (app/services/policy_engine.py): the extension and
+a declared Content-Type can only make a decision stricter (DENY/QUARANTINE),
+an AUTO_RELEASE rule matches the detected (magic-byte) MIME type only.
 """
+
+
+def is_extension_pattern(pattern: str) -> bool:
+    """A dot-prefixed pattern (`.exe`) matches file extensions, never a
+    MIME type — so it can never satisfy an AUTO_RELEASE rule."""
+    return pattern.strip().startswith(".")
 
 
 def matches_mime_pattern(value: str | None, pattern: str) -> bool:

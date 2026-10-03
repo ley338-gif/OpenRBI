@@ -97,7 +97,7 @@ Downloads and uploads are fail-closed pipelines (see [ADR 0008](adr/0008-fail-cl
 
 - No download reaches the local client unscanned or unvetted by policy.
 - No local directory is ever mounted directly into a browser sandbox for uploads; uploads go through a dedicated gateway (hash → type detection → policy → scan → temporary in-sandbox availability).
-- File decisions consider more than extension or declared Content-Type: user, groups, source, declared MIME, detected/magic-byte MIME, extension, size, scanner result, and the policy version used — recorded per-decision.
+- A file is never released because of its extension or declared Content-Type: an `AUTO_RELEASE` rule only matches the detected (magic-byte) MIME type, while extension and declared type can only lead to `DENY`/`QUARANTINE` (see [policies.md](policies.md#mime-and-source-matching)). Decisions consider user, groups, source, detected and declared MIME, extension, scanner result, and the policy version used — recorded per decision.
 
 ## Fail-closed rules
 
