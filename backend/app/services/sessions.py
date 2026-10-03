@@ -119,7 +119,7 @@ async def refresh_node_from_agent(db: AsyncSession) -> BrowserNode:
     return node
 
 
-async def _refresh_enrolled_node(db: AsyncSession, node: BrowserNode) -> BrowserNode:
+async def refresh_enrolled_node(db: AsyncSession, node: BrowserNode) -> BrowserNode:
     """Roadmap B2.3 — refreshes an already-persisted, admin-approved
     BrowserNode from its own Session Agent, using its own per-node
     connection (app/services/nodes.py's connection_for_node(), which
@@ -171,7 +171,7 @@ async def select_node(db: AsyncSession) -> BrowserNode:
         refreshed = []
         for node in nodes:
             try:
-                refreshed.append(await _refresh_enrolled_node(db, node))
+                refreshed.append(await refresh_enrolled_node(db, node))
             except SessionAgentError:
                 continue  # unreachable this round — try the remaining nodes
         nodes = refreshed

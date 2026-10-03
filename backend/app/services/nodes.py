@@ -182,6 +182,13 @@ def connection_for_node(node: BrowserNode | None) -> NodeConnection:
     """
     if node is not None and node.endpoint_url and node.agent_token_encrypted:
         return NodeConnection(base_url=node.endpoint_url, token=decrypt_secret(node.agent_token_encrypted))
+    if node is not None and node.endpoint_url:
+        # An enrolled node whose token was cleared by revoke_node(). Never
+        # fall back to the default agent here — that would send this
+        # node's terminate/display calls to a different host. An empty
+        # token makes every session_agent_client call fail with
+        # SessionAgentError, the same as an unreachable node.
+        return NodeConnection(base_url=node.endpoint_url, token="")
     settings = get_settings()
     return NodeConnection(base_url=settings.session_agent_base_url, token=_resolve_session_agent_token(settings))
 

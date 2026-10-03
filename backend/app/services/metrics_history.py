@@ -28,7 +28,12 @@ RANGE_CONFIG: dict[str, tuple[timedelta, timedelta]] = {
 }
 
 
-async def record_sample(db: AsyncSession, node: BrowserNode, *, now: datetime | None = None) -> None:
+async def record_sample(db: AsyncSession, node: BrowserNode, *, now: datetime | None = None, prune: bool = True) -> None:
+    """Appends one sample for `node`. With `prune` (the default) it also
+    drops samples older than the retention window; app/core/node_poller.py
+    records several nodes concurrently and prunes once per tick instead
+    (prune_samples), so parallel transactions don't contend on the same
+    DELETE."""
     now = now or datetime.now(UTC)
     db.add(
         WorkerMetricSample(
@@ -42,10 +47,15 @@ async def record_sample(db: AsyncSession, node: BrowserNode, *, now: datetime | 
             capacity=node.capacity,
         )
     )
-    settings = get_settings()
-    cutoff = now - timedelta(days=settings.metrics_retention_days)
-    await db.execute(delete(WorkerMetricSample).where(WorkerMetricSample.recorded_at < cutoff))
+    if prune:
+        await prune_samples(db, now=now)
     await db.flush()
+
+
+async def prune_samples(db: AsyncSession, *, now: datetime | None = None) -> None:
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=get_settings().metrics_retention_days)
+    await db.execute(delete(WorkerMetricSample).where(WorkerMetricSample.recorded_at < cutoff))
 
 
 async def session_history(db: AsyncSession, *, range_key: str, now: datetime | None = None) -> list[dict]:
