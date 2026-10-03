@@ -24,7 +24,7 @@ OpenRBI's isolation model assumes:
 - The underlying Docker/container runtime and host kernel are trusted and patched.
 - Administrators and infrastructure operators are trusted; OpenRBI does not defend against a malicious admin or a compromised control-plane host.
 - The reverse proxy terminates TLS with a validly configured certificate.
-- Secrets (database credentials, session signing keys, TOTP encryption keys) are provisioned outside of git via environment variables or a secrets manager, never committed.
+- Secrets (database credentials, the CSRF signing key, the TOTP/LDAP-secret encryption key, Session Agent tokens) are provisioned outside of git via environment variables or a secrets manager, never committed.
 
 See [docs/threat-model.md](docs/threat-model.md) for the full attacker-model breakdown.
 

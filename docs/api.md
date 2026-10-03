@@ -1,11 +1,14 @@
 # API
 
-> Status: no OpenAPI/Swagger doc generation is wired up yet beyond FastAPI's automatic `/docs` — this page summarizes the internal-vs-public split and the audit surface. Full endpoint reference is deferred to a later pass; see [development.md](development.md).
+> Status: this page is **not** a complete endpoint reference — it summarizes the internal-vs-public split, the audit surface and the operations-view endpoints. The authoritative, complete list of backend routes and schemas is FastAPI's generated OpenAPI document, reachable through the reverse proxy at `/api/openapi.json`. The interactive `/api/docs` page does not work behind the shipped reverse proxy: it loads its schema from `/openapi.json` at the site root and its scripts from a CDN that the Content-Security-Policy blocks. Per-screen endpoints are also listed in [user-guide.md](user-guide.md) and [admin-guide.md](admin-guide.md).
+>
+> Paths on this page are the backend's own paths. Through the reverse proxy they are served under `/api/` (nginx strips the prefix), e.g. `/auth/login` is `https://<host>/api/auth/login`.
 
 ## Internal vs. public
 
-- **Public** (through the reverse proxy, `/api/*`): everything under `app/api/` in the backend — auth, sessions, display, admin/*, files, policies.
-- **Internal-only** (never exposed publicly, `docs/adr/0004`/`0005`): the Session Agent's entire API (`/v1/sandboxes/*`, `/v1/nodes/self`), authenticated by a shared token (`X-Openrbi-Agent-Token`) distinct from any user-facing credential.
+- **Public** (through the reverse proxy, `/api/*`): everything under `app/api/` in the backend — `/health`, `/auth/*`, `/mfa/*`, `/setup/*`, `/sessions/*`, `/files/*`, `/display/*`, and `/admin/*` (including `/admin/policies/*`). Which of these a process serves depends on `OPENRBI_LISTENER_MODE` ([ADR 0011](adr/0011-user-admin-listener-separation.md)): health/auth/MFA everywhere, sessions/files/display on `user`/`both`, admin routes plus `/setup/*` on `admin`/`both`.
+  - Three route groups are reachable **without a login session**, each closed by its own mechanism instead: `/health` (liveness only), `/setup/*` (console-only setup token, one-way `initialized` flag, rate limit — [ADR 0017](adr/0017-first-run-bootstrap.md)), and `POST /admin/nodes/enroll` (single-use enrollment token plus rate limit; the node stays `PENDING` until an admin approves it — [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)).
+- **Internal-only** (never exposed publicly, `docs/adr/0004`/`0005`): the Session Agent's API (`/v1/sandboxes/*`, `/v1/nodes/self`), authenticated by an `X-Openrbi-Agent-Token` header distinct from any user-facing credential. Which token that is: the legacy shared `OPENRBI_SESSION_AGENT_API_TOKEN`/`OPENRBI_AGENT_API_TOKEN` pair for the default node, each enrolled node's own token (stored encrypted per node, [ADR 0023](adr/0023-node-enrollment-and-trust-model.md)), and — opt-in for Segmented — separate `user`/`admin`-scoped tokens, where the `user` scope is refused for isolate, restore and listing all sandboxes ([ADR 0025](adr/0025-segmented-credential-scoping.md)). The agent's own `GET /health` needs no token.
 
 ## Audit / Security Events (Phase 18)
 
@@ -37,6 +40,6 @@ All user mutation endpoints remain ADMIN-only. `POST /admin/users/{id}/reset-pas
 
 ## Health (Phase 19)
 
-`GET /health` (public, unauthenticated) — pure liveness, always `200 {"status": "ok"}` if the process is up; carries no dependency information.
+`GET /health` (public, unauthenticated) — pure liveness, always `200` with `{"status": "ok", "version": ..., "commit_sha": ..., "build_date": ...}` if the process is up (the build fields are described in [release/versioning.md](release/versioning.md)); carries no dependency information.
 
-`GET /admin/health` (ADMIN/SECURITY_REVIEWER) — aggregated dependency health. Response: `{"status": "HEALTHY" | "DEGRADED" | "UNAVAILABLE", "components": [{"name", "status", "detail"}, ...]}` for `api`, `postgres`, `redis`, `session_agent`, `sandbox_runtime`, `browser_image`, `clamav`, `quarantine_storage`. See [architecture.md#health-monitoring-phase-19](architecture.md#health-monitoring-phase-19) for the aggregation rule and why this endpoint (unlike `/health`) is unreachable during a full PostgreSQL outage.
+`GET /admin/health` (ADMIN/SECURITY_REVIEWER) — aggregated dependency health. Response: `{"status": "HEALTHY" | "DEGRADED" | "UNAVAILABLE", "components": [{"name", "status", "detail"}, ...]}` for `api`, `postgres`, `redis`, `session_agent`, `sandbox_runtime`, `browser_image`, `clamav`, `quarantine_storage`, `network_isolation`. `network_isolation` can additionally report `NOT_CONFIGURED` (no marker file from `scripts/setup-network-isolation.sh`, see [deployment.md#network-isolation](deployment.md#network-isolation)); any component other than `api`/`postgres` that is not `HEALTHY` makes the overall status `DEGRADED`. See [architecture.md#health-monitoring-phase-19](architecture.md#health-monitoring-phase-19) for the aggregation rule and why this endpoint (unlike `/health`) is unreachable during a full PostgreSQL outage.
