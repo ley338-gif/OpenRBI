@@ -105,7 +105,7 @@ See [ADR 0008](adr/0008-fail-closed.md) for the authoritative statement. Summary
 
 ## MFA
 
-TOTP is mandatory for ADMIN and SECURITY_REVIEWER roles (see [ADR 0002](adr/0002-totp-mfa.md)). TOTP secrets are encrypted at rest at the application layer. Recovery codes are shown once, stored only as hashes, and invalidated individually on use. An admin-triggered MFA reset always creates a `MFA_RESET` security event.
+TOTP is mandatory for ADMIN and SECURITY_REVIEWER roles (see [ADR 0002](adr/0002-totp-mfa.md)). It is enforced at login, so a role change ends all of the user's login sessions (`USER_ROLE_CHANGED` records how many): a promoted account gets its new rights only after logging in again, including MFA enrollment if the new role requires it. TOTP secrets are encrypted at rest at the application layer. Recovery codes are shown once, stored only as hashes, and invalidated individually on use. An admin-triggered MFA reset always creates a `MFA_RESET` security event.
 
 ## Session isolation
 
