@@ -19,6 +19,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Added
 
+- **API reference and configuration reference.**
+  - [`docs/api-reference.md`](docs/api-reference.md) lists every backend and Session Agent endpoint with its access rule (roles, session, agent-token scope or the mechanism protecting a public route), listener mode, parameters with their limits, success response and the JSON schemas.
+  - It is generated from the apps' route tables by `scripts/generate-api-reference.py`, and CI fails when it is out of date. A route without an auth dependency has to be listed in the generator together with the mechanism that protects it.
+  - [`docs/configuration.md`](docs/configuration.md) lists every environment variable with its default and purpose: deployment, backend, Session Agent, frontend build and operator scripts. `scripts/check-config-docs.py` (CI) fails when a setting is missing, a documented default differs from the code, or a documented variable isn't read anywhere.
 - **Upgrade acceptance from the previous release.** The `Upgrade acceptance` CI job (and the published-image acceptance workflow) now has a second leg that builds the newest earlier GA release (today `v1.0.2`) from its tag, fills it with users, MFA and LDAP secrets, policies, sessions, audit events, quarantine files and worker metrics, and upgrades it in place to the candidate — so the upgrade existing installations actually perform is gated, not only the one from 0.1.1. `scripts/run-upgrade-acceptance.sh` takes the baseline from `OPENRBI_UPGRADE_BASELINE` (`previous-release`, any git ref, or unset for 0.1.1). See [`docs/release/upgrade-acceptance.md`](docs/release/upgrade-acceptance.md).
 
 ### Changed

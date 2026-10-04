@@ -66,6 +66,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/admin-guide.md](docs/admin-guide.md) | Admin operations |
 | [docs/user-guide.md](docs/user-guide.md) | End-user operations |
 | [docs/deployment.md](docs/deployment.md) | Installation, HTTPS, secrets, backup |
+| [docs/configuration.md](docs/configuration.md) | Every environment variable with its default |
 | [docs/supported-configurations.md](docs/supported-configurations.md) | Authoritative supported, experimental, and unsupported v1 configurations |
 | [docs/release/publishing.md](docs/release/publishing.md) | Guarded release dry-run, image publication, and provenance procedure |
 | [docs/release/sbom.md](docs/release/sbom.md) | CycloneDX SBOM generation, release assets, and limitations |
@@ -84,7 +85,8 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/release/rollback.md](docs/release/rollback.md) | Backup-based rollback and recovery verification |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common problems |
 | [docs/development.md](docs/development.md) | Dev environment, repo structure, build phases |
-| [docs/api.md](docs/api.md) | API reference |
+| [docs/api-reference.md](docs/api-reference.md) | API reference: every endpoint, its access rule and parameters (generated) |
+| [docs/api.md](docs/api.md) | API notes: public vs. internal, audit, operations views |
 | [docs/adr/](docs/adr/README.md) | Architecture Decision Records (index) |
 
 ## Scope
