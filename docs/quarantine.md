@@ -74,7 +74,7 @@ Verified end-to-end against the live stack: a clean upload with no group policy 
 6. Actual file type detected (magic bytes), independent of the extension.
 7. Source/URL metadata captured: only the final URL Firefox recorded in the file's `user.xdg.origin.url` attribute (stored as both `initial_url` and `final_url`), its `source_hostname`, and a TLS flag inferred from that URL's scheme. `redirect_chain` stays empty — see the known gap in step 4 of [How download interception actually works](#how-download-interception-actually-works-phase-13).
 8. Policy pre-check.
-9. File scanned (ClamAV via the `FileScanner` provider).
+9. File scanned (ClamAV over its daemon protocol, `app/core/clamav_client.py`).
 10. Final policy decision made, using scan result + all metadata above + the active `PolicyVersion`.
 11. File is auto-released, quarantined, or deleted/blocked.
 12. Security Events emitted at each meaningful step (`DOWNLOAD_REQUESTED`, `DOWNLOAD_BLOCKED`, `FILE_QUARANTINED`, `MALWARE_DETECTED`, etc.).

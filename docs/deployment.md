@@ -297,7 +297,7 @@ docker compose -f docker-compose.yml -f docker-compose.segmented.yml \
   up -d backend-user backend-admin
 ```
 
-What this **does** give you today: a `backend-user` process where `/admin/*` genuinely does not exist (verified: a plain `404`, not a role-check rejection — see `scripts/test-listener-modes.sh`), and a `backend-admin` process where the user-facing session/file/display routes don't exist. What this **does not yet** give you, and would need further work before being a real production Segmented deployment:
+What this **does** give you today: a `backend-user` process where `/admin/*` genuinely does not exist (verified: a plain `404`, not a role-check rejection — see `scripts/test-listener-modes.sh`; a mutating request without a valid CSRF token is still answered `403` by the CSRF middleware, which runs before routing), and a `backend-admin` process where the user-facing session/file/display routes don't exist. What this **does not yet** give you, and would need further work before being a real production Segmented deployment:
 
 - **Separate reverse-proxy origins** — e.g. `https://browser.example.org` for the User API/Portal and `https://admin.example.internal` for the Admin API/Portal, each its own nginx vhost/TLS certificate, the admin one reachable only from a management network. Not wired up; `docker-compose.segmented.yml`'s two backend instances currently have no dedicated proxy path of their own.
 - **Firewall/VLAN enforcement** — entirely an operator decision once real separate origins exist; nothing in this repository automates it, on purpose (see the Productization v0.1.1 analysis's explicit anti-overengineering guardrail).

@@ -63,7 +63,7 @@ trust:**
    node's stored `api_token` is cleared, and re-enrollment requires a
    fresh enrollment token.
 
-**Why not simpler alternatives:**
+## Alternatives Considered
 
 - *Manual admin data entry (admin types in hostname/endpoint/token
   directly, no agent-initiated call at all)* — rejected: forces the
@@ -85,9 +85,6 @@ trust:**
   node's token would compromise all of them. Per-node tokens (this ADR)
   cap a leak to the one node whose token leaked; revoking it doesn't
   affect any other node.
-
-## Alternatives Considered
-
 - **mTLS client certificates instead of a bearer enrollment token** —
   stronger, but adds a certificate-authority/issuance story this project
   doesn't have anywhere else yet (session-to-session auth today is

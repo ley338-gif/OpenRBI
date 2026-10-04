@@ -69,12 +69,20 @@ function UploadPanel({ sessionId }: { sessionId: string }) {
       await userApi.uploadFile(sessionId, file);
       notify(`"${file.name}" allowed and transferred into your session`);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
+      // The status says why (backend/app/api/sessions.py UPLOAD_BLOCKED_STATUS):
+      // 403 is a verdict on the file, 503/502 an outage worth retrying.
+      if (e instanceof ApiError && e.status === 403 && e.detail.startsWith("infected")) {
+        notify(`"${file.name}" was not transferred: the malware scan detected a threat`, "error");
+      } else if (e instanceof ApiError && e.status === 403) {
         notify(`"${file.name}" blocked by policy`, "error");
       } else if (e instanceof ApiError && e.status === 413) {
         notify(`"${file.name}" is too large`, "error");
+      } else if (e instanceof ApiError && e.status === 503) {
+        notify(`"${file.name}" was not transferred: the malware scanner is unavailable. Try again later.`, "error");
+      } else if (e instanceof ApiError && e.status === 502) {
+        notify(`"${file.name}" passed all checks but could not be placed into your session. Try again.`, "error");
       } else {
-        notify("Upload failed — scan may have failed or the backend is unavailable", "error");
+        notify("Upload failed — the backend may be unavailable", "error");
       }
     } finally {
       setBusy(false);

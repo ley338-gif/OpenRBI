@@ -83,8 +83,9 @@ async def test_scanner_outage_blocks_upload_before_sandbox_write(db, monkeypatch
     monkeypatch.setattr(uploads, "scan", unavailable)
     monkeypatch.setattr(uploads.session_agent_client, "write_upload", write)
 
-    with pytest.raises(UploadBlockedError, match="scanner unavailable"):
+    with pytest.raises(UploadBlockedError, match="scanner unavailable") as blocked:
         await process_upload(db, session, "report.txt", b"unscanned bytes")
+    assert blocked.value.kind == "scanner_unavailable"
     assert wrote is False
     event = await db.scalar(
         select(SecurityEvent).where(
@@ -115,8 +116,9 @@ async def test_malicious_upload_creates_incident_and_never_reaches_sandbox(db, m
     monkeypatch.setattr(uploads, "scan", infected)
     monkeypatch.setattr(uploads.session_agent_client, "write_upload", write)
 
-    with pytest.raises(UploadBlockedError, match="infected: Eicar-Signature"):
+    with pytest.raises(UploadBlockedError, match="infected: Eicar-Signature") as blocked:
         await process_upload(db, session, "eicar.com", b"malicious fixture")
+    assert blocked.value.kind == "malware"
     assert wrote is False
     assert await db.scalar(
         select(SecurityEvent).where(
@@ -125,3 +127,17 @@ async def test_malicious_upload_creates_incident_and_never_reaches_sandbox(db, m
         )
     ) is not None
     assert await db.scalar(select(Incident).where(Incident.session_id == session.id)) is not None
+
+
+def test_every_block_kind_has_an_http_status():
+    """A verdict on the file is 403; an outage is a retryable 5xx, so the
+    User Portal can say which one happened (SecureBrowser.tsx)."""
+    from typing import get_args
+
+    from app.api.sessions import UPLOAD_BLOCKED_STATUS
+    from app.services.uploads import UploadBlockKind
+
+    assert set(UPLOAD_BLOCKED_STATUS) == set(get_args(UploadBlockKind))
+    assert UPLOAD_BLOCKED_STATUS["policy"] == UPLOAD_BLOCKED_STATUS["malware"] == 403
+    assert UPLOAD_BLOCKED_STATUS["scanner_unavailable"] == 503
+    assert UPLOAD_BLOCKED_STATUS["sandbox_unavailable"] == 502
