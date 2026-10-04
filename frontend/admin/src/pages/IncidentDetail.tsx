@@ -9,6 +9,7 @@ import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { IncidentDto, SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+import { UserLink } from "../components/AdminOnly";
 
 const TRANSITIONS: Record<string, string[]> = {
   NEW: ["INVESTIGATING", "RESOLVED", "FALSE_POSITIVE"],
@@ -90,7 +91,7 @@ export function IncidentDetail() {
           <div className="section-header"><h2>Related</h2></div>
           <DefinitionList
             items={[
-              ...(incident.user_id ? [{ label: "User", value: <Link to={`/users/${incident.user_id}`}>{incident.user_id.slice(0, 8)}</Link> }] : []),
+              ...(incident.user_id ? [{ label: "User", value: <UserLink userId={incident.user_id}>{incident.user_id.slice(0, 8)}</UserLink> }] : []),
               ...(incident.session_id
                 ? [{ label: "Session", value: <Link to={`/sessions/${incident.session_id}`} className="mono">{incident.session_id.slice(0, 8)}</Link> }]
                 : []),

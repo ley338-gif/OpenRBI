@@ -6,6 +6,7 @@ import { UserMenu } from "@shared/components/UserMenu";
 import { HelpMenu } from "@shared/components/HelpMenu";
 import { NotificationButton } from "@shared/components/NotificationButton";
 import darkLogo from "@shared/logo-dm.png";
+import { useIsAdmin } from "./AdminOnly";
 
 const HELP_LINKS = [
   { label: "Admin Guide", href: "/docs/admin-guide.md" },
@@ -14,21 +15,22 @@ const HELP_LINKS = [
   { label: "Troubleshooting", href: "/docs/troubleshooting.md" },
 ];
 
-const NAV = [
+// adminOnly entries are hidden from SECURITY_REVIEWER (components/AdminOnly.tsx).
+const NAV: { label: string; items: { to: string; label: string; icon: (typeof Icons)[keyof typeof Icons]; end?: boolean; adminOnly?: boolean }[] }[] = [
   { label: "Overview", items: [{ to: "/", label: "Dashboard", end: true, icon: Icons.Dashboard }] },
   { label: "Users & access", items: [
-    { to: "/users", label: "Users", icon: Icons.Users }, { to: "/groups", label: "Groups", icon: Icons.Groups },
+    { to: "/users", label: "Users", icon: Icons.Users, adminOnly: true }, { to: "/groups", label: "Groups", icon: Icons.Groups, adminOnly: true },
     { to: "/sessions", label: "Sessions", icon: Icons.Sessions },
   ] },
   { label: "Browser security", items: [
-    { to: "/policies", label: "Policies", icon: Icons.Shield }, { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
+    { to: "/policies", label: "Policies", icon: Icons.Shield, adminOnly: true }, { to: "/quarantine", label: "Quarantine", icon: Icons.Quarantine },
     { to: "/incidents", label: "Incidents", icon: Icons.Incident },
   ] },
   { label: "Infrastructure", items: [
     { to: "/workers", label: "Workers", icon: Icons.Worker }, { to: "/system", label: "System health", icon: Icons.System },
   ] },
   { label: "Administration", items: [
-    { to: "/audit", label: "Audit log", icon: Icons.Audit }, { to: "/settings/ldap", label: "LDAP / identity", icon: Icons.Settings },
+    { to: "/audit", label: "Audit log", icon: Icons.Audit }, { to: "/settings/ldap", label: "LDAP / identity", icon: Icons.Settings, adminOnly: true },
   ] },
 ];
 
@@ -36,6 +38,8 @@ const COLLAPSE_KEY = "openrbi_admin_sidebar_collapsed";
 
 export function AppShell() {
   const { user, logout } = useAuth();
+  const isAdmin = useIsAdmin();
+  const nav = NAV.map((group) => ({ ...group, items: group.items.filter((item) => isAdmin || !item.adminOnly) })).filter((group) => group.items.length > 0);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -61,11 +65,11 @@ export function AppShell() {
           )}
         </div>
         <nav>
-          {NAV.map((group) => (
+          {nav.map((group) => (
             <div className="nav-group" key={group.label}>
               {(!collapsed || mobileOpen) && <div className="nav-group-label">{group.label}</div>}
               {group.items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={"end" in item ? item.end : undefined} onClick={() => setMobileOpen(false)} className={({ isActive }) => (isActive ? "active" : "")}>
+                <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setMobileOpen(false)} className={({ isActive }) => (isActive ? "active" : "")}>
                   <item.icon />{(!collapsed || mobileOpen) && item.label}
                 </NavLink>
               ))}

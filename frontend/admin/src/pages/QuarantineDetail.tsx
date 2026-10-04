@@ -8,8 +8,10 @@ import { PageHeader } from "@shared/components/PageHeader";
 import { DefinitionList } from "@shared/components/DefinitionList";
 import { useToast } from "@shared/components/Toast";
 import { formatBytes, formatDateTime } from "@shared/format";
+import { fileStatusLabel, scanResultLabel } from "@shared/fileStatus";
 import type { QuarantineFileDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+import { UserLink } from "../components/AdminOnly";
 
 /**
  * Metadata only, never a file preview (section 33) — v1.0 has no safe
@@ -56,7 +58,7 @@ export function QuarantineDetail() {
       <p><Link to="/quarantine">← Quarantine</Link></p>
       <PageHeader
         title={file.original_name}
-        meta={<StatusBadge value={file.status} />}
+        meta={<StatusBadge value={fileStatusLabel(file.status)} />}
         actions={
           reviewable && (
             <>
@@ -89,7 +91,7 @@ export function QuarantineDetail() {
         <div className="section-header"><h2>Source</h2></div>
         <DefinitionList
           items={[
-            { label: "User", value: <Link to={`/users/${file.user_id}`}>{file.user_id.slice(0, 8)}</Link> },
+            { label: "User", value: <UserLink userId={file.user_id}>{file.user_id.slice(0, 8)}</UserLink> },
             { label: "Session", value: <Link to={`/sessions/${file.session_id}`} className="mono">{file.session_id.slice(0, 8)}</Link> },
             { label: "Initial URL", value: <span style={{ wordBreak: "break-all" }}>{file.initial_url ?? "—"}</span> },
             { label: "Final URL", value: <span style={{ wordBreak: "break-all" }}>{file.final_url ?? "—"}</span> },
@@ -103,7 +105,7 @@ export function QuarantineDetail() {
         <div className="section-header"><h2>Security scan</h2></div>
         <DefinitionList
           items={[
-            { label: "Scanner status", value: <StatusBadge value={file.scanner_status} /> },
+            { label: "Scanner status", value: <StatusBadge value={scanResultLabel(file.scanner_status)} /> },
             { label: "Scanner result", value: file.scanner_result ?? "—" },
           ]}
         />

@@ -6,10 +6,11 @@ import { PageHeader } from "@shared/components/PageHeader";
 import { TableToolbar } from "@shared/components/TableToolbar";
 import { Icons } from "@shared/components/Icons";
 import { formatBytes, formatDateTime } from "@shared/format";
+import { fileStatusLabel, scanResultLabel } from "@shared/fileStatus";
 import type { QuarantineFileDto, QuarantineStatus } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 
-const STATUSES: QuarantineStatus[] = ["PENDING_SCAN", "SCANNING", "QUARANTINED", "RELEASED", "REJECTED", "DELETED"];
+const STATUSES: QuarantineStatus[] = ["PENDING_SCAN", "QUARANTINED", "RELEASED", "REJECTED", "DELETED"];
 
 export function Quarantine() {
   const [files, setFiles] = useState<QuarantineFileDto[] | null>(null);
@@ -47,7 +48,7 @@ export function Quarantine() {
             <option value="">All statuses</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {fileStatusLabel(s)}
               </option>
             ))}
           </select>
@@ -81,8 +82,8 @@ export function Quarantine() {
                   </td>
                   <td className="mono" style={{ fontSize: "0.82rem" }}>{f.detected_mime ?? "—"}</td>
                   <td>{formatBytes(f.size_bytes)}</td>
-                  <td><StatusBadge value={f.scanner_status} /></td>
-                  <td><StatusBadge value={f.status} /></td>
+                  <td><StatusBadge value={scanResultLabel(f.scanner_status)} /></td>
+                  <td><StatusBadge value={fileStatusLabel(f.status)} /></td>
                   <td>{formatDateTime(f.created_at)}</td>
                 </tr>
               ))}

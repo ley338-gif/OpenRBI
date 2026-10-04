@@ -8,6 +8,7 @@ import { LineChart, type LineChartPoint } from "@shared/components/LineChart";
 import { formatDateTime } from "@shared/format";
 import type { BrowserNodeDto, DashboardRange, NodeHistoryPointDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+import { useIsAdmin } from "../components/AdminOnly";
 
 type Action = "drain" | "undrain" | "maintenance" | "unmaintenance";
 
@@ -47,6 +48,7 @@ function formatXForRange(range: DashboardRange) {
 export function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
   const { notify } = useToast();
+  const isAdmin = useIsAdmin();
   const [node, setNode] = useState<BrowserNodeDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<DashboardRange>("24h");
@@ -127,7 +129,7 @@ export function WorkerDetail() {
       <p><Link to="/workers">← Workers</Link></p>
       <div className="flex-between">
         <h1 style={{ marginBottom: 0 }}>{node.hostname}</h1>
-        <div style={{ display: "flex", gap: "8px" }}>
+        {isAdmin && <div style={{ display: "flex", gap: "8px" }}>
           {node.status === "MAINTENANCE" ? (
             <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("unmaintenance")}>
               Take out of maintenance
@@ -148,7 +150,7 @@ export function WorkerDetail() {
               </button>
             </>
           )}
-        </div>
+        </div>}
       </div>
 
       <div className="card">
