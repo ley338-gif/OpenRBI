@@ -124,7 +124,7 @@ Creating a user is a real form against `POST /admin/users` (username, initial pa
 
 The same `AttachList` widget backs three more places, so a relationship can be edited from whichever side an admin happens to be looking at: **Policy Detail** has an **Assigned groups** panel; the **Policies** list has a quick per-row "Assign to a group" action that opens the same panel in a small modal without navigating away; and **User Detail**'s **Groups** panel (replacing what used to be a read-only comma-joined list) lets an admin add/remove that one user's group memberships directly. There is still no dedicated Group Detail *page* — the modal is deliberately the only place this happens, so an admin never has to leave the list they're already looking at. The data model still has no group-to-role relationship, LDAP group synchronization/source field, or group `updated_at`, so the UI does not claim those capabilities or display invented values.
 
-Every disable, MFA reset, lock, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
+A role change signs the user out everywhere; the new role applies at their next login, which for `ADMIN` and `SECURITY_REVIEWER` includes MFA enrollment if they haven't enrolled yet. Every disable, MFA reset, lock, or role change is a security-critical action — the portal shows a specific confirmation ("Reset MFA for X? ... they will be required to re-enroll on their next login"), never a bare "Are you sure?".
 
 <details><summary>Underlying API</summary>
 

@@ -444,11 +444,11 @@ export function UserDetail() {
 function roleChangeDescription(user: UserSummaryDto, next: Role, isSelf: boolean): string {
   const parts: string[] = [];
   if (next === "ADMIN") {
-    parts.push("This grants full administrative access to OpenRBI, effective on their next request.");
+    parts.push("This grants full administrative access to OpenRBI. They are signed out everywhere and get it at their next login.");
   } else if (user.role === "ADMIN") {
-    parts.push("This removes their administrative access, effective on their next request.");
+    parts.push("This removes their administrative access immediately and signs them out everywhere.");
   } else {
-    parts.push("The new role applies on their next request.");
+    parts.push("They are signed out everywhere; the new role applies at their next login.");
   }
   if (ELEVATED_ROLES.includes(next) && !user.mfa_enabled) {
     parts.push("MFA is mandatory for this role and will be required at their next login.");
@@ -457,7 +457,7 @@ function roleChangeDescription(user: UserSummaryDto, next: Role, isSelf: boolean
     parts.push("This account is LDAP-provisioned: its role is re-derived from directory group mappings at every login, so this change lasts only until they next log in.");
   }
   if (isSelf && next !== "ADMIN") {
-    parts.push("This is your own account — you will lose access to the Admin Portal.");
+    parts.push("This is your own account — you will be signed out and lose access to the Admin Portal.");
   }
   return parts.join(" ");
 }

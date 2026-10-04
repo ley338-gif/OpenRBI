@@ -50,6 +50,12 @@ async def _try_enroll_once(settings) -> bool:
             return False
 
         csrf_token = client.cookies.get("csrf_token")
+        # Echo the cookie explicitly instead of relying on the client's
+        # cookie jar: with OPENRBI_ENVIRONMENT != development the backend
+        # marks it Secure, and the jar never sends a Secure cookie over a
+        # plain-http control_plane_url (e.g. the default http://backend:8000),
+        # which made every such enrollment fail the CSRF check with 403.
+        headers = {"X-CSRF-Token": csrf_token, "Cookie": f"csrf_token={csrf_token}"} if csrf_token else {}
         try:
             response = await client.post(
                 "/admin/nodes/enroll",
@@ -58,7 +64,7 @@ async def _try_enroll_once(settings) -> bool:
                     "hostname": settings.node_name,
                     "api_token": settings.api_token,
                 },
-                headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
+                headers=headers,
             )
         except (httpx.HTTPError, OSError):
             return False

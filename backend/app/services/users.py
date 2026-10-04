@@ -119,15 +119,27 @@ async def reset_password(db: AsyncSession, user: User, *, new_password: str, act
 
 
 async def change_role(db: AsyncSession, user: User, *, role_name: str, actor_id: uuid.UUID) -> None:
+    """A real change also revokes the user's login sessions. Mandatory MFA
+    for ADMIN/SECURITY_REVIEWER is enforced at login, so without this a USER
+    without MFA who is promoted would keep using the admin API with the
+    session they already had. require_role reads the role on every request,
+    so a demotion takes effect immediately either way.
+    """
     role = await _get_role_by_name(db, role_name)
     old_role_id = user.role_id
     user.role_id = role.id
     db.add(user)
+    revoked = await revoke_all_sessions_for_user(user.id) if old_role_id != role.id else 0
     await record_security_event(
         db,
         SecurityEventType.USER_ROLE_CHANGED,
         user_id=user.id,
-        metadata={"actor": str(actor_id), "old_role_id": str(old_role_id), "new_role": role_name},
+        metadata={
+            "actor": str(actor_id),
+            "old_role_id": str(old_role_id),
+            "new_role": role_name,
+            "sessions_revoked": revoked,
+        },
     )
     await db.flush()
 
