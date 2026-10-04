@@ -157,9 +157,11 @@ class Settings(BaseSettings):
     orphan_reconcile_interval_seconds: float = 300.0
     orphan_reconcile_grace_cycles: int = 2
 
-    # DISCONNECTED-session timeout (app/core/session_reaper.py): a session
+    # Unattended-session timeout (app/core/session_reaper.py): a session
     # whose display connection dropped and was never reattached is
-    # terminated once it has sat DISCONNECTED this long. Without it, a
+    # terminated once it has sat DISCONNECTED this long, and so is an
+    # ACTIVE session nobody has connected to since it started or was
+    # restored (viewer_connected_at unset). Without it, a
     # closed browser tab left the sandbox running forever — and with the
     # default max_sessions_per_user=1, silently blocked that user from
     # starting any new session until an admin noticed and killed it by

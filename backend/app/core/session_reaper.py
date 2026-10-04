@@ -1,6 +1,8 @@
-"""DISCONNECTED-session timeout — periodically terminates sessions that have
-sat DISCONNECTED (sandbox still running, nobody viewing it) for longer than
-OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS. Same in-process-task pattern
+"""Unattended-session timeout — periodically terminates sessions nobody is
+viewing (sandbox still running) for longer than
+OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS: DISCONNECTED sessions, and
+ACTIVE sessions without a viewer connection (viewer_connected_at is NULL —
+started or restored, and nobody has opened them since). Same in-process-task pattern
 as app/core/orphan_reconciler.py/quarantine_retention.py.
 
 Before this job existed, docs/session-lifecycle.md already described a
@@ -13,11 +15,10 @@ on the Sessions page (observed in production: 300+ hours).
 
 What this deliberately does NOT do:
 
-- Idle-ACTIVE detection. An ACTIVE session has a live display connection,
-  and noVNC keeps that connection busy (framebuffer update requests) even
-  with no human input, so "idle" can't be derived from anything the
-  backend currently records. Timing out a session someone is actually
-  looking at would be worse than the leak this fixes.
+- Idle detection while a viewer is connected. noVNC keeps that connection
+  busy (framebuffer update requests) even with no human input, so "idle"
+  can't be derived from anything the backend records. Timing out a session
+  someone is actually looking at would be worse than the leak this fixes.
 - ISOLATED sessions are never touched — isolation preserves the sandbox
   for investigation on purpose (docs/session-lifecycle.md).
 
@@ -44,7 +45,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 
 from app.config import get_settings
@@ -73,36 +74,39 @@ async def _reap_once() -> int:
 
     now = datetime.now(UTC)
     cutoff = now - timedelta(seconds=timeout)
-    disconnected_since = func.coalesce(
+    # "Without a viewer since": the disconnect time for DISCONNECTED; for an
+    # ACTIVE session without a viewer, when it started or was restored
+    # (both stamp last_activity_at), or when the backend serving the display
+    # last started (app/main.py resets the viewer stamps then).
+    unattended_since = func.coalesce(
         BrowserSession.last_activity_at, BrowserSession.started_at, BrowserSession.created_at
+    )
+    unattended = and_(
+        unattended_since < cutoff,
+        or_(
+            BrowserSession.status == SessionStatus.DISCONNECTED,
+            and_(BrowserSession.status == SessionStatus.ACTIVE, BrowserSession.viewer_connected_at.is_(None)),
+        ),
     )
 
     reaped = 0
     async with async_session_factory() as db:
-        result = await db.execute(
-            select(BrowserSession.id).where(
-                BrowserSession.status == SessionStatus.DISCONNECTED, disconnected_since < cutoff
-            )
-        )
-        candidate_ids = list(result.scalars())
+        result = await db.execute(select(BrowserSession.id, BrowserSession.status).where(unattended))
+        candidates = list(result.all())
 
-        for session_id in candidate_ids:
-            # Claim atomically: only a session that is *still* DISCONNECTED
-            # and still past the cutoff at this instant moves on. A user
-            # who reconnected between the SELECT above and here flipped it
-            # back to ACTIVE (and re-stamped last_activity_at), so this
-            # matches nothing and their session is left alone — same
-            # conditional-UPDATE reasoning as app/api/display.py's
-            # disconnect handler.
+        for session_id, seen_status in candidates:
+            # Claim atomically: only a session that is *still* unattended
+            # in the same state and still past the cutoff at this instant
+            # moves on. A user who connected between the SELECT above and
+            # here set viewer_connected_at (and re-stamped
+            # last_activity_at), so this matches nothing and their session
+            # is left alone — same conditional-UPDATE reasoning as
+            # app/api/display.py's disconnect handler.
             claim = cast(
                 "CursorResult",
                 await db.execute(
                     update(BrowserSession)
-                    .where(
-                        BrowserSession.id == session_id,
-                        BrowserSession.status == SessionStatus.DISCONNECTED,
-                        disconnected_since < cutoff,
-                    )
+                    .where(BrowserSession.id == session_id, BrowserSession.status == seen_status, unattended)
                     .values(status=SessionStatus.TERMINATING)
                     .execution_options(synchronize_session=False)
                 ),
@@ -131,14 +135,17 @@ async def _reap_once() -> int:
                 user_id=session.user_id,
                 session_id=session.id,
                 metadata={
-                    "reason": "disconnected_timeout",
+                    "reason": (
+                        "disconnected_timeout" if seen_status == SessionStatus.DISCONNECTED else "no_viewer_timeout"
+                    ),
+                    # Kept under this key for both reasons: "without a viewer since".
                     "disconnected_since": idle_since.isoformat() if idle_since else None,
                     "timeout_seconds": timeout,
                 },
             )
             await db.commit()
             reaped += 1
-            logger.info("terminated session %s after %ss DISCONNECTED", session_id, int(timeout))
+            logger.info("terminated session %s after %ss without a viewer (%s)", session_id, int(timeout), seen_status.value)
 
     return reaped
 

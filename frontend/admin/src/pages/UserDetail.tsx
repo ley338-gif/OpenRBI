@@ -26,7 +26,7 @@ type PendingAction =
   | { kind: "revoke-sessions" }
   | { kind: "lock" }
   | { kind: "unlock" }
-  | { kind: "session"; action: "disconnect" | "isolate" | "restore" | "kill"; sessionId: string };
+  | { kind: "session"; action: "disconnect" | "isolate" | "restore" | "kill" | "cleanup"; sessionId: string };
 
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
@@ -101,10 +101,11 @@ export function UserDetail() {
           isolate: adminApi.isolateSession,
           restore: adminApi.restoreSession,
           kill: adminApi.killSession,
+          cleanup: adminApi.killSession,
         }[pending.action];
         const updated = await call(pending.sessionId);
         setSessions((prev) => prev!.map((s) => (s.id === updated.id ? updated : s)));
-        notify(`Session ${pending.action}d`);
+        notify(SESSION_ACTION_DONE[pending.action]);
       }
     } catch (err) {
       // The backend's own guards (e.g. the last active administrator
@@ -467,10 +468,18 @@ function SessionActions({
   onAction,
 }: {
   session: AdminSessionDto;
-  onAction: (action: "disconnect" | "isolate" | "restore" | "kill") => void;
+  onAction: (action: "disconnect" | "isolate" | "restore" | "kill" | "cleanup") => void;
 }) {
-  const live = session.status !== "TERMINATED" && session.status !== "FAILED";
-  if (!live) return <span className="text-muted">—</span>;
+  if (session.status === "FAILED") {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction("cleanup")}>
+          Clean up
+        </button>
+      </div>
+    );
+  }
+  if (session.status === "TERMINATED") return <span className="text-muted">—</span>;
 
   // The one contextual action stays a visible button (never buried in a
   // menu, section 23); Disconnect — the least consequential option — moves
@@ -499,13 +508,21 @@ function SessionActions({
   );
 }
 
+const SESSION_ACTION_DONE: Record<"disconnect" | "isolate" | "restore" | "kill" | "cleanup", string> = {
+  disconnect: "Session disconnected",
+  isolate: "Session isolated",
+  restore: "Session restored",
+  kill: "Session killed",
+  cleanup: "Failed session cleaned up",
+};
+
 function SessionActionConfirm({
   pending,
   busy,
   onConfirm,
   onCancel,
 }: {
-  pending: { action: "disconnect" | "isolate" | "restore" | "kill"; sessionId: string };
+  pending: { action: "disconnect" | "isolate" | "restore" | "kill" | "cleanup"; sessionId: string };
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -522,12 +539,16 @@ function SessionActionConfirm({
       title: `Kill session ${short}?`,
       description: "This immediately terminates the user's browser sandbox. Unsaved browser state will be lost. This cannot be undone.",
     },
+    cleanup: {
+      title: `Clean up failed session ${short}?`,
+      description: "Removes whatever is left of this session's sandbox now, instead of waiting for the automatic cleanup of orphaned containers. The session is then marked TERMINATED; the failure stays in the audit log.",
+    },
   }[pending.action];
   return (
     <ConfirmDialog
       title={copy.title}
       description={copy.description}
-      confirmLabel={pending.action[0].toUpperCase() + pending.action.slice(1)}
+      confirmLabel={pending.action === "cleanup" ? "Clean up" : pending.action[0].toUpperCase() + pending.action.slice(1)}
       danger={pending.action === "kill" || pending.action === "isolate"}
       busy={busy}
       onConfirm={onConfirm}

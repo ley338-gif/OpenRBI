@@ -118,7 +118,7 @@ The Downloads page's **Download** button requests a genuine single-use token (`P
 
 The default `OPENRBI_MAX_SESSIONS_PER_USER=1` counts every live session, including one that's `DISCONNECTED` (the user closed the tab; the sandbox is still running). An `ISOLATING` or `ISOLATED` session doesn't count. Since this release, a session left `DISCONNECTED` for longer than `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it) is terminated automatically and audited as `SESSION_TIMED_OUT`, so this clears itself within that window plus up to one minute. To unblock the user right away, reconnect from the User Portal, or have an admin terminate the old session (**Users → user → Terminate all sessions**, or **Sessions → Kill**).
 
-There is no idle timeout for an `ACTIVE` session (one with a live display connection) — the backend can't reliably tell an idle viewer from an active one. `ISOLATED` sessions are never timed out; they're kept for investigation until an admin ends them.
+An `ACTIVE` session nobody has opened since it started (or was restored) times out the same way. There is no idle timeout while a viewer is connected — the backend can't reliably tell an idle viewer from an active one. `ISOLATED` sessions are never timed out; they're kept for investigation until an admin ends them.
 
 If you raised or disabled the timeout, check the Admin Portal's **Sessions** page for long-`DISCONNECTED` sessions from time to time.
 

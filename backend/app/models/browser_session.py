@@ -51,3 +51,8 @@ class BrowserSession(UUIDPKMixin, TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set while a viewer's display connection is open (app/api/display.py);
+    # each connection clears only its own stamp when it ends. NULL on an
+    # ACTIVE session means nobody is looking at it, which is what
+    # app/core/session_reaper.py's no-viewer timeout keys on.
+    viewer_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

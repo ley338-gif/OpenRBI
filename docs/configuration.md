@@ -57,7 +57,7 @@ Every setting OpenRBI reads, in one place. Settings go into `.env` in the checko
 | Variable | Default | Description |
 |---|---|---|
 | `OPENRBI_MAX_SESSIONS_PER_USER` | `1` | Live sessions a user may have at once. `ISOLATING`/`ISOLATED` sessions don't count ([session-lifecycle.md](session-lifecycle.md#transitions)). |
-| `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` | `3600` | A session `DISCONNECTED` for this long is terminated (`SESSION_TIMED_OUT`). `0` disables it. |
+| `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` | `3600` | A session nobody is viewing for this long is terminated (`SESSION_TIMED_OUT`): `DISCONNECTED`, or `ACTIVE` without a viewer since it started or was restored. `0` disables it. |
 | `OPENRBI_SESSION_STUCK_TRANSITION_TIMEOUT_SECONDS` | `600` | A session stuck in `STARTING` or `TERMINATING` this long is torn down again. `0` disables it. |
 | `OPENRBI_SESSION_REAPER_INTERVAL_SECONDS` | `60` | How often the two timeouts above are checked. |
 | `OPENRBI_ORPHAN_RECONCILE_INTERVAL_SECONDS` | `300` | How often sandbox containers without a live session are looked for ([ADR 0021](adr/0021-orphan-container-reconciliation.md)). |
