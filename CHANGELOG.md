@@ -20,6 +20,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 ### Changed
 
 - **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.
+- **CI toolchain and Python locks now target the runtimes the images ship:** Python 3.14 (was 3.11) for the lockfiles, Ruff, mypy, the Session Agent unit tests and `pip-audit`, and Node 26 (was 22) for the frontend audit/build and the Playwright suite — 1.0.2's images already ran `python:3.14-slim` and built on `node:26-slim`. Re-resolving the locks for 3.14 only drops the `async-timeout` backport. The new `scripts/check-toolchain-sync.py` gate fails CI whenever the lock target or a workflow's Python/Node version differs from the images' base runtimes, so a future base-image update has to bring both along. See [`docs/release/dependencies.md`](docs/release/dependencies.md#runtime-versions).
 
 ### Fixed
 

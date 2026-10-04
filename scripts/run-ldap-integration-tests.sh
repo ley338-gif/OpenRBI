@@ -52,13 +52,13 @@ wait_for_ldap() {
         # reaches it — deliberately not a full LDAP bind: that dragged in
         # LDAP-client TLS-trust and image-entrypoint complications
         # unrelated to what this check actually needs to prove. Reuses
-        # python:3.11-slim (already pulled for this job's own backend
+        # python:3.14-slim (already pulled for this job's own backend
         # image) purely as a container with a Python interpreter in it.
         if docker exec "$LDAP_CONTAINER" ldapsearch -x -H ldap://localhost \
             -b "dc=example,dc=org" \
             -D "cn=admin,dc=example,dc=org" \
             -w "$LDAP_ADMIN_PASSWORD" >/dev/null 2>&1 \
-            && docker run --rm --network openrbi_control-plane python:3.11-slim \
+            && docker run --rm --network openrbi_control-plane python:3.14-slim \
                 python3 -c "import socket; socket.create_connection(('$LDAP_CONTAINER', 636), timeout=3)" \
                 >/dev/null 2>&1; then
             return 0

@@ -1,11 +1,13 @@
 #!/bin/sh
 # Regenerate the exact, hash-verified dependency sets used by CI and images.
-# The target matches OpenRBI's supported v1 production platform.
+# TARGET_PYTHON must match the Python the images run (the `FROM python:X.Y`
+# line of backend/Dockerfile and session-agent/Dockerfile) and the version
+# CI's Python jobs use; scripts/check-toolchain-sync.py enforces that.
 set -eu
 
 UV_VERSION="0.8.13"
 TARGET_PLATFORM="x86_64-manylinux_2_17"
-TARGET_PYTHON="3.11"
+TARGET_PYTHON="3.14"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 

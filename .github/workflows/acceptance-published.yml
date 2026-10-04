@@ -198,7 +198,7 @@ jobs:
           path: /tmp/openrbi-release
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "26"
       - name: Log in to GHCR
         run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
