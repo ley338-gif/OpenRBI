@@ -38,7 +38,7 @@ Once any configuration has been saved through the Admin Portal, it is fully auth
 
 ### Configuring LDAP via environment variables (bootstrap / fresh install only)
 
-Set in `.env` and restart `backend` (see `.env.example` for the full list with descriptions) — this is only consulted when **no configuration has ever been saved through the Admin Portal**:
+Set in `.env` and restart `backend` (every variable with its default: [configuration.md](configuration.md#ldap)) — this is only consulted when **no configuration has ever been saved through the Admin Portal**:
 
 ```
 OPENRBI_LDAP_ENABLED=true

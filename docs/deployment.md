@@ -22,6 +22,7 @@ cp .env.example .env
 # signing key) is empty or still the literal placeholder text (see docs/security-model.md
 # #secrets-fail-closed-startup-validation-phase-20). Generate each with:
 #   openssl rand -hex 32
+# Every other setting and its default: docs/configuration.md
 
 # Everything else — build, database migrations, browser sandbox image,
 # standard policy templates, network isolation — is one idempotent script,

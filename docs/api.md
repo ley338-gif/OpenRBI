@@ -1,6 +1,6 @@
 # API
 
-> Status: this page is **not** a complete endpoint reference — it summarizes the internal-vs-public split, the audit surface and the operations-view endpoints. The authoritative, complete list of backend routes and schemas is FastAPI's generated OpenAPI document, reachable through the reverse proxy at `/api/openapi.json`. The interactive `/api/docs` page does not work behind the shipped reverse proxy: it loads its schema from `/openapi.json` at the site root and its scripts from a CDN that the Content-Security-Policy blocks. Per-screen endpoints are also listed in [user-guide.md](user-guide.md) and [admin-guide.md](admin-guide.md).
+> Status: this page summarizes the internal-vs-public split, the audit surface and the operations-view endpoints. Every endpoint with its access rule, listener, parameters and schemas is listed in [api-reference.md](api-reference.md), which is generated from the code. A running backend also serves its OpenAPI document through the reverse proxy at `/api/openapi.json`. The interactive `/api/docs` page does not work behind the shipped reverse proxy: it loads its schema from `/openapi.json` at the site root and its scripts from a CDN that the Content-Security-Policy blocks. Per-screen endpoints are also listed in [user-guide.md](user-guide.md) and [admin-guide.md](admin-guide.md).
 >
 > Paths on this page are the backend's own paths. Through the reverse proxy they are served under `/api/` (nginx strips the prefix), e.g. `/auth/login` is `https://<host>/api/auth/login`.
 
