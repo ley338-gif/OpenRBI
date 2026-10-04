@@ -422,6 +422,10 @@ async def restore_session(db: AsyncSession, session: BrowserSession, *, actor_id
         raise SessionServiceError(f"failed to restore sandbox: {exc}") from exc
 
     session.status = SessionStatus.ACTIVE
+    # Nobody is viewing it yet: starts app/core/session_reaper.py's
+    # no-viewer clock, like a freshly started session.
+    session.viewer_connected_at = None
+    session.last_activity_at = datetime.now(UTC)
     await record_security_event(
         db, SecurityEventType.SESSION_RESTORED, user_id=session.user_id, session_id=session.id,
         metadata={"actor": str(actor_id)},

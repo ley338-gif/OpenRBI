@@ -5,7 +5,7 @@ from typing import cast
 
 import websockets
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from sqlalchemy import CursorResult, update
+from sqlalchemy import CursorResult, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
@@ -44,6 +44,31 @@ async def force_disconnect(session_id: uuid.UUID) -> bool:
         return False
     await websocket.close(code=_CLOSE_ADMIN_DISCONNECTED)
     return True
+
+
+async def reset_viewer_stamps(db: AsyncSession) -> int:
+    """Called once when a process that serves this route starts: no viewer
+    can be connected to it yet, so every viewer_connected_at is stale (a
+    crash or kill skips the per-connection cleanup). last_activity_at is
+    restarted for those sessions, so app/core/session_reaper.py gives
+    viewers a full timeout window to reconnect — the User Portal reconnects
+    on its own within seconds. Returns how many sessions were reset.
+    """
+    result = cast(
+        "CursorResult",
+        await db.execute(
+            update(BrowserSession)
+            .where(
+                or_(
+                    BrowserSession.viewer_connected_at.is_not(None),
+                    BrowserSession.status == SessionStatus.ACTIVE,
+                )
+            )
+            .values(viewer_connected_at=None, last_activity_at=datetime.now(UTC))
+        ),
+    )
+    await db.commit()
+    return result.rowcount
 
 
 def discard_stale_connection(session_id: uuid.UUID) -> None:
@@ -133,6 +158,8 @@ async def display_ws(
 
     session.status = SessionStatus.ACTIVE
     session.last_activity_at = datetime.now(UTC)
+    viewer_stamp = session.last_activity_at
+    session.viewer_connected_at = viewer_stamp
     await db.commit()
 
     _active_connections[session_id] = websocket
@@ -180,7 +207,10 @@ async def display_ws(
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        _active_connections.pop(session_id, None)
+        # A second tab replaces the registry entry and the viewer stamp;
+        # only touch them while they are still this connection's.
+        if _active_connections.get(session_id) is websocket:
+            del _active_connections[session_id]
         for task in tasks:
             task.cancel()
         await agent_ws.close()
@@ -207,22 +237,38 @@ async def display_ws(
         # flip a session that is *still* ACTIVE at the instant it runs,
         # and never touches one that already moved on to TERMINATING/
         # TERMINATED/FAILED, regardless of how the two requests race.
+        #
+        # The viewer stamp makes it this connection's: when a second tab
+        # took over, closing the first one leaves the session ACTIVE.
         result = cast(
             "CursorResult",
             await db.execute(
                 update(BrowserSession)
-                .where(BrowserSession.id == session.id, BrowserSession.status == SessionStatus.ACTIVE)
+                .where(
+                    BrowserSession.id == session.id,
+                    BrowserSession.status == SessionStatus.ACTIVE,
+                    BrowserSession.viewer_connected_at == viewer_stamp,
+                )
                 # last_activity_at doubles as "disconnected since" for
                 # app/core/session_reaper.py's DISCONNECTED timeout.
-                .values(status=SessionStatus.DISCONNECTED, last_activity_at=datetime.now(UTC))
+                .values(
+                    status=SessionStatus.DISCONNECTED,
+                    last_activity_at=datetime.now(UTC),
+                    viewer_connected_at=None,
+                )
             ),
         )
-        needs_commit = False
+        # Any other state (e.g. ISOLATED: isolation cuts the display relay)
+        # keeps its status, but the viewer is gone either way.
+        await db.execute(
+            update(BrowserSession)
+            .where(BrowserSession.id == session.id, BrowserSession.viewer_connected_at == viewer_stamp)
+            .values(viewer_connected_at=None)
+        )
         if result.rowcount > 0:
             await record_security_event(
                 db, SecurityEventType.SESSION_DISCONNECTED, user_id=current_user.id, session_id=session.id
             )
-            needs_commit = True
         if client_filter.blocked_once or server_filter.blocked_once:
             # Once per connection, not once per blocked message — an
             # actively-clipboard-blocked user could otherwise flood the
@@ -230,6 +276,4 @@ async def display_ws(
             await record_security_event(
                 db, SecurityEventType.CLIPBOARD_ACCESS_BLOCKED, user_id=current_user.id, session_id=session.id
             )
-            needs_commit = True
-        if needs_commit:
-            await db.commit()
+        await db.commit()

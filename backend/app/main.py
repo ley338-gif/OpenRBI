@@ -14,6 +14,7 @@ from app.api.admin_nodes import router as admin_nodes_router
 from app.api.admin_quarantine import router as admin_quarantine_router
 from app.api.admin_sessions import router as admin_sessions_router
 from app.api.auth import router as auth_router
+from app.api.display import reset_viewer_stamps
 from app.api.display import router as display_router
 from app.api.files import router as files_router
 from app.api.health import router as health_router
@@ -35,6 +36,17 @@ logger = logging.getLogger("openrbi.setup")
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    if settings.listener_mode in ("user", "both"):
+        # This process serves the display relay and has no viewer yet.
+        try:
+            async with async_session_factory() as db:
+                await reset_viewer_stamps(db)
+        except Exception:
+            logging.getLogger("openrbi.display").warning(
+                "Could not reset session viewer stamps at startup (database not migrated yet?).",
+                exc_info=True,
+            )
+
     # Roadmap B1.9 — console-only setup token (Section 9): generated fresh
     # on every boot while the system is still uninitialized, printed once
     # to this process's own stdout/log, never exposed through any API. A

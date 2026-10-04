@@ -11,7 +11,15 @@ import type { AdminSessionDto, SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
 import { UserLink, useIsAdmin } from "../components/AdminOnly";
 
-type Action = "disconnect" | "isolate" | "restore" | "kill";
+// "cleanup" is Kill on a FAILED session: same endpoint, different wording.
+type Action = "disconnect" | "isolate" | "restore" | "kill" | "cleanup";
+const DONE: Record<Action, string> = {
+  disconnect: "Session disconnected",
+  isolate: "Session isolated",
+  restore: "Session restored",
+  kill: "Session killed",
+  cleanup: "Failed session cleaned up",
+};
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,10 +51,11 @@ export function SessionDetail() {
         isolate: adminApi.isolateSession,
         restore: adminApi.restoreSession,
         kill: adminApi.killSession,
+        cleanup: adminApi.killSession,
       }[pendingAction];
       const updated = await call(session.id);
       setSession(updated);
-      notify(`Session ${pendingAction}d`);
+      notify(DONE[pendingAction]);
       load();
     } catch {
       notify("Action failed", "error");
@@ -81,6 +90,10 @@ export function SessionDetail() {
       description: "This immediately terminates the user's browser sandbox. Unsaved browser state will be lost. This cannot be undone.",
       danger: true,
     },
+    cleanup: {
+      title: `Clean up failed session ${session.id.slice(0, 8)}?`,
+      description: "Removes whatever is left of this session's sandbox now, instead of waiting for the automatic cleanup of orphaned containers. The session is then marked TERMINATED; the failure stays in the audit log.",
+    },
   };
 
   return (
@@ -91,7 +104,13 @@ export function SessionDetail() {
         subtitle={<UserLink userId={session.user_id}>{session.username}</UserLink>}
         meta={<StatusBadge value={session.status} />}
         actions={
-          live && (
+          session.status === "FAILED" ? (
+            isAdmin && (
+              <button type="button" className="btn btn-secondary" onClick={() => setPendingAction("cleanup")}>
+                Clean up
+              </button>
+            )
+          ) : live && (
             <>
               {(session.status === "ACTIVE" || session.status === "DISCONNECTED") && (
                 <>
@@ -168,7 +187,7 @@ export function SessionDetail() {
         <ConfirmDialog
           title={copy[pendingAction].title}
           description={copy[pendingAction].description}
-          confirmLabel={pendingAction[0].toUpperCase() + pendingAction.slice(1)}
+          confirmLabel={pendingAction === "cleanup" ? "Clean up" : pendingAction[0].toUpperCase() + pendingAction.slice(1)}
           danger={copy[pendingAction].danger}
           busy={busy}
           onConfirm={() => void confirm()}
