@@ -99,16 +99,29 @@ jobs:
         run: ./scripts/run-backup-restore-acceptance.sh
 
   upgrade-acceptance:
-    name: Upgrade acceptance
+    name: Upgrade acceptance (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported source of an upgrade to v1.
+          - name: from 0.1.1
+            baseline: ""
+          # The release users run today: the newest GA tag in the history
+          # that isn't the commit under test (fetch-depth: 0 brings the tags).
+          - name: from previous release
+            baseline: previous-release
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         run: sudo chmod 666 /var/run/docker.sock
-      - name: Upgrade pinned 0.1.1 state to the current v1 candidate
+      - name: Upgrade the baseline's state to the current candidate
+        env:
+          OPENRBI_UPGRADE_BASELINE: ${{ matrix.baseline }}
         run: ./scripts/run-upgrade-acceptance.sh
 
   # Roadmap Phase A / A5: dependency & image scanning. Builds every image

@@ -71,7 +71,7 @@ OpenRBI is designed fail-closed: if the malware scanner, policy engine, or quara
 | [docs/release/sbom.md](docs/release/sbom.md) | CycloneDX SBOM generation, release assets, and limitations |
 | [docs/release/fresh-install-acceptance.md](docs/release/fresh-install-acceptance.md) | Executable clean-install protocol and step-by-step acceptance criteria |
 | [docs/release/backup-restore-acceptance.md](docs/release/backup-restore-acceptance.md) | Destructive current-schema recovery protocol and functional evidence contract |
-| [docs/release/upgrade-acceptance.md](docs/release/upgrade-acceptance.md) | Pinned 0.1.1-to-v1 upgrade, rollback procedure, and known limitations |
+| [docs/release/upgrade-acceptance.md](docs/release/upgrade-acceptance.md) | Upgrade gate from 0.1.1 and from the previous release, rollback procedure, and known limitations |
 | [docs/release/security-review.md](docs/release/security-review.md) | Targeted v1 authentication, sandbox, file, and secrets release review |
 | [docs/release/fault-injection-acceptance.md](docs/release/fault-injection-acceptance.md) | Destructive reliability scenarios and observed recovery state |
 | [docs/release/v1-acceptance.md](docs/release/v1-acceptance.md) | Binding 35-scenario v1 release acceptance record |

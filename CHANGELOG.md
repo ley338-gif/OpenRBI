@@ -17,6 +17,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
   - New `--check` mode runs the validation without root. `scripts/run-security-tests.sh` covers both the refusal and reading the value from `.env`.
   - **Behavior change:** a host whose exemption didn't match the agent's address — so far a silent misconfiguration — now gets an error from `deploy.sh`/the timer until `OPENRBI_AGENT_BROWSER_PLANE_IP` is corrected. See [docs/deployment.md#network-isolation](docs/deployment.md#network-isolation).
 
+### Added
+
+- **Upgrade acceptance from the previous release.** The `Upgrade acceptance` CI job (and the published-image acceptance workflow) now has a second leg that builds the newest earlier GA release (today `v1.0.2`) from its tag, fills it with users, MFA and LDAP secrets, policies, sessions, audit events, quarantine files and worker metrics, and upgrades it in place to the candidate — so the upgrade existing installations actually perform is gated, not only the one from 0.1.1. `scripts/run-upgrade-acceptance.sh` takes the baseline from `OPENRBI_UPGRADE_BASELINE` (`previous-release`, any git ref, or unset for 0.1.1). See [`docs/release/upgrade-acceptance.md`](docs/release/upgrade-acceptance.md).
+
 ### Changed
 
 - **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.

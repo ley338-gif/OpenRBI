@@ -1,13 +1,40 @@
 #!/bin/sh
-# Upgrade a persistent 0.1.1 installation at the pinned baseline commit to
-# the current checkout. Destructive only to its dedicated Compose project.
+# Upgrade a persistent installation of a baseline version to the current
+# checkout. Destructive only to its dedicated Compose project.
+#
+# OPENRBI_UPGRADE_BASELINE selects the baseline:
+#   (unset)           the pinned 0.1.1 commit below — the oldest supported
+#                     source of an upgrade to v1
+#   previous-release  the newest GA tag (vX.Y.Z) in this checkout's history
+#                     that does not point at the commit under test, i.e. the
+#                     release users run today (1.0.2 → candidate)
+#   <git ref>         any other tag or commit
+# The baseline is built from its own source, as scripts/deploy.sh does; the
+# fixture and verification helpers come from the current checkout and must
+# keep working against the baseline's application code.
 set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 # shellcheck source=scripts/acceptance-images.sh
 . "$SCRIPT_DIR/acceptance-images.sh"
-BASELINE_SHA="2816cfadbcfbf580959b1e78190fd7bbbe47796b"
+PINNED_BASELINE_SHA="2816cfadbcfbf580959b1e78190fd7bbbe47796b"
+BASELINE_REQUEST="${OPENRBI_UPGRADE_BASELINE:-$PINNED_BASELINE_SHA}"
+if [ "$BASELINE_REQUEST" = previous-release ]; then
+    # --no-contains HEAD skips a tag on the commit under test itself (an
+    # acceptance run of a just-published release checks out that tag).
+    BASELINE_REF="$(git -C "$REPO_ROOT" tag --merged HEAD --no-contains HEAD --list 'v*' --sort=-v:refname \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+    [ -n "$BASELINE_REF" ] || { echo "no previous GA release tag (vX.Y.Z) in this checkout's history; fetch tags (fetch-depth: 0)" >&2; exit 1; }
+    BASELINE_LABEL="$BASELINE_REF"
+elif [ "$BASELINE_REQUEST" = "$PINNED_BASELINE_SHA" ]; then
+    BASELINE_REF="$BASELINE_REQUEST"
+    BASELINE_LABEL="0.1.1"
+else
+    BASELINE_REF="$BASELINE_REQUEST"
+    BASELINE_LABEL="$BASELINE_REQUEST"
+fi
+BASELINE_SHA="$(git -C "$REPO_ROOT" rev-parse --verify "$BASELINE_REF^{commit}")"
 PROJECT="${OPENRBI_UPGRADE_PROJECT:-openrbi-upgrade-acceptance}"
 ENV_FILE="$REPO_ROOT/.env"
 BROWSER_NETWORK="${PROJECT}_browser-plane"
@@ -66,10 +93,10 @@ fi
 
 umask 077
 WORK_DIR="$(mktemp -d)"
-BASE_DIR="$WORK_DIR/v0.1.1"
+BASE_DIR="$WORK_DIR/baseline"
 BACKUP_DIR="$WORK_DIR/pre-upgrade-backup"
 HOST_MANIFEST="$WORK_DIR/upgrade-manifest.json"
-BASE_ARCHIVE="$WORK_DIR/v0.1.1.tar"
+BASE_ARCHIVE="$WORK_DIR/baseline.tar"
 mkdir -p "$BASE_DIR" "$BACKUP_DIR"
 git -C "$REPO_ROOT" archive --format=tar --output="$BASE_ARCHIVE" "$BASELINE_SHA"
 tar -xf "$BASE_ARCHIVE" -C "$BASE_DIR"
@@ -82,8 +109,9 @@ AGENT_TOKEN="$(openssl rand -hex 32)"
 TOTP_KEY="$(openssl rand -hex 32)"
 # The pinned 0.1.1 baseline ($BASE_DIR) predates RBI-POST-003 and has no
 # such setting — harmless there (pydantic-settings ignores unrecognized
-# OPENRBI_* env vars), but required for the current checkout ($REPO_ROOT)
-# to boot at all. Same write_env() writes both on purpose (see below).
+# OPENRBI_* env vars), but required for every v1 release and the current
+# checkout ($REPO_ROOT) to boot at all. Same write_env() writes both on
+# purpose (see below).
 CSRF_KEY="$(openssl rand -hex 32)"
 write_env() {
     cat > "$1" <<EOF
@@ -117,7 +145,7 @@ docker build -t openrbi-browser:latest -f "$BASE_DIR/docker/browser/Dockerfile" 
 base_compose up -d postgres redis clamav
 for attempt in $(seq 1 60); do
     base_compose exec -T postgres pg_isready -U openrbi >/dev/null 2>&1 && break
-    [ "$attempt" -lt 60 ] || { echo "0.x PostgreSQL did not become ready" >&2; exit 1; }
+    [ "$attempt" -lt 60 ] || { echo "baseline $BASELINE_LABEL PostgreSQL did not become ready" >&2; exit 1; }
     sleep 1
 done
 base_compose run --rm backend alembic upgrade head
@@ -127,7 +155,7 @@ for attempt in $(seq 1 60); do
         "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)" >/dev/null 2>&1; then
         break
     fi
-    [ "$attempt" -lt 60 ] || { base_compose logs backend >&2; echo "0.x backend did not become ready" >&2; exit 1; }
+    [ "$attempt" -lt 60 ] || { base_compose logs backend >&2; echo "baseline $BASELINE_LABEL backend did not become ready" >&2; exit 1; }
     sleep 1
 done
 sudo env OPENRBI_BROWSER_PLANE_NETWORK="$BROWSER_NETWORK" "$SCRIPT_DIR/setup-network-isolation.sh"
@@ -136,7 +164,7 @@ ISOLATION_APPLIED=1
 BASE_BACKEND="$(base_compose ps -q backend)"
 BASE_POSTGRES="$(base_compose ps -q postgres)"
 SETUP_TOKEN="$(docker logs "$BASE_BACKEND" 2>&1 | grep -A2 'initial setup token' | tail -1 | tr -d ' \r')"
-[ -n "$SETUP_TOKEN" ] || { echo "0.x initial setup token not found" >&2; exit 1; }
+[ -n "$SETUP_TOKEN" ] || { echo "baseline $BASELINE_LABEL initial setup token not found" >&2; exit 1; }
 docker cp "$SCRIPT_DIR/fresh-install-acceptance.py" "$BASE_BACKEND:/tmp/fresh-install-acceptance.py"
 base_compose exec -T backend python /tmp/fresh-install-acceptance.py "$SETUP_TOKEN"
 docker cp "$SCRIPT_DIR/backup-restore-acceptance.py" "$BASE_BACKEND:/tmp/backup-restore-acceptance.py"
@@ -154,7 +182,7 @@ DB_DUMP="$(find "$BACKUP_DIR" -maxdepth 1 -name 'openrbi-db-*.sql.gz' -print)"
 QUARANTINE_TAR="$(find "$BACKUP_DIR" -maxdepth 1 -name 'openrbi-quarantine-*.tar.gz' -print)"
 gzip -t "$DB_DUMP"
 tar -tzf "$QUARANTINE_TAR" >/dev/null
-echo "ACCEPT UP-02 pre-upgrade 0.x database and quarantine backup captured and validated"
+echo "ACCEPT UP-02 pre-upgrade $BASELINE_LABEL database and quarantine backup captured and validated"
 
 BASE_REVISION="$(base_compose exec -T backend alembic current | awk 'NR == 1 { print $1 }')"
 BASE_BACKEND_IMAGE="$(docker image inspect "${PROJECT}-backend:latest" --format '{{.Id}}')"
@@ -164,14 +192,14 @@ BASE_BROWSER_IMAGE="$(docker image inspect openrbi-browser:latest --format '{{.I
 
 remove_isolation
 base_compose down --remove-orphans
-echo "ACCEPT UP-03 0.x containers removed while persistent volumes were retained"
+echo "ACCEPT UP-03 $BASELINE_LABEL containers removed while persistent volumes were retained"
 
 target_compose config --quiet
 TARGET_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 TARGET_VERSION="$(tr -d ' \r\n' < "$REPO_ROOT/VERSION")"
 TARGET_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if acceptance_images_enabled; then
-    # The 0.x baseline above is still built from its pinned source; only the
+    # The baseline above is still built from its own source; only the
     # upgrade target is the published release. The label checks below then
     # also prove the checkout matches the release (TARGET_SHA/VERSION).
     use_published_images "$PROJECT"
@@ -242,10 +270,10 @@ target_compose exec -T -e PYTHONPATH=/app backend \
 curl --fail --silent --show-error http://localhost:8080/health >/dev/null
 curl --fail --silent --show-error http://localhost:8080/ >/dev/null
 curl --fail --silent --show-error http://localhost:8080/admin/ >/dev/null
-echo "ACCEPT UP-09 all four current images replaced the 0.x images; reverse proxy and both portals respond"
+echo "ACCEPT UP-09 all four current images replaced the $BASELINE_LABEL images; reverse proxy and both portals respond"
 
 if docker ps -q --filter label=openrbi.managed=true | grep -q .; then
     echo "a managed browser sandbox remained after upgraded-session termination" >&2
     exit 1
 fi
-echo "upgrade acceptance passed from pinned 0.1.1 baseline $BASELINE_SHA to $(git -C "$REPO_ROOT" rev-parse HEAD)"
+echo "upgrade acceptance passed from baseline $BASELINE_LABEL ($BASELINE_SHA) to $(git -C "$REPO_ROOT" rev-parse HEAD)"
