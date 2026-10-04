@@ -109,6 +109,16 @@ async def terminate_session(
     session_id: uuid.UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> SessionResponse:
     session = await _get_own_session_or_404(db, session_id, current_user)
+    if session.status in (SessionStatus.ISOLATING, SessionStatus.ISOLATED):
+        # The sandbox is preserved for investigation (docs/session-lifecycle.md);
+        # only an administrator may end it (POST /admin/sessions/{id}/kill).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "this session was isolated by an administrator for investigation "
+                "and can only be ended by an administrator"
+            ),
+        )
     try:
         await terminate_session_service(db, session, actor_id=current_user.id)
     except SessionServiceError as exc:

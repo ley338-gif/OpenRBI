@@ -9,12 +9,14 @@ import { useToast } from "@shared/components/Toast";
 import { formatDateTime } from "@shared/format";
 import type { AdminSessionDto, SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+import { UserLink, useIsAdmin } from "../components/AdminOnly";
 
 type Action = "disconnect" | "isolate" | "restore" | "kill";
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const { notify } = useToast();
+  const isAdmin = useIsAdmin();
   const [session, setSession] = useState<AdminSessionDto | null>(null);
   const [events, setEvents] = useState<SecurityEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +88,7 @@ export function SessionDetail() {
       <p><Link to="/sessions">← Sessions</Link></p>
       <PageHeader
         title={<>Session <span className="mono">{session.id.slice(0, 8)}</span></>}
-        subtitle={<Link to={`/users/${session.user_id}`}>{session.username}</Link>}
+        subtitle={<UserLink userId={session.user_id}>{session.username}</UserLink>}
         meta={<StatusBadge value={session.status} />}
         actions={
           live && (
@@ -106,9 +108,11 @@ export function SessionDetail() {
                   Restore
                 </button>
               )}
-              <button type="button" className="btn btn-danger" onClick={() => setPendingAction("kill")}>
-                Kill
-              </button>
+              {isAdmin && (
+                <button type="button" className="btn btn-danger" onClick={() => setPendingAction("kill")}>
+                  Kill
+                </button>
+              )}
             </>
           )
         }

@@ -8,6 +8,7 @@ import { LoadingBlock } from "@shared/components/States";
 import { api } from "./api/client";
 import { adminApi } from "./api/adminApi";
 import { AppShell } from "./components/AppShell";
+import { AdminOnly } from "./components/AdminOnly";
 import { Dashboard } from "./pages/Dashboard";
 import { Profile } from "./pages/Profile";
 import { Users } from "./pages/Users";
@@ -102,13 +103,13 @@ function Routed() {
       >
         <Route index element={<Dashboard />} />
         <Route path="profile" element={<Profile />} />
-        <Route path="users" element={<Users />} />
-        <Route path="users/:id" element={<UserDetail />} />
-        <Route path="groups" element={<Groups />} />
+        <Route path="users" element={<AdminOnly><Users /></AdminOnly>} />
+        <Route path="users/:id" element={<AdminOnly><UserDetail /></AdminOnly>} />
+        <Route path="groups" element={<AdminOnly><Groups /></AdminOnly>} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="sessions/:id" element={<SessionDetail />} />
-        <Route path="policies" element={<Policies />} />
-        <Route path="policies/:id" element={<PolicyDetail />} />
+        <Route path="policies" element={<AdminOnly><Policies /></AdminOnly>} />
+        <Route path="policies/:id" element={<AdminOnly><PolicyDetail /></AdminOnly>} />
         <Route path="quarantine" element={<Quarantine />} />
         <Route path="quarantine/:id" element={<QuarantineDetail />} />
         <Route path="incidents" element={<Incidents />} />
@@ -117,7 +118,7 @@ function Routed() {
         <Route path="workers" element={<Workers />} />
         <Route path="workers/:id" element={<WorkerDetail />} />
         <Route path="system" element={<System />} />
-        <Route path="settings/ldap" element={<LdapSettings />} />
+        <Route path="settings/ldap" element={<AdminOnly><LdapSettings /></AdminOnly>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
