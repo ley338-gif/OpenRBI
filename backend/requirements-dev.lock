@@ -110,10 +110,6 @@ ast-serialize==0.8.0 \
     --hash=sha256:fdc0d5b18ff8fb364e87923e47c0a91d0d69dbcaeaa274591f7fd26892cc3a3a \
     --hash=sha256:ffa5e7cb08f96fed9121f77b224151e41caf88feab9d652bb46c78202b6fbeda
     # via mypy
-async-timeout==5.0.1 \
-    --hash=sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c \
-    --hash=sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3
-    # via redis
 asyncpg==0.31.0 \
     --hash=sha256:027eaa61361ec735926566f995d959ade4796f6a49d3bde17e5134b9964f9ba8 \
     --hash=sha256:04d19392716af6b029411a0264d92093b6e5e8285ae97a39957b9a9c14ea72be \
@@ -1232,14 +1228,11 @@ typing-extensions==4.16.0 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
     #   alembic
-    #   anyio
     #   fastapi
     #   mypy
     #   pydantic
     #   pydantic-core
-    #   pytest-asyncio
     #   sqlalchemy
-    #   starlette
     #   typing-inspection
 typing-inspection==0.4.4 \
     --hash=sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47 \

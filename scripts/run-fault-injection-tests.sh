@@ -271,7 +271,7 @@ cleanup_cpu_pressure
 BEFORE_CAPACITY=$(probe capacity-snapshot | json_field capacity)
 i=1
 while [ "$i" -le "$CPU_PRESSURE_CORES" ]; do
-    docker run -d --name "${CPU_PRESSURE_PREFIX}-$i" python:3.11-slim python -c "
+    docker run -d --name "${CPU_PRESSURE_PREFIX}-$i" python:3.14-slim python -c "
 import time
 end = time.time() + 60
 x = 0

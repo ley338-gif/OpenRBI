@@ -11,19 +11,25 @@ The authoritative production and development locks are:
 - `backend/requirements.lock` and `backend/requirements-dev.lock`
 - `session-agent/requirements.lock` and `session-agent/requirements-dev.lock`
 
-They are resolved for Python 3.11 on x86_64 Linux (`scripts/lock-python-dependencies.sh`)
-and include hashes for every artifact. Production images install the production
+They are resolved for the Python version the images run (`TARGET_PYTHON` in
+`scripts/lock-python-dependencies.sh`, currently 3.14 on x86_64 Linux, matching
+`python:3.14-slim` in `backend/Dockerfile` and `session-agent/Dockerfile`) and
+include hashes for every artifact. Production images install the production
 lock with `pip --require-hashes`; integration runners install the development
-lock the same way.
+lock the same way. CI's Python jobs (Ruff, mypy, Session Agent unit tests,
+`pip-audit`) run on that same Python version.
 
-**Known mismatch:** since 1.0.2 the backend and Session Agent images run on
-`python:3.14-slim` (a Dependabot base-image update after 1.0.1), while the
-locks are still resolved for Python 3.11 and CI runs Ruff, mypy and
-`pip-audit` with Python 3.11. The images build and pass the functional gates,
-but the lock resolution and the dependency audit do not target the runtime
-that actually ships. Likewise the frontend image builds with `node:26-slim`,
-while CI audits and runs the E2E suite with Node 22. Aligning the lock target
-and CI toolchain with the shipped runtimes is an open follow-up.
+## Runtime versions
+
+The images are the source of truth for the runtimes: `FROM python:X.Y` for
+backend and Session Agent, `FROM node:N` for the frontend build.
+`scripts/check-toolchain-sync.py` (part of the `Python lint and type checking`
+gate) fails when the lock target or any workflow's `python-version` /
+`node-version` differs from them. A base-image update — for example a
+Dependabot PR moving to a new Python or Node release — therefore fails CI until
+the same change also updates `TARGET_PYTHON`, regenerates the locks and adjusts
+the workflows. Until this check was added (after 1.0.2) nothing enforced it: 1.0.2's images ran Python
+3.14 and Node 26 while the locks and CI still targeted Python 3.11 and Node 22.
 
 To update them, install the pinned compiler and regenerate all four files:
 
