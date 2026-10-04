@@ -116,7 +116,7 @@ The Downloads page's **Download** button requests a genuine single-use token (`P
 
 ## Portal: user can't start a session ("user already has 1 active session(s)")
 
-The default `OPENRBI_MAX_SESSIONS_PER_USER=1` counts every live session, including one that's `DISCONNECTED` (the user closed the tab; the sandbox is still running). Since this release, a session left `DISCONNECTED` for longer than `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it) is terminated automatically and audited as `SESSION_TIMED_OUT`, so this clears itself within that window plus up to one minute. To unblock the user right away, reconnect from the User Portal, or have an admin terminate the old session (**Users → user → Terminate all sessions**, or **Sessions → Kill**).
+The default `OPENRBI_MAX_SESSIONS_PER_USER=1` counts every live session, including one that's `DISCONNECTED` (the user closed the tab; the sandbox is still running). An `ISOLATING` or `ISOLATED` session doesn't count. Since this release, a session left `DISCONNECTED` for longer than `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` (default 3600, `0` disables it) is terminated automatically and audited as `SESSION_TIMED_OUT`, so this clears itself within that window plus up to one minute. To unblock the user right away, reconnect from the User Portal, or have an admin terminate the old session (**Users → user → Terminate all sessions**, or **Sessions → Kill**).
 
 There is no idle timeout for an `ACTIVE` session (one with a live display connection) — the backend can't reliably tell an idle viewer from an active one. `ISOLATED` sessions are never timed out; they're kept for investigation until an admin ends them.
 
@@ -124,7 +124,7 @@ If you raised or disabled the timeout, check the Admin Portal's **Sessions** pag
 
 ## Portal: session isolated
 
-The Secure Browser page shows this honestly (*"This session has been isolated by an administrator…"*) rather than a generic connection error — see [user-guide.md#secure-browser](user-guide.md#secure-browser). This is expected admin behavior, not a defect; end the session and start a new one.
+The Secure Browser page shows a notice for each isolated session (*"Session … was isolated by an administrator for investigation…"*) rather than a generic connection error — see [user-guide.md#secure-browser](user-guide.md#secure-browser). This is expected admin behavior, not a defect. The user can start a new session right away, because the isolated one doesn't count against the session limit. The user can't end the isolated session (the portal offers no button, and the API answers `409`). An admin ends it with **Sessions → session → Kill**, or gives it back with **Restore**; until then the notice stays on the user's Secure Browser page.
 
 ## Portal: health page shows Degraded/Unavailable
 

@@ -9,6 +9,7 @@ import { LineChart, type LineChartPoint } from "@shared/components/LineChart";
 import { formatDateTime } from "@shared/format";
 import type { DashboardRange, DashboardResponseDto, SecurityEventDto } from "@shared/api/types";
 import { adminApi } from "../api/adminApi";
+import { useIsAdmin } from "../components/AdminOnly";
 
 const RANGES: { key: DashboardRange; label: string }[] = [
   { key: "1h", label: "1h" }, { key: "6h", label: "6h" }, { key: "24h", label: "24h" }, { key: "7d", label: "7d" },
@@ -39,6 +40,7 @@ function loadClass(value: number | null) {
 }
 
 export function Dashboard() {
+  const isAdmin = useIsAdmin();
   const [range, setRange] = useState<DashboardRange>("24h");
   const [data, setData] = useState<DashboardResponseDto | null>(null);
   const [events, setEvents] = useState<SecurityEventDto[]>([]);
@@ -113,7 +115,7 @@ export function Dashboard() {
 
       <div className="dashboard-ops-grid dashboard-ops-grid-bottom">
         <section className="card"><div className="section-header"><h2>Recent activity</h2><Link to="/audit">View audit log</Link></div>{events.length === 0 ? <EmptyState title="No recent activity">Security events will appear here.</EmptyState> : <div className="activity-feed">{events.map((event) => <div className="activity-item" key={event.id}><div className="activity-dot" /><div style={{ flex: 1 }}><div className="activity-title">{EVENT_LABELS[event.event_type] ?? event.event_type.replaceAll("_", " ").toLowerCase()}</div><div className="activity-meta">{event.session_id ? `Session ${event.session_id.slice(0, 8)}` : event.user_id ? `User ${event.user_id.slice(0, 8)}` : "System event"}</div></div><time className="activity-time">{formatDateTime(event.created_at)}</time></div>)}</div>}</section>
-        <section className="card"><h2>Quick actions</h2><div className="quick-action-grid"><Quick to="/users" icon={<Icons.Users />} label="Manage users" /><Quick to="/policies" icon={<Icons.Shield />} label="Create policy" /><Quick to="/sessions" icon={<Icons.Sessions />} label="Open sessions" /><Quick to="/audit" icon={<Icons.Audit />} label="Audit log" /><Quick to="/system" icon={<Icons.System />} label="System health" /><Quick to="/settings/ldap" icon={<Icons.Settings />} label="Settings" /></div></section>
+        <section className="card"><h2>Quick actions</h2><div className="quick-action-grid">{isAdmin && <><Quick to="/users" icon={<Icons.Users />} label="Manage users" /><Quick to="/policies" icon={<Icons.Shield />} label="Create policy" /></>}<Quick to="/sessions" icon={<Icons.Sessions />} label="Open sessions" /><Quick to="/audit" icon={<Icons.Audit />} label="Audit log" /><Quick to="/system" icon={<Icons.System />} label="System health" />{isAdmin && <Quick to="/settings/ldap" icon={<Icons.Settings />} label="Settings" />}</div></section>
       </div>
     </div>
   );

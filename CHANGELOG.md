@@ -27,6 +27,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 - **`scripts/check-docs-freeze.py` also checks anchors and the remaining root documents.** A `#anchor` into a Markdown file has to match a heading (GitHub's slug rules) or an explicit `<a id>`, and `SECURITY.md` and `frontend/README.md` are link-checked too.
 - **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.
 - **CI toolchain and Python locks now target the runtimes the images ship:** Python 3.14 (was 3.11) for the lockfiles, Ruff, mypy, the Session Agent unit tests and `pip-audit`, and Node 26 (was 22) for the frontend audit/build and the Playwright suite — 1.0.2's images already ran `python:3.14-slim` and built on `node:26-slim`. Re-resolving the locks for 3.14 only drops the `async-timeout` backport. The new `scripts/check-toolchain-sync.py` gate fails CI whenever the lock target or a workflow's Python/Node version differs from the images' base runtimes, so a future base-image update has to bring both along. See [`docs/release/dependencies.md`](docs/release/dependencies.md#runtime-versions).
+- **Behavior change: an isolated session stays for investigation.**
+  - Its owner can no longer end an `ISOLATING`/`ISOLATED` session: `POST /sessions/{id}/terminate` answers `409`. Only an administrator can end it, with Kill (or give it back with Restore).
+  - It no longer counts toward `OPENRBI_MAX_SESSIONS_PER_USER`, so the user can start a new session at once.
+  - The Secure Browser page keeps a notice for each isolated session, also after a reload, and Profile lists it without an **End session** button.
+  - Before, the portal told the user to end the isolated session, which destroyed the sandbox the isolation was meant to preserve. See [docs/session-lifecycle.md](docs/session-lifecycle.md#transitions).
 
 ### Removed
 
@@ -34,6 +39,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Fixed
 
+- **File status wording in the portals follows the documented "no safe claims" rule.** A scanner result `CLEAN` was shown as a green "CLEAN" badge and a released file as "APPROVED". They now read *No threat detected* (neutral, not green) and *Released*. Both portals use one set of labels for file states (Scanning, Quarantined, Released, Blocked, Deleted) and scan results (Scan pending, No threat detected, Threat detected, Scan failed). The admin Quarantine filter no longer offers `SCANNING`, which no file can be in. See [docs/quarantine.md](docs/quarantine.md#no-safe-claims).
+- **Security reviewers no longer see administrator controls that end in `403`.** For `SECURITY_REVIEWER` accounts the Admin Portal hides Users, Groups, Policies and LDAP (navigation, pages and dashboard quick actions), session Kill, and the node actions Register, Approve, Revoke, Drain and Maintenance. User names show as text instead of links to the admin-only user pages. The backend's role checks are unchanged. See [docs/admin-guide.md](docs/admin-guide.md#security-reviewer-access).
 - `GET /admin/security-events` answers `422` for `limit` below 1 instead of passing a negative `LIMIT` to the database (`500`).
 - The CI job `frontend-e2e-tests` uploads the Playwright traces and screenshots of a failed run again. It looked in `frontend/test-results`, but Playwright writes to `frontend/e2e/test-results`, so nothing was ever uploaded.
 - `frontend/README.md` describes the OpenRBI workspace instead of the unmodified Vite template (which also mentioned Oxlint, which the project doesn't use).

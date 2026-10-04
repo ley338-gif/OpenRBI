@@ -7,6 +7,7 @@ import { StatCard } from "@shared/components/StatCard";
 import { Icons } from "@shared/components/Icons";
 import { useToast } from "@shared/components/Toast";
 import { formatBytes, formatDateTime } from "@shared/format";
+import { fileStatusLabel, scanResultLabel } from "@shared/fileStatus";
 import type { QuarantineFileDto, UserFilePageDto } from "@shared/api/types";
 import { userApi } from "../api/userApi";
 
@@ -66,7 +67,7 @@ export function Downloads() {
       {data && <div className="stat-grid download-stats">
         <StatCard icon={<Icons.Download />} label="Total downloads" value={data.summary.total} hint="All recorded files" />
         <StatCard icon={<Icons.Shield />} label="Pending review" value={data.summary.pending} hint="Scanning or awaiting review" />
-        <StatCard icon={<Icons.Shield />} label="Approved" value={data.summary.approved} hint="Available to download" />
+        <StatCard icon={<Icons.Shield />} label="Released" value={data.summary.approved} hint="Available to download" />
         <StatCard icon={<Icons.Quarantine />} label="Blocked" value={data.summary.blocked} hint="Rejected by security" />
       </div>}
 
@@ -74,7 +75,7 @@ export function Downloads() {
         <div className="status-tabs" role="tablist" aria-label="File status">
           {(["all", "pending", "approved", "blocked"] as Filter[]).map((value) => (
             <button key={value} type="button" role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => { setFilter(value); setPage(1); }}>
-              {value === "all" ? "All files" : value === "pending" ? "Pending review" : value[0].toUpperCase() + value.slice(1)}
+              {value === "all" ? "All files" : value === "pending" ? "Pending review" : value === "approved" ? "Released" : "Blocked"}
             </button>
           ))}
         </div>
@@ -105,7 +106,7 @@ export function Downloads() {
                   <td><span className="table-primary mono">{f.session_id.slice(0, 8)}</span><span className="identity-meta">Secure Browser session</span></td>
                   <td>{formatDateTime(f.created_at)}</td>
                   <td>{formatBytes(f.size_bytes)}</td>
-                  <td><StatusBadge value={displayStatus(f.status)} /></td>
+                  <td><StatusBadge value={fileStatusLabel(f.status)} /></td>
                   <td><div className="table-actions"><button type="button" className="btn btn-secondary btn-sm" onClick={() => setDetail(f)}>Details</button>{f.status === "RELEASED" && <button type="button" className="btn btn-primary btn-sm" onClick={() => void handleDownload(f)} disabled={downloadingId === f.id}>{downloadingId === f.id && <span className="spinner" />} Download</button>}</div></td>
                 </tr>
               ))}</tbody>
@@ -121,7 +122,6 @@ export function Downloads() {
   );
 }
 
-function displayStatus(status: string): string { return ({ PENDING_SCAN: "PENDING", SCANNING: "SCANNING", QUARANTINED: "PENDING REVIEW", RELEASED: "APPROVED", REJECTED: "BLOCKED", DELETED: "DELETED" } as Record<string, string>)[status] ?? status; }
 function fileTypeLabel(file: QuarantineFileDto): string { return file.detected_mime ?? file.declared_mime ?? (file.extension ? `${file.extension.toUpperCase()} file` : "Unknown file type"); }
 
 function FileDetails({ file, onClose, onDownload }: { file: QuarantineFileDto; onClose: () => void; onDownload: (file: QuarantineFileDto) => void }) {
@@ -129,8 +129,8 @@ function FileDetails({ file, onClose, onDownload }: { file: QuarantineFileDto; o
     <div className="section-header"><h2 id="file-details-title">File details</h2><button className="icon-btn" aria-label="Close details" onClick={onClose}>×</button></div>
     <div className="file-details-name"><div className="file-type-icon"><Icons.File /></div><div><strong>{file.original_name}</strong><span>{fileTypeLabel(file)}</span></div></div>
     <div className="profile-detail-list">
-      <DetailRow label="Status" value={<StatusBadge value={displayStatus(file.status)} />} />
-      <DetailRow label="Malware scan" value={<StatusBadge value={file.scanner_status} />} />
+      <DetailRow label="Status" value={<StatusBadge value={fileStatusLabel(file.status)} />} />
+      <DetailRow label="Malware scan" value={<StatusBadge value={scanResultLabel(file.scanner_status)} />} />
       <DetailRow label="Policy decision" value={file.policy_action ?? "Not decided"} />
       <DetailRow label="Size" value={formatBytes(file.size_bytes)} />
       <DetailRow label="Session" value={<span className="mono">{file.session_id.slice(0, 8)}</span>} />

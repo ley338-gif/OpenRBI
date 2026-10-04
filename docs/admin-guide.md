@@ -10,6 +10,10 @@ A brand new installation has no user accounts at all. Opening the Admin Portal f
 
 Open the Admin Portal (Compact: `/admin/` on the same origin as the reverse proxy; Segmented: your organization's dedicated Admin Portal origin). MFA is mandatory for ADMIN and SECURITY_REVIEWER — the portal walks a not-yet-enrolled account through QR-code enrollment before issuing a session, exactly like the User Portal's flow (they share the same component). This applies identically to a local or an LDAP-authenticated login (see below) — there is no way to reach an ADMIN/SECURITY_REVIEWER session without MFA regardless of which one authenticated the request.
 
+## Security reviewer access
+
+A `SECURITY_REVIEWER` account uses the Admin Portal for review work: Dashboard, Sessions (including Disconnect, Isolate and Restore), Quarantine review, Incidents, Audit, System health and the Workers inventory. Administration is `ADMIN`-only and is hidden from reviewers rather than offered and then refused: Users, Groups, Policies and LDAP / identity (navigation, pages and the dashboard's quick actions), session **Kill**, and the node actions **Register node**, **Approve**, **Revoke**, **Drain** and **Maintenance**. User names appear as plain text instead of links to the user pages. The backend enforces the same split (`403` for a reviewer); hiding the controls is only presentation.
+
 ## LDAP/LDAPS authentication (Roadmap Phase B / B1)
 
 An equal, parallel login option alongside local accounts — never a replacement. Local login always stays available, including for the entire duration of an LDAP outage; there is no way to disable it. See [ADR 0015](adr/0015-auth-provider-abstraction.md) for the authentication design and [ADR 0016](adr/0016-ldap-admin-configuration.md) for the admin-portal configuration layer described below (Roadmap B1.8).
@@ -131,7 +135,7 @@ Every disable, MFA reset, lock, or role change is a security-critical action —
 
 The Sessions page is a paginated operations and history view with server-side session-ID/username search, lifecycle-status and worker filters, date presets, sorting, and 15-second polling. Global KPI cards show live sandboxes, sessions started today, average duration for sessions ended in the last 24 hours, and separate failed/terminated counts. Terminated is presented as a normal lifecycle outcome, not automatically as an error.
 
-Every row links to the real user, assigned worker, and existing session detail. The detail view shows lifecycle information, resource limits, and recent security events, with Disconnect/Isolate/Restore/Kill buttons shown only when the current state allows them. **Isolate** and **Kill** use specific confirmation dialogs. No live screen viewing or administrative takeover is exposed.
+Every row links to the real user (for `ADMIN` accounts), assigned worker, and existing session detail. The detail view shows lifecycle information, resource limits, and recent security events, with Disconnect/Isolate/Restore/Kill buttons shown only when the current state allows them. **Isolate** and **Kill** use specific confirmation dialogs. No live screen viewing or administrative takeover is exposed. An isolated session is kept for investigation until an administrator **Kill**s it (or **Restore**s it): its owner can't end it, and it doesn't count against their session limit, so they can keep working in a new session.
 
 The current state model uses `ACTIVE` and `DISCONNECTED` as mutually exclusive session lifecycle states. `DISCONNECTED` means the isolated sandbox remains running but the viewer connection has been dropped; there is no independently persisted connection-state field, so the UI does not invent or duplicate a separate Connection column. Client IP, browser version, device/OS, geolocation, reconnect count, and termination reason are likewise not recorded today and are not displayed.
 
@@ -146,7 +150,7 @@ The Workers page is the operational inventory for every registered `BrowserNode`
 
 Health is the shared server-side classification based on heartbeat freshness, telemetry, and operator state. **Needs attention** is deliberately limited to degraded or offline workers; draining and maintenance are intentional states and remain visible without being counted as faults. Select **Details** for exact telemetry, historical samples, the capacity breakdown (a "RAM-bound"/"CPU-bound" tag shows which resource currently limits the session slots, see [deployment.md#sizing](deployment.md#sizing)), and the real Drain/Undrain and Maintenance actions. Draining stops new sessions from being scheduled without disturbing sessions already running.
 
-The Compact deployment's own Session Agent appears here automatically. Additional nodes (multi-node, an **experimental technology preview** — see [deployment.md](deployment.md#multi-node--experimental--technology-preview-not-a-complete-production-guide)) are added through an explicit, admin-gated enrollment flow, all `ADMIN`-only:
+The Compact deployment's own Session Agent appears here automatically. Additional nodes (multi-node, an **experimental technology preview** — see [deployment.md](deployment.md#multi-node--experimental--technology-preview-not-a-complete-production-guide)) are added through an explicit, admin-gated enrollment flow, all `ADMIN`-only (a `SECURITY_REVIEWER` doesn't see these actions, nor Drain/Maintenance):
 
 - **Register node** generates a single-use enrollment token (valid for one hour) to put into the new node's `.env` as `OPENRBI_AGENT_ENROLLMENT_TOKEN`. The node's Session Agent enrolls itself on startup and appears here as `PENDING` — never scheduled while pending.
 - **Approve** (shown for `PENDING` nodes) asks for the node's endpoint URL, i.e. how the control plane reaches that node's Session Agent; from then on the node is schedulable.
@@ -176,7 +180,7 @@ Full draft → publish → rollback workflow under `/admin/policies/*` — see [
 
 ## Quarantine review
 
-The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in v1.0" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted.
+The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. Scanner results read *No threat detected*, *Threat detected*, *Scan failed* or *Scan pending*, never "clean" or "safe" (see [quarantine.md#no-safe-claims](quarantine.md#no-safe-claims)). **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in v1.0" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted.
 
 <details><summary>Underlying API</summary>
 

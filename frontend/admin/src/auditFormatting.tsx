@@ -52,10 +52,11 @@ export function auditActor(event: SecurityEventDto) {
   return { label: "System", id: null };
 }
 
-export function auditTarget(event: SecurityEventDto) {
+/** linkUsers=false (SECURITY_REVIEWER) leaves a user target unlinked: the user pages are admin-only. */
+export function auditTarget(event: SecurityEventDto, linkUsers = true) {
   if (event.quarantine_file_id) return { label: "Quarantine file", id: event.quarantine_file_id, href: `/quarantine/${event.quarantine_file_id}` };
   if (event.session_id) return { label: "Session", id: event.session_id, href: `/sessions/${event.session_id}` };
-  if (event.user_id) return { label: "User", id: event.user_id, href: `/users/${event.user_id}` };
+  if (event.user_id) return { label: "User", id: event.user_id, href: linkUsers ? `/users/${event.user_id}` : null };
   const metadata = event.metadata_json ?? {};
   for (const [key, value] of Object.entries(metadata)) {
     if (typeof value === "string" && key.endsWith("_id") && value) return { label: eventLabel(key.slice(0, -3)), id: value, href: null };

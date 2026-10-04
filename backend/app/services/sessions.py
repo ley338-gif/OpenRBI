@@ -189,13 +189,16 @@ async def select_node(db: AsyncSession) -> BrowserNode:
 
 
 async def count_active_sessions_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Sessions that count against OPENRBI_MAX_SESSIONS_PER_USER. An isolated
+    session is excluded: it is kept for investigation until an admin ends it
+    and its owner can no longer use or end it (app/api/sessions.py's
+    terminate route), so counting it would lock the user out of browsing.
+    """
     active_statuses = (
         SessionStatus.QUEUED,
         SessionStatus.STARTING,
         SessionStatus.ACTIVE,
         SessionStatus.DISCONNECTED,
-        SessionStatus.ISOLATING,
-        SessionStatus.ISOLATED,
     )
     result = await db.execute(
         select(func.count())

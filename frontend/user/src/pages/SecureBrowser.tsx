@@ -13,6 +13,10 @@ import { ApiError } from "@shared/api/client";
 
 const TERMINAL = new Set<SessionStatus>(["TERMINATED", "FAILED"]);
 const CONNECTABLE = new Set<SessionStatus>(["ACTIVE", "DISCONNECTED"]);
+// An isolated session is kept for investigation and only an administrator
+// can end it; it no longer counts against the user's session limit, so the
+// page keeps showing it while letting the user start a new one.
+const ISOLATION = new Set<SessionStatus>(["ISOLATING", "ISOLATED"]);
 
 // Comfort/UX only, not the security boundary — the real enforcement is at
 // the relay's protocol level (app/api/display.py,
@@ -101,6 +105,7 @@ function UploadPanel({ sessionId }: { sessionId: string }) {
 export function SecureBrowser() {
   const { notify } = useToast();
   const [session, setSession] = useState<SessionResponseDto | null>(null);
+  const [isolated, setIsolated] = useState<SessionResponseDto[]>([]);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -201,7 +206,7 @@ export function SecureBrowser() {
         try {
           const s = await userApi.getSession(sessionId);
           setSession(s);
-          if (TERMINAL.has(s.status) || s.status === "ISOLATED") stopLiveWatch();
+          if (TERMINAL.has(s.status) || ISOLATION.has(s.status)) stopLiveWatch();
         } catch {
           /* transient — the next tick retries; a real outage already
              surfaces via the RFB connection dropping */
@@ -277,7 +282,7 @@ export function SecureBrowser() {
         try {
           const s = await userApi.getSession(sessionId);
           setSession(s);
-          if (CONNECTABLE.has(s.status) || TERMINAL.has(s.status) || s.status === "ISOLATED") {
+          if (CONNECTABLE.has(s.status) || TERMINAL.has(s.status) || ISOLATION.has(s.status)) {
             stopPolling();
           }
         } catch {
@@ -340,7 +345,8 @@ export function SecureBrowser() {
     userApi
       .mySessions()
       .then((sessions) => {
-        const live = sessions.find((s) => !TERMINAL.has(s.status) && s.status !== "ISOLATED");
+        setIsolated(sessions.filter((s) => ISOLATION.has(s.status)));
+        const live = sessions.find((s) => !TERMINAL.has(s.status) && !ISOLATION.has(s.status));
         if (live) {
           setSession(live);
           if (!CONNECTABLE.has(live.status)) pollSession(live.id);
@@ -357,6 +363,20 @@ export function SecureBrowser() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The current session was isolated while open: move it to the isolated
+  // list (shown until an administrator ends it) and free the page for a new
+  // session.
+  useEffect(() => {
+    if (session && ISOLATION.has(session.status)) {
+      const isolatedSession = session;
+      setIsolated((prev) => (prev.some((s) => s.id === isolatedSession.id) ? prev : [...prev, isolatedSession]));
+      stopPolling();
+      stopLiveWatch();
+      disconnectDisplay();
+      setSession(null);
+    }
+  }, [session, stopPolling, stopLiveWatch, disconnectDisplay]);
+
   // Connects the display once the viewer div is actually in the DOM for a
   // connectable session — runs after React commits the render that made
   // containerRef non-null, never racing it. Also (re)starts the live status
@@ -372,8 +392,8 @@ export function SecureBrowser() {
     }
   }, [session, connectDisplay, watchLiveSession, stopLiveWatch]);
 
-  const busy = starting || (session && !TERMINAL.has(session.status) && session.status !== "ISOLATED" && !rfbConnected);
-  const showViewer = session && !TERMINAL.has(session.status) && session.status !== "ISOLATED";
+  const busy = starting || (session && !TERMINAL.has(session.status) && !ISOLATION.has(session.status) && !rfbConnected);
+  const showViewer = session && !TERMINAL.has(session.status) && !ISOLATION.has(session.status);
 
   return (
     <div className="page" style={{ display: "flex", flexDirection: "column" }}>
@@ -392,12 +412,13 @@ export function SecureBrowser() {
       {startError && <ErrorBanner>{startError}</ErrorBanner>}
       {connectError && <ErrorBanner>{connectError}</ErrorBanner>}
 
-      {session?.status === "ISOLATED" && (
-        <ErrorBanner>
-          This session has been isolated by an administrator. Network access, uploads, and downloads are disabled.
-          End this session and start a new one to continue browsing.
+      {isolated.map((s) => (
+        <ErrorBanner key={s.id}>
+          Session <span className="mono">{s.id.slice(0, 8)}</span> was isolated by an administrator for investigation. Network
+          access, uploads, and downloads are disabled in it, and only an administrator can end it. You can start a new session
+          to keep browsing.
         </ErrorBanner>
-      )}
+      ))}
 
       {session && TERMINAL.has(session.status) && (
         <div className="card">
@@ -470,7 +491,7 @@ export function SecureBrowser() {
       {!session && !starting && (
         <div className="card">
           <EmptyState icon={<Icons.Browser width={20} height={20} />} title="No active session">
-            Start an isolated remote browser to browse the web safely — use the "Start Secure Browser" button above.
+            Start an isolated remote browser with the "Start Secure Browser" button above.
           </EmptyState>
         </div>
       )}

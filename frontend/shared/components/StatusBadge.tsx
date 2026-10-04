@@ -1,7 +1,9 @@
 // Status is always conveyed by the label text, not color alone (section
 // 6/43) — the badge classes add color as a supporting signal only.
 
-const HEALTHY = new Set(["ACTIVE", "READY", "CONNECTED", "HEALTHY", "ONLINE", "RELEASED", "APPROVED", "CLEAN", "RESOLVED", "PUBLISHED", "SUCCESS"]);
+// "No threat detected" is deliberately neutral, not green: a scan finding
+// nothing is not a statement that a file is safe (shared/fileStatus.ts).
+const HEALTHY = new Set(["ACTIVE", "READY", "CONNECTED", "HEALTHY", "ONLINE", "RELEASED", "RESOLVED", "PUBLISHED", "SUCCESS"]);
 const CRITICAL = new Set([
   "FAILED",
   "UNAVAILABLE",
@@ -9,6 +11,7 @@ const CRITICAL = new Set([
   "ISOLATING",
   "QUARANTINED",
   "INFECTED",
+  "THREAT DETECTED",
   "CRITICAL",
   "REJECTED",
   "OFFLINE",
@@ -28,12 +31,12 @@ const WARNING = new Set([
   "DRAINING",
   "MAINTENANCE",
   "INVESTIGATING",
-  "PENDING REVIEW",
+  "SCAN FAILED",
   "WAITING",
   "WARNING",
   "NOT ENFORCED",
 ]);
-const INFO = new Set(["QUEUED", "STARTING", "NEW", "PENDING", "DRAFT"]);
+const INFO = new Set(["QUEUED", "STARTING", "NEW", "PENDING", "SCAN PENDING", "DRAFT"]);
 
 function variantFor(value: string): string {
   const v = value.toUpperCase();

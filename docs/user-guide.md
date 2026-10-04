@@ -29,7 +29,7 @@ Voluntary enrollment (if your role doesn't require it) works the same way from *
 
 ## Dashboard
 
-Shows your current MFA status, how many files you have on record, and your most recent session — all pulled live from the API, never placeholder data. The primary action is **Start Secure Browser**; if a session is already running, it becomes **Open Secure Browser** instead.
+Shows your current MFA status, how many files you have on record, and your most recent session — all pulled live from the API, never placeholder data. The primary action is **Start Secure Browser**; if a session is already running, it becomes **Open Secure Browser** instead. An isolated session (see below) doesn't block it: the card says the session was isolated and still offers **Start Secure Browser**.
 
 ## Secure Browser
 
@@ -42,15 +42,15 @@ A toolbar sits above the remote screen while a session is running:
 - **Fullscreen** — expands just the remote screen to fill your display, not the whole browser tab.
 - **End session** — terminates the sandbox immediately; nothing about it (browsing history, cookies, downloads left in the sandbox) persists afterward.
 
-If an administrator isolates your session, the portal tells you plainly: *"This session has been isolated by an administrator. Network access, uploads, and downloads are disabled."* — not a vague connection error. End that session and start a new one to continue.
+If an administrator isolates your session, the portal says so plainly rather than showing a vague connection error. The viewer closes, and a notice names the session and says it *"was isolated by an administrator for investigation"*, with network access, uploads and downloads disabled in it. You can't end an isolated session yourself: it is kept unchanged for investigation until an administrator ends it, and the notice stays (also after a reload) until then. It doesn't count against your session limit, so **Start Secure Browser** starts a new session right away.
 
 You can upload a file into your active session from the same page — every upload is hashed, its real type detected, scanned, and policy-checked before it ever reaches the sandbox; you'll see a clear "blocked by policy" or "too large" message if it doesn't make it through, not a raw error.
 
 ## Downloads
 
-Every file your session downloads is intercepted, scanned, and policy-checked before you can ever get it back (see [quarantine.md](quarantine.md)) — the Downloads page shows all of them with their real status, filterable by status, date and name, with a **Details** dialog per file. The status labels are **APPROVED** (released — has a **Download** button that requests a genuine single-use link and immediately starts the download), **PENDING** / **PENDING REVIEW** (still being scanned, or quarantined until an administrator decides), **BLOCKED** (rejected by policy, scanner result or reviewer) and **DELETED** (removed by the retention policy).
+Every file your session downloads is intercepted, scanned, and policy-checked before you can ever get it back (see [quarantine.md](quarantine.md)) — the Downloads page shows all of them with their real status, filterable by status, date and name, with a **Details** dialog per file. The status labels are **Released** (has a **Download** button that requests a genuine single-use link and immediately starts the download), **Scanning** (the scan is still running), **Quarantined** (held until an administrator decides), **Blocked** (rejected by policy, scanner result or reviewer) and **Deleted** (removed by the retention policy). The **Details** dialog also shows the malware scan result: **No threat detected**, **Threat detected**, **Scan failed** or **Scan pending**. *No threat detected* means only that the scanner found nothing; OpenRBI never labels a file as safe (see [quarantine.md#no-safe-claims](quarantine.md#no-safe-claims)).
 
-Approved files are kept for a limited time only — by default 24 hours after release — and are then deleted automatically (see [quarantine.md#retention](quarantine.md#retention)). Download a file you need soon after it is approved.
+Released files are kept for a limited time only — by default 24 hours after release — and are then deleted automatically (see [quarantine.md#retention](quarantine.md#retention)). Download a file you need soon after it is released.
 
 ## Profile & Security
 
@@ -58,7 +58,7 @@ Shows your username, role, and account details, plus:
 
 - **Multi-factor authentication** — **Set up MFA** if you haven't enrolled yet. Once enrolled, **Replace** lets you move to a new authenticator yourself: confirm with a current authenticator or recovery code, then **Reset and sign out** disables your MFA and signs you out on every device. If your role requires MFA, you enroll again at your next login. If you have lost both your authenticator and your recovery codes, an administrator has to reset your MFA instead.
 - **Change password** — for accounts with an OpenRBI-managed (local) password, at least 12 characters. All your other login sessions are signed out afterwards. Directory (LDAP) accounts change their password in the directory, not here.
-- **Secure Browser sessions** — your live sessions, each with an **End session** action (also useful for ending an isolated session).
+- **Secure Browser sessions** — your live sessions, each with an **End session** action. An isolated session shows *Kept for investigation — only an administrator can end it* instead.
 
 ## Logging out
 

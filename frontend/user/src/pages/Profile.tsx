@@ -214,7 +214,11 @@ export function Profile() {
                   <td>{s.browser}</td>
                   <td>{formatDateTime(s.started_at ?? s.created_at)}</td>
                   <td><StatusBadge value={s.status} /></td>
-                  <td><button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingSession(s)}>End session</button></td>
+                  <td>{s.status === "ISOLATING" || s.status === "ISOLATED" ? (
+                    <span className="text-muted">Kept for investigation — only an administrator can end it</span>
+                  ) : (
+                    <button type="button" className="btn btn-danger btn-sm" onClick={() => setPendingSession(s)}>End session</button>
+                  )}</td>
                 </tr>
               ))}</tbody>
             </table>
