@@ -200,8 +200,8 @@ Session Agent token it falls back to when a `BrowserNode` has no per-node token 
 ## Consequences
 
 - Segmented deployment's credential boundary is now real for operators who opt in: a
-  `backend-user` compromise cannot read `ldap_configs`/policy tables/other users' node-management
-  data at the database level, and cannot call `isolate`/`restore`/list-all-sandboxes against the
+  `backend-user` compromise cannot read `ldap_configs`, write the policy tables (it may only read
+  them) or read other users' node-management data at the database level, and cannot call `isolate`/`restore`/list-all-sandboxes against the
   Session Agent directly, regardless of what its own RBAC code would have said.
 - A `listener_mode="user"` process refuses to start if `database_url_user` (role scoping) and
   `ldap_enabled` are both set — a deliberate, documented incompatibility (see above), not a

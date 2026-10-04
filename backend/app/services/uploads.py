@@ -1,5 +1,6 @@
 import hashlib
 import os
+from typing import Literal
 
 import magic
 
@@ -14,10 +15,19 @@ from app.services.nodes import connection_for_node, get_node
 from app.services.policy_engine import FileDecisionInput, evaluate_file_action
 from app.services.security_events import record_security_event
 
+UploadBlockKind = Literal["policy", "malware", "scanner_unavailable", "sandbox_unavailable"]
+
 
 class UploadBlockedError(ValueError):
-    def __init__(self, reason: str):
+    """`kind` says why, so the API can answer with a matching status and the
+    portal can tell the user what actually happened: "policy" and "malware"
+    are verdicts on the file; "scanner_unavailable" and "sandbox_unavailable"
+    are outages that fail closed and can be retried.
+    """
+
+    def __init__(self, reason: str, kind: UploadBlockKind = "policy"):
         self.reason = reason
+        self.kind = kind
         super().__init__(reason)
 
 
@@ -66,7 +76,7 @@ async def process_upload(db, session: BrowserSession, filename: str, data: bytes
             metadata={"filename": filename, "sha256": sha256, "reason": "scanner unavailable — fail closed"},
         )
         await db.commit()
-        raise UploadBlockedError("scanner unavailable")
+        raise UploadBlockedError("scanner unavailable", kind="scanner_unavailable")
 
     if result.infected:
         await record_security_event(
@@ -89,13 +99,13 @@ async def process_upload(db, session: BrowserSession, filename: str, data: bytes
             )
         )
         await db.commit()
-        raise UploadBlockedError(f"infected: {result.signature}")
+        raise UploadBlockedError(f"infected: {result.signature}", kind="malware")
 
     connection = connection_for_node(await get_node(db, session.node_id))
     try:
         await session_agent_client.write_upload(str(session.id), filename, data, connection=connection)
     except SessionAgentError as exc:
-        raise UploadBlockedError(f"failed to place file in sandbox: {exc}") from exc
+        raise UploadBlockedError(f"failed to place file in sandbox: {exc}", kind="sandbox_unavailable") from exc
 
     await record_security_event(
         db,

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-> Start any investigation with `GET /admin/health` (ADMIN/SECURITY_REVIEWER) — it independently checks every dependency (API, PostgreSQL, Redis/Valkey, Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine storage, network isolation) and tells you which one is actually down, rather than guessing from symptoms. See [admin-guide.md#system-health](admin-guide.md#system-health).
+> Start any investigation with `GET /admin/health` (ADMIN/SECURITY_REVIEWER) — it independently checks every dependency (API, PostgreSQL, Redis/Valkey, Session Agent, sandbox runtime, browser-image availability, ClamAV, quarantine storage, enrolled browser nodes, network isolation) and tells you which one is actually down, rather than guessing from symptoms. See [admin-guide.md#system-health](admin-guide.md#system-health).
 
 ## Troubleshooting a fresh production rollout
 

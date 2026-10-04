@@ -29,6 +29,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Changed
 
+- **Upload refusals say why.** `POST /sessions/{id}/uploads` answers `403` for a policy block or a detected threat (the detail says which), `503` when the malware scanner is unavailable and `502` when the file couldn't be placed into the sandbox; before, every refusal was a `403` and the User Portal showed "blocked by policy" even for a scanner outage or malware.
+- **Revoking a node asks for confirmation** in the Admin Portal (Workers page) before its token is cleared.
 - **Behavior change: an `ACTIVE` session nobody views times out too.** A session that became `ACTIVE` (display ready, or restored after an isolation) but that no viewer ever connected to — for example because the tab was closed while it said "Connecting display…" — used to run until someone killed it. It now ends after `OPENRBI_SESSION_DISCONNECTED_TIMEOUT_SECONDS` like a `DISCONNECTED` one (`SESSION_TIMED_OUT`, reason `no_viewer_timeout`). The backend records an open viewer connection in the new column `browser_sessions.viewer_connected_at` (migration `5d2e8a1c9f40`); a session somebody is looking at is still never timed out. On startup, the backend serving the display resets these stamps and restarts the clock, so a restart or upgrade gives viewers a full window to reconnect.
 - **Failed sessions can be cleaned up from the Admin Portal.** A `FAILED` session now offers **Clean up** (session detail and user detail, `ADMIN` only), which removes what is left of its sandbox at once instead of waiting for orphan reconciliation and marks it `TERMINATED`. The backend already accepted Kill for `FAILED` sessions; the portal hid it.
 - **`npm run dev` works against a running stack.** Both portals' Vite dev servers now send `/api` (including the display WebSocket) to the stack's reverse proxy (`http://localhost:8080`, override with `OPENRBI_DEV_API_TARGET`) and use fixed ports (User Portal 5173, Admin Portal 5174). `docs/development.md` already described this proxy, but none was configured. `OPENRBI_ADMIN_BASE_PATH` is now also read from `frontend/admin/.env`, as `docs/deployment.md` describes; before, only the environment variable worked.
@@ -79,6 +81,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Documentation
 
+- Corrected the remaining review findings: the Audit page description (newest 500 events, filtered in the browser), incident actions in the Admin Portal, the policy version lifecycle (`SUPERSEDED`) and the fail-closed `QUARANTINE` default, which secrets the services actually reject, clipboard directions blocked by policy, `browser_nodes` in the health component lists, the CSRF caveat for `user`-mode `404`s, outdated versions and the base images in `DEPENDENCIES.md`, and leftover provider names. ADR 0023's two alternatives sections are merged, and ADR 0025 no longer claims the scoped user role can't read the policy tables.
 - Documentation consistency pass against the 1.0.2 code. No behavior change.
   - Docs that disagreed with the code or with each other now match it: which component holds the pinned `browser-plane` address (the Session Agent, not the backend); which provider interfaces exist (only `SandboxProvider`); the per-listener credentials that ADR 0025 made available opt-in; the CSRF behavior in `user`-mode listeners; the `/health` body; and the `network_isolation` health component.
   - Corrected stale or wrong statements: the local-build version fallback, the prod overlay's 8080 binding, account recovery, the upload pipeline order, captured download provenance, the quarantine status flow, and the "automatic isolation" claim. In the user guide: the self-service MFA reset, password change and download status labels.
@@ -292,6 +295,8 @@ Consolidated GA release, promoted from `1.0.1-rc.2` after that candidate's fixes
 - Expanded the live security gate across sandbox hardening, control-plane reachability, IPv6 bypass prevention, benign/EICAR/outage file outcomes, upload fail-closed behavior, complete-history secret scanning, and frontend bundle secret checks.
 
 ### Added
+
+- Automatic retention of downloads and quarantine files ([ADR 0022](docs/adr/0022-quarantine-retention.md)): a `RELEASED` file is deleted 24 hours after release, `QUARANTINED`/`REJECTED` files after 90 days unless an open incident references them (`OPENRBI_QUARANTINE_RETENTION_*`). This entry was added after the release; the feature shipped in 1.0.0 without one.
 
 - Binding v1.0 acceptance: `docs/release/v1-acceptance.md` records Preconditions, Steps, Expected Result, Actual Result, PASS/FAIL and Evidence for all 35 required release scenarios. CI validates manifest completeness while the aggregate release gate supplies the real functional evidence. Manual quarantine release now has explicit HTTP/RBAC/review-metadata/audit/idempotency coverage.
 
