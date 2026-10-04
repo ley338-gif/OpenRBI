@@ -8,7 +8,7 @@ Roles (`USER`, `SECURITY_REVIEWER`, `ADMIN`) grant **capabilities** in the produ
 
 ## Policy model
 
-Policies are versioned. A published `PolicyVersion` is immutable — editing means creating a new draft version. Workflow: create draft → edit → publish → (further edits create a new version) → prior versions remain visible in history → rollback re-activates a prior published version as current. Every policy *decision* (a session's network permission, a file's action) records which `PolicyVersion` produced it.
+Policies are versioned. A published `PolicyVersion` is immutable — editing means creating a new draft version. Workflow: create draft → edit → publish → (further edits create a new version) → prior versions remain visible in history → rollback re-activates a prior published version as current. A version's status is `DRAFT` until it is published, then `PUBLISHED`; publishing a newer version (or rolling back to an older one) marks the previously current version `SUPERSEDED`. A rollback can target any `PUBLISHED` or `SUPERSEDED` version, never a draft. Every file decision records which `PolicyVersion` (and rule) produced it; network access is not decided per policy version (see [What a Policy's `policy_type` actually does](#what-a-policys-policy_type-actually-does)).
 
 **Policies cannot be deleted, only archived.** Every `PolicyVersion` is referenced by the sessions and quarantine decisions it produced, so deleting a policy would erase that audit trail. To retire one, detach it from every group, then use **Archive** on its detail page (`POST /admin/policies/{id}/archive`; 409 while still attached). An archived policy is hidden from the default Policies list and its KPIs (switch the list to **Archived** to see it), cannot be attached to a group, and keeps its full version history. **Restore** (`POST /admin/policies/{id}/restore`) brings it back. Both actions are audited as `POLICY_CHANGED`.
 
@@ -23,7 +23,7 @@ When multiple applicable group policies disagree on a file rule, the outcome is 
 1. `DENY` wins over everything.
 2. Otherwise `QUARANTINE` wins.
 3. Otherwise `AUTO_RELEASE` wins.
-4. Otherwise the default policy applies.
+4. Otherwise (no published rule matched) the file is `QUARANTINE`d — the fail-closed default.
 
 This ordering is deliberately conservative: any single group requiring denial or quarantine overrides a more permissive group the same user also belongs to.
 

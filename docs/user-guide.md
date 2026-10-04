@@ -38,13 +38,13 @@ Click **Start Secure Browser**. You'll see the session progress through its real
 A toolbar sits above the remote screen while a session is running:
 
 - **Fit** / **100%** — scale the remote desktop to fill the viewer, or show it at its actual pixel size (useful for reading fine text; the viewer scrolls instead of shrinking further).
-- **Clipboard** — sends whatever is on your local clipboard into the session. Text copied *inside* the remote session is picked up automatically and placed on your local clipboard the other way.
+- **Clipboard** — sends whatever is on your local clipboard into the session. Text copied *inside* the remote session is picked up automatically and placed on your local clipboard the other way. Your organization's policy can allow only one direction or neither; a blocked direction shows as *Clipboard blocked by policy*.
 - **Fullscreen** — expands just the remote screen to fill your display, not the whole browser tab.
 - **End session** — terminates the sandbox immediately; nothing about it (browsing history, cookies, downloads left in the sandbox) persists afterward.
 
 If an administrator isolates your session, the portal says so plainly rather than showing a vague connection error. The viewer closes, and a notice names the session and says it *"was isolated by an administrator for investigation"*, with network access, uploads and downloads disabled in it. You can't end an isolated session yourself: it is kept unchanged for investigation until an administrator ends it, and the notice stays (also after a reload) until then. It doesn't count against your session limit, so **Start Secure Browser** starts a new session right away.
 
-You can upload a file into your active session from the same page — every upload is hashed, its real type detected, scanned, and policy-checked before it ever reaches the sandbox; you'll see a clear "blocked by policy" or "too large" message if it doesn't make it through, not a raw error.
+You can upload a file into your active session from the same page — every upload is hashed, its real type detected, scanned, and policy-checked before it ever reaches the sandbox; if it doesn't make it through, the message says why: blocked by policy, a threat detected by the malware scan, too large, or a temporary problem (scanner unavailable, file couldn't be placed into the session) where trying again later can help.
 
 ## Downloads
 

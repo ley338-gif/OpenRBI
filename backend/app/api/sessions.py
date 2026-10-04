@@ -20,6 +20,15 @@ from app.services.uploads import UploadBlockedError, process_upload
 # buffered before scanning). Revisit if real usage needs larger files.
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
+# A verdict on the file is a 403; an outage is a 5xx the user can retry. The
+# User Portal words its message after the status (SecureBrowser.tsx).
+UPLOAD_BLOCKED_STATUS = {
+    "policy": status.HTTP_403_FORBIDDEN,
+    "malware": status.HTTP_403_FORBIDDEN,
+    "scanner_unavailable": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "sandbox_unavailable": status.HTTP_502_BAD_GATEWAY,
+}
+
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
@@ -99,7 +108,7 @@ async def upload_file(
     try:
         await process_upload(db, session, file.filename or "upload.bin", data)
     except UploadBlockedError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.reason) from exc
+        raise HTTPException(status_code=UPLOAD_BLOCKED_STATUS[exc.kind], detail=exc.reason) from exc
 
     return {"status": "ok"}
 

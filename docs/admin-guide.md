@@ -154,7 +154,7 @@ The Compact deployment's own Session Agent appears here automatically. Additiona
 
 - **Register node** generates a single-use enrollment token (valid for one hour) to put into the new node's `.env` as `OPENRBI_AGENT_ENROLLMENT_TOKEN`. The node's Session Agent enrolls itself on startup and appears here as `PENDING` — never scheduled while pending.
 - **Approve** (shown for `PENDING` nodes) asks for the node's endpoint URL, i.e. how the control plane reaches that node's Session Agent; from then on the node is schedulable.
-- **Revoke** (shown for approved nodes) clears the node's stored token immediately, so nothing can authenticate as that node any more. It acts at once, without a confirmation dialog. A revoked host can only come back by enrolling again with a fresh token, which puts it back to `PENDING`.
+- **Revoke** (shown for approved nodes) clears the node's stored token immediately, so nothing can authenticate as that node any more. It asks for confirmation, then acts at once. A revoked host can only come back by enrolling again with a fresh token, which puts it back to `PENDING`.
 
 <details><summary>Underlying API</summary>
 
@@ -180,7 +180,7 @@ Full draft → publish → rollback workflow under `/admin/policies/*` — see [
 
 ## Quarantine review
 
-The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. Scanner results read *No threat detected*, *Threat detected*, *Scan failed* or *Scan pending*, never "clean" or "safe" (see [quarantine.md#no-safe-claims](quarantine.md#no-safe-claims)). **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in v1.0" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted.
+The Quarantine page filters by status (defaulting to `QUARANTINED`, the actionable state) and each file's detail page shows exactly the metadata a reviewer needs — hash, source, detected MIME, scanner result — and nothing else. Scanner results read *No threat detected*, *Threat detected*, *Scan failed* or *Scan pending*, never "clean" or "safe" (see [quarantine.md#no-safe-claims](quarantine.md#no-safe-claims)). **There is no file preview** — verified deliberately absent, matching the project's own "no safe preview mechanism in v1.0" scope. Release and Reject both ask for an optional comment and a specific confirmation before acting; re-deciding an already-decided file is rejected by the backend (`409`), not silently accepted. Files are not kept forever: a released file is deleted 24 hours after release, and `QUARANTINED`/`REJECTED` files after 90 days unless an open incident references them ([quarantine.md#retention](quarantine.md#retention)).
 
 <details><summary>Underlying API</summary>
 
@@ -198,7 +198,7 @@ Real `GET /admin/health` output, component by component — never a hardcoded gr
 
 ## Audit
 
-Shows event type, actor/user, session, and timestamp by default; a **Show raw event** toggle per row reveals the full structured metadata for technical review — never a wall of raw JSON as the default view. Filterable by event type (with autocomplete suggestions for every known type) and by user ID (Roadmap B1.10.7), paginated. The user/session columns are real links to that user's or session's detail page.
+Loads the newest 500 security events and shows time, event, actor, target, session and outcome. Search, category, outcome and date-range filters work on those 500 events in the browser; older events are only reachable through the API's `offset`. Selecting a row opens a detail dialog with the event's metadata and a **Show raw event** toggle for the full JSON — never a wall of raw JSON as the default view. Session and target columns link to their detail pages (user links only for `ADMIN` accounts, see [Security reviewer access](#security-reviewer-access)).
 
 <details><summary>Underlying API</summary>
 
@@ -206,6 +206,8 @@ Shows event type, actor/user, session, and timestamp by default; a **Show raw ev
 </details>
 
 ## Incidents (Phase 17)
+
+The Incidents page lists incidents with status and severity filters. An incident's detail page shows what it is about (user, session, file links) and recent security events of the same session (or user), and offers the next steps for its status: **Start investigation** (`NEW` → `INVESTIGATING`), **Resolve** and **Mark false positive**, each with an optional resolution note. `RESOLVED` and `FALSE_POSITIVE` are final. Assigning an incident to someone is only possible through the API (`assigned_to`).
 
 `GET /admin/incidents` (filterable by `status_filter`/`severity_filter`), `GET /admin/incidents/{id}`, and `PUT /admin/incidents/{id}` (set `status`, `assigned_to`, `resolution`) are available to ADMIN and SECURITY_REVIEWER accounts (matching §6's explicit "Incidents bearbeiten" reviewer right).
 
