@@ -5,11 +5,12 @@ the operator procedure.
 
 ## Qualification
 
-The automated `Upgrade acceptance` gate upgrades a pinned 0.1.1 installation to
-the release candidate ([`upgrade-acceptance.md`](upgrade-acceptance.md)). There
-is no automated gate for upgrades between two v1 releases (for example 1.0.1 →
-1.0.2). Such an upgrade runs the same migrations and procedure, but read the
-release-specific notes first: the **Breaking** entries under **Changed** in
+The automated `Upgrade acceptance` gate upgrades two baselines to the release
+candidate: a pinned 0.1.1 installation, and the previous GA release (e.g. 1.0.2
+→ 1.0.3) — see [`upgrade-acceptance.md`](upgrade-acceptance.md). Upgrading
+across several releases at once runs the same migrations and procedure but is
+not tested as its own path. In every case read the release-specific notes
+first: the **Breaking** entries under **Changed** in
 [`CHANGELOG.md`](../../CHANGELOG.md) for every version you skip, summarized in
 [`deployment.md`](../deployment.md#update-procedure).
 

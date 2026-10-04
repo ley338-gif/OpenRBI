@@ -1,4 +1,5 @@
-"""Augment a 0.x fixture and verify it after upgrading to the v1 candidate."""
+"""Augment a baseline fixture (0.1.1 or a previous v1 release) and verify it
+after upgrading to the current candidate (scripts/run-upgrade-acceptance.sh)."""
 
 import asyncio
 import hashlib
@@ -51,7 +52,7 @@ async def augment(manifest_path: Path) -> None:
         quarantine.status = QuarantineStatus.RELEASED
         quarantine.reviewed_at = datetime.now(UTC)
         quarantine.reviewed_by = admin.id
-        quarantine.review_comment = "released before v1 upgrade"
+        quarantine.review_comment = "released before upgrade"
         db.add(quarantine)
         release_event = await record_security_event(
             db,
@@ -99,7 +100,7 @@ async def augment(manifest_path: Path) -> None:
         )
         await db.commit()
     manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
-    print("ACCEPT UP-01 0.x fixture includes users, MFA, LDAP, policy, sessions, audit, quarantine, and worker metadata")
+    print("ACCEPT UP-01 baseline fixture includes users, MFA, LDAP, policy, sessions, audit, quarantine, and worker metadata")
 
 
 async def verify_data(manifest_path: Path) -> None:
@@ -216,7 +217,7 @@ def verify_functional(manifest_path: Path) -> None:
     assert session["status"] == "ACTIVE"
     terminated = user_client.request("POST", f"/sessions/{session['id']}/terminate")
     assert terminated["status"] == "TERMINATED"
-    print("ACCEPT UP-08 current v1 image starts and terminates a real browser session with upgraded state")
+    print("ACCEPT UP-08 current image starts and terminates a real browser session with upgraded state")
 
 
 def main() -> None:

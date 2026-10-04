@@ -235,8 +235,8 @@ full evidence contract.
 
 The supported Compact operator sequence is defined in the
 [upgrade runbook](release/upgrade.md), with recovery in the
-[rollback runbook](release/rollback.md). Its executable 0.1.1-to-v1 gate and
-known qualification limitations are recorded in
+[rollback runbook](release/rollback.md). Its executable gates (from 0.1.1 and
+from the previous release) and known qualification limitations are recorded in
 [Upgrade acceptance](release/upgrade-acceptance.md). Always take and validate a
 database/quarantine backup, preserve the existing `.env` encryption keys, run
 Alembic from the target backend image, and verify authentication, downloads,

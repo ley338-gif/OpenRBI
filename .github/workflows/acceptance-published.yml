@@ -256,8 +256,14 @@ jobs:
             script: scripts/run-fresh-install-acceptance.sh
           - name: Backup and restore acceptance
             script: scripts/run-backup-restore-acceptance.sh
-          - name: Upgrade acceptance
+          - name: Upgrade acceptance (from 0.1.1)
             script: scripts/run-upgrade-acceptance.sh
+          # The newest GA tag before the accepted one (the checked-out tag
+          # itself is skipped), built from its source, upgraded to the
+          # published images.
+          - name: Upgrade acceptance (from previous release)
+            script: scripts/run-upgrade-acceptance.sh
+            upgrade_baseline: previous-release
     steps:
       - uses: actions/checkout@v7
         with:
@@ -274,6 +280,8 @@ jobs:
       - name: Allow session-agent's non-root user to reach the runner's docker.sock
         run: sudo chmod 666 /var/run/docker.sock
       - name: ${{ matrix.name }}
+        env:
+          OPENRBI_UPGRADE_BASELINE: ${{ matrix.upgrade_baseline }}
         run: ./${{ matrix.script }}
 
   image-scan:
