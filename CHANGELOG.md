@@ -23,11 +23,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ### Changed
 
+- **`npm run dev` works against a running stack.** Both portals' Vite dev servers now send `/api` (including the display WebSocket) to the stack's reverse proxy (`http://localhost:8080`, override with `OPENRBI_DEV_API_TARGET`) and use fixed ports (User Portal 5173, Admin Portal 5174). `docs/development.md` already described this proxy, but none was configured. `OPENRBI_ADMIN_BASE_PATH` is now also read from `frontend/admin/.env`, as `docs/deployment.md` describes; before, only the environment variable worked.
+- **`scripts/check-docs-freeze.py` also checks anchors and the remaining root documents.** A `#anchor` into a Markdown file has to match a heading (GitHub's slug rules) or an explicit `<a id>`, and `SECURITY.md` and `frontend/README.md` are link-checked too.
 - **Breaking:** saving a policy version with an `AUTO_RELEASE` rule whose pattern is an extension (e.g. `.pdf`) is rejected with `400`; use the MIME type (`application/pdf`) instead. Such rules that are already published stop auto-releasing — files they used to release are now quarantined (fail-closed) until the rule is replaced by a MIME-type rule. `POST /admin/policies/{id}/versions` also returns `400` instead of `500` for other invalid file rules.
 - **CI toolchain and Python locks now target the runtimes the images ship:** Python 3.14 (was 3.11) for the lockfiles, Ruff, mypy, the Session Agent unit tests and `pip-audit`, and Node 26 (was 22) for the frontend audit/build and the Playwright suite — 1.0.2's images already ran `python:3.14-slim` and built on `node:26-slim`. Re-resolving the locks for 3.14 only drops the `async-timeout` backport. The new `scripts/check-toolchain-sync.py` gate fails CI whenever the lock target or a workflow's Python/Node version differs from the images' base runtimes, so a future base-image update has to bring both along. See [`docs/release/dependencies.md`](docs/release/dependencies.md#runtime-versions).
 
+### Removed
+
+- `scripts/bootstrap-admin.py`. The first-run setup ([ADR 0017](docs/adr/0017-first-run-bootstrap.md)) creates the first administrator, and `scripts/reset-local-password.sh` covers break-glass access; nothing called the old script, it pointed at a path that isn't in the backend image, and it took the password as a command-line argument.
+
 ### Fixed
 
+- `GET /admin/security-events` answers `422` for `limit` below 1 instead of passing a negative `LIMIT` to the database (`500`).
+- The CI job `frontend-e2e-tests` uploads the Playwright traces and screenshots of a failed run again. It looked in `frontend/test-results`, but Playwright writes to `frontend/e2e/test-results`, so nothing was ever uploaded.
+- `frontend/README.md` describes the OpenRBI workspace instead of the unmodified Vite template (which also mentioned Oxlint, which the project doesn't use).
 - **Segmented DB role scoping ([ADR 0025](docs/adr/0025-segmented-credential-scoping.md)) could not actually be used.**
   - With the grants from `scripts/provision-segmented-db-roles.sh`, a `backend-user` running as `openrbi_user` failed when starting a session, enforcing file policies, opening incidents, or writing any audit event; that last failure meant every login failed as well.
   - A `backend-admin` running as `openrbi_admin` failed every operation that deletes rows: deleting groups, changing memberships, detaching policies, editing draft rules, admin MFA resets, and the node poller's metric pruning.
