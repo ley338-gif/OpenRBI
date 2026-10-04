@@ -1,32 +1,43 @@
-# React + TypeScript + Vite
+# OpenRBI frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+An npm workspace with the two portals and the code they share:
 
-Currently, two official plugins are available:
+| Workspace | What it is |
+|---|---|
+| `shared/` | Source-only package: API client, login/MFA flow, UI components, styles. It has no build step; both portals alias `@shared` to it and compile it as part of their own build. |
+| `user/` | User Portal: Dashboard, Secure Browser (noVNC viewer), Downloads, Profile. Talks to the User listener only. |
+| `admin/` | Admin Portal: Dashboard, Users, Groups, Sessions, Policies, Quarantine, Incidents, Workers, System health, Audit log, LDAP. Talks to the Admin listener only. |
+| `e2e/` | Playwright suite that drives both portals against a running stack (`scripts/e2e-run.sh`). |
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+React, TypeScript and Vite, no other framework. Why there are two separate apps: [ADR 0014](../docs/adr/0014-separate-user-and-admin-portal-frontends.md).
 
-## React Compiler
+## Develop
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Start the stack first (`docker compose up -d`, see [docs/development.md](../docs/development.md#frontend-development)). Then:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+cd frontend
+npm ci
+npm run dev --workspace=user     # http://localhost:5173
+npm run dev --workspace=admin    # http://localhost:5174/admin/
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The dev server sends `/api` (including the display WebSocket) to the stack's reverse proxy at `http://localhost:8080`. Set `OPENRBI_DEV_API_TARGET` to use a different address, e.g. `OPENRBI_DEV_API_TARGET=http://localhost:8090 npm run dev --workspace=user`.
+
+## Build
+
+```bash
+npm run build --workspace=user   # user/dist
+npm run build --workspace=admin  # admin/dist
+```
+
+`npm run build` type-checks first (`tsc -b`). Build-time settings:
+
+- `VITE_API_BASE_URL` (default `/api`) — where the portal sends API requests. See `user/.env.example` and `admin/.env.example`.
+- `OPENRBI_ADMIN_BASE_PATH` (Admin Portal only, default `/admin/`) — the path the Admin Portal is served under. Set it to `/` for a build served from its own origin. It can be set in the environment or in `admin/.env`.
+
+`frontend/Dockerfile` builds both portals into one nginx image (User Portal at `/`, Admin Portal at `/admin/`, docs at `/docs/` for the in-app Help menus). Its build context is the repository root.
+
+## Test
+
+The Playwright suite needs a running stack with migrations applied; `scripts/e2e-run.sh` seeds its test accounts, runs it and removes them again. See [docs/development.md](../docs/development.md) ("Tests").

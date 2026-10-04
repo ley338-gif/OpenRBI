@@ -27,7 +27,7 @@ async def list_security_events(
     event_type: str | None = None,
     user_id: uuid.UUID | None = None,
     session_id: uuid.UUID | None = None,
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[SecurityEventResponse]:

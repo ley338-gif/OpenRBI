@@ -58,7 +58,7 @@ Confirm the hardened browser image actually exists (`docker images | grep openrb
 
 ## Locked out of every admin account, SSH access only
 
-Symptom: the one local `ADMIN` you kept for break-glass access (see [admin-guide.md](admin-guide.md)) gets "invalid credentials", there is no other working admin session to reset it from **Users → Reset password**, and all you have is shell access to the Docker host. `scripts/bootstrap-admin.py` does **not** help here — it refuses to run once any `ADMIN` exists.
+Symptom: the one local `ADMIN` you kept for break-glass access (see [admin-guide.md](admin-guide.md)) gets "invalid credentials", there is no other working admin session to reset it from **Users → Reset password**, and all you have is shell access to the Docker host.
 
 Use the break-glass reset script instead, on the host, from the checkout:
 
