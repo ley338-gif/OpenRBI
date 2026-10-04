@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     sandbox_command: list[str] | None = None
 
     # Roadmap B3.1 (docs/roadmap-b3-capacity-autoscaling.md) — capacity is
-    # now computed from real free host headroom (see _capacity_from_settings()
+    # now computed from real free host headroom (see _compute_capacity()
     # in main.py), not a flat configured number. This is now a *ceiling* on
     # that computed value, not the value itself: unset (the default) means
     # uncapped — the computed number is reported as-is. An operator who
@@ -82,10 +82,11 @@ class Settings(BaseSettings):
     # _CapacityHysteresis in main.py.
     capacity_recovery_polls: int = 3
     # Dedicated, egress-filtered network (docker-compose.yml, scripts/
-    # setup-network-isolation.sh) — sandboxes are never on the same network
-    # as postgres/redis/session-agent. The backend is multi-homed onto this
-    # network too (for the Phase 8 display relay), but the isolation script
-    # only permits ESTABLISHED/RELATED traffic back across that boundary.
+    # setup-network-isolation.sh). Sandboxes share it only with this agent,
+    # which relays their display from here (docs/adr/0024-cross-host-display-
+    # relay.md); postgres, redis and the backend are not on it. The isolation
+    # script exempts only the agent's own address
+    # (OPENRBI_AGENT_BROWSER_PLANE_IP) from the deny-by-default rules.
     sandbox_network_name: str = "openrbi_browser-plane"
 
     # Roadmap B2.1 (docs/adr/0023-node-enrollment-and-trust-model.md) —

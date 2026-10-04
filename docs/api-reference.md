@@ -112,7 +112,7 @@ JSON schemas are also served by a running backend at `/api/openapi.json`.
 
 | Endpoint | Access | Listener | Parameters | Success response |
 |---|---|---|---|---|
-| `GET /admin/security-events`<br>List security events | `ADMIN`, `SECURITY_REVIEWER` | admin | `event_type` (string or null)<br>`user_id` (uuid or null)<br>`session_id` (uuid or null)<br>`limit` (integer, ≤ 500, default `100`)<br>`offset` (integer, ≥ 0, default `0`) | `200` list of `SecurityEventResponse` |
+| `GET /admin/security-events`<br>List security events | `ADMIN`, `SECURITY_REVIEWER` | admin | `event_type` (string or null)<br>`user_id` (uuid or null)<br>`session_id` (uuid or null)<br>`limit` (integer, 1–500, default `100`)<br>`offset` (integer, ≥ 0, default `0`) | `200` list of `SecurityEventResponse` |
 
 ### `/admin/sessions`
 

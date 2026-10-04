@@ -143,7 +143,8 @@ Build-time settings for the portal images (`frontend/user/.env`, `frontend/admin
 | Variable | Default | Description |
 |---|---|---|
 | `VITE_API_BASE_URL` | `/api` | Base URL the portal sends API requests to. |
-| `OPENRBI_ADMIN_BASE_PATH` | `/admin/` | Path the Admin Portal is served under; `/` for its own origin. |
+| `OPENRBI_ADMIN_BASE_PATH` | `/admin/` | Path the Admin Portal is served under; `/` for its own origin. Read from the environment or `frontend/admin/.env`. |
+| `OPENRBI_DEV_API_TARGET` | `http://localhost:8080` | `npm run dev` only: the running stack's reverse proxy the dev servers send `/api` to ([development.md](development.md#frontend-development)). |
 
 ## Operator scripts
 
