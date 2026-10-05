@@ -78,6 +78,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
   - **Revoke:** a revoked node's sessions were silently sent to the *default* agent, because revoke clears the node's token and the connection then fell back to the default agent. Terminate and display calls went to the wrong host, and the sessions were never reconciled. Calls for a revoked node now fail like calls to a node that is down, and the reconciler marks its remaining sessions `FAILED` after the grace period.
   - **Node override:** `scripts/deploy.sh --node` honors `COMPOSE_FILE`, so a local `docker-compose.node.override.yml` can publish the agent's port on the overlay network without editing the tracked compose file.
   - **Docs:** `docs/deployment.md` now covers the networking a node needs (endpoint URL, port publishing and firewall, the `https://…/api` control-plane URL) and the actual effect of revoking. `docs/troubleshooting.md` has a new multi-node section.
+- **The live-stack test scripts delete the accounts they create.** `run-fault-injection-tests.sh` (`fault-*`) and section 6 of `run-security-tests.sh` (`security-rogue-check-*`) left their probe users, sessions and audit events in the database, and the fault run left one session's sandbox running. Run against a developer's own stack, that piled up active `USER` accounts. A rerun of section 6 against the same node also failed, because its usernames repeat per node and collided with the leftovers.
+  - New `scripts/purge-test-accounts.py <prefix>` terminates the matching users' live sessions through the Session Agent, revokes their login sessions and deletes them with every row that references them, in the same FK-safe order as the pytest cleanup.
+  - The fault run calls it from its cleanup trap (on success, failure and interrupt). Section 6 calls it before and after its check; a crash in the check now counts as a FAIL instead of exiting before the cleanup.
+  - `security-release-review.py` deletes its probe account in a `finally`, so a failed assertion no longer leaves it behind.
 
 ### Documentation
 

@@ -42,6 +42,21 @@ wait_agent() {
 NODE2_PROJECT="${OPENRBI_NODE2_PROJECT:-openrbi-node2-fault-test}"
 NODE2_OVERRIDE="/tmp/openrbi-node2-fault-test.override.yml"
 
+# Every account fault-injection-probe.py creates is named fault-<...>
+# (its make_user). Deleting them also terminates any session still live
+# (SESSION_TWO always is), so its sandbox doesn't outlive the run.
+purge_test_accounts() {
+    docker start "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
+    i=0
+    until docker exec "$POSTGRES_CONTAINER" pg_isready -U openrbi -d openrbi >/dev/null 2>&1; do
+        i=$((i + 1)); [ "$i" -lt 40 ] || return 1
+        sleep 1
+    done
+    docker cp "$SCRIPT_DIR/purge-test-accounts.py" "$BACKEND_CONTAINER:/tmp/purge-test-accounts.py" &&
+        MSYS_NO_PATHCONV=1 docker exec -e PYTHONPATH=/app "$BACKEND_CONTAINER" \
+            python /tmp/purge-test-accounts.py fault-
+}
+
 restore_dependencies() {
     docker start "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$CLAMAV_CONTAINER" >/dev/null 2>&1 || true
     docker start "$SESSION_AGENT_CONTAINER" >/dev/null 2>&1 || true
@@ -50,6 +65,10 @@ restore_dependencies() {
         2>/dev/null | grep -q .; then
         docker compose up -d --force-recreate session-agent >/dev/null 2>&1 || true
     fi
+    # Before node2 is torn down, so a session still live on it can be
+    # terminated through its own agent.
+    purge_test_accounts ||
+        echo "WARNING: fault-* test accounts were not deleted; rerun scripts/purge-test-accounts.py fault- inside the backend" >&2
     # Roadmap B2.7 — Fault 12 deliberately leaves node2's own sandbox
     # container behind (an unreachable node's containers are the
     # operator's concern once it's reachable again, per ADR 0024/B2.5's

@@ -331,6 +331,17 @@ async def main():
 asyncio.run(main())
 ")
 
+# The probe accounts below are named per node, not per run, so leftovers
+# from an interrupted earlier run would collide on the unique username.
+docker cp "$SCRIPT_DIR/purge-test-accounts.py" "$BACKEND_CONTAINER:/tmp/purge-test-accounts.py"
+purge_rogue_check_accounts() {
+    docker exec -e PYTHONPATH=/app "$BACKEND_CONTAINER" \
+        python /tmp/purge-test-accounts.py security-rogue-check- >/dev/null
+}
+purge_rogue_check_accounts
+
+# A crash here counts as a FAIL below rather than exiting under set -e, so
+# the rogue node and the probe accounts are still cleaned up.
 SCHEDULE_CHECK=$(docker exec "$BACKEND_CONTAINER" python -c "
 import asyncio
 from app.db.session import async_session_factory
@@ -364,7 +375,7 @@ async def main():
         print('FAIL' if landed_on_rogue else 'OK')
 
 asyncio.run(main())
-")
+") || SCHEDULE_CHECK=ERROR
 docker exec "$BACKEND_CONTAINER" python -c "
 import asyncio
 from app.db.session import async_session_factory
@@ -378,10 +389,14 @@ async def main():
 
 asyncio.run(main())
 " >/dev/null
+purge_rogue_check_accounts
 
 if [ "$SCHEDULE_CHECK" = "OK" ]; then
     echo "PASS: a PENDING (unapproved) node never received a scheduled session across repeated real create_session() calls"
     pass=$((pass + 1))
+elif [ "$SCHEDULE_CHECK" = "ERROR" ]; then
+    echo "FAIL: the rogue-node scheduling check crashed — see the traceback above"
+    fail=$((fail + 1))
 else
     echo "FAIL: a PENDING (unapproved) node was selected/scheduled onto — see output above"
     fail=$((fail + 1))
