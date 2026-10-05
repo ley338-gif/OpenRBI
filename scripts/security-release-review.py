@@ -61,58 +61,64 @@ async def run_probe(kind: str) -> None:
         )
         db.add(item)
         await db.flush()
-        await scan_and_finalize(db, item)
-        await db.commit()
-        await db.refresh(item)
+        # Captured up front: the rollback below expires the ORM instances.
+        user_id, session_id, item_id = user.id, session.id, item.id
+        try:
+            await scan_and_finalize(db, item)
+            await db.commit()
+            await db.refresh(item)
 
-        event_types = set(
-            (
-                await db.scalars(
-                    select(SecurityEvent.event_type).where(SecurityEvent.quarantine_file_id == item.id)
-                )
-            ).all()
-        )
-        incident_count = len(
-            (await db.scalars(select(Incident.id).where(Incident.quarantine_file_id == item.id))).all()
-        )
-        if kind == "clean":
-            assert item.status == QuarantineStatus.RELEASED
-            assert item.scanner_status == ScannerStatus.CLEAN
-            assert SecurityEventType.FILE_RELEASED in event_types
-        elif kind == "eicar":
-            assert item.status == QuarantineStatus.QUARANTINED
-            assert item.scanner_status == ScannerStatus.INFECTED
-            assert SecurityEventType.MALWARE_DETECTED in event_types
-            assert incident_count == 1
-        elif kind == "outage":
-            assert item.status == QuarantineStatus.QUARANTINED
-            assert item.scanner_status == ScannerStatus.ERROR
-            assert SecurityEventType.DOWNLOAD_BLOCKED in event_types
-            assert SecurityEventType.FILE_RELEASED not in event_types
-        else:
-            raise ValueError(f"unknown probe: {kind}")
-
-        print(
-            json.dumps(
-                {
-                    "probe": kind,
-                    "status": item.status.value,
-                    "scanner_status": item.scanner_status.value,
-                    "sha256": item.sha256,
-                    "events": sorted(event.value for event in event_types),
-                    "incidents": incident_count,
-                },
-                sort_keys=True,
+            event_types = set(
+                (
+                    await db.scalars(
+                        select(SecurityEvent.event_type).where(SecurityEvent.quarantine_file_id == item.id)
+                    )
+                ).all()
             )
-        )
+            incident_count = len(
+                (await db.scalars(select(Incident.id).where(Incident.quarantine_file_id == item.id))).all()
+            )
+            if kind == "clean":
+                assert item.status == QuarantineStatus.RELEASED
+                assert item.scanner_status == ScannerStatus.CLEAN
+                assert SecurityEventType.FILE_RELEASED in event_types
+            elif kind == "eicar":
+                assert item.status == QuarantineStatus.QUARANTINED
+                assert item.scanner_status == ScannerStatus.INFECTED
+                assert SecurityEventType.MALWARE_DETECTED in event_types
+                assert incident_count == 1
+            elif kind == "outage":
+                assert item.status == QuarantineStatus.QUARANTINED
+                assert item.scanner_status == ScannerStatus.ERROR
+                assert SecurityEventType.DOWNLOAD_BLOCKED in event_types
+                assert SecurityEventType.FILE_RELEASED not in event_types
+            else:
+                raise ValueError(f"unknown probe: {kind}")
 
-        await db.execute(delete(SecurityEvent).where(SecurityEvent.quarantine_file_id == item.id))
-        await db.execute(delete(Incident).where(Incident.quarantine_file_id == item.id))
-        await db.execute(delete(QuarantineFile).where(QuarantineFile.id == item.id))
-        await db.execute(delete(BrowserSession).where(BrowserSession.id == session.id))
-        await db.execute(delete(User).where(User.id == user.id))
-        await db.commit()
-    path.unlink(missing_ok=True)
+            print(
+                json.dumps(
+                    {
+                        "probe": kind,
+                        "status": item.status.value,
+                        "scanner_status": item.scanner_status.value,
+                        "sha256": item.sha256,
+                        "events": sorted(event.value for event in event_types),
+                        "incidents": incident_count,
+                    },
+                    sort_keys=True,
+                )
+            )
+        finally:
+            # Also after a failed assertion, so a failing run doesn't leave
+            # its probe account behind.
+            await db.rollback()
+            await db.execute(delete(SecurityEvent).where(SecurityEvent.quarantine_file_id == item_id))
+            await db.execute(delete(Incident).where(Incident.quarantine_file_id == item_id))
+            await db.execute(delete(QuarantineFile).where(QuarantineFile.id == item_id))
+            await db.execute(delete(BrowserSession).where(BrowserSession.id == session_id))
+            await db.execute(delete(User).where(User.id == user_id))
+            await db.commit()
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
