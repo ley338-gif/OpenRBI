@@ -6,6 +6,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/). 
 
 ## [Unreleased]
 
+## [1.0.3-rc.1] - 2026-10-06
+
 ### Security
 
 - **A role change now signs the user out everywhere.** Mandatory MFA for `ADMIN`/`SECURITY_REVIEWER` is enforced at login, but a role change left existing login sessions alive. A `USER` without MFA who was promoted could therefore use the admin API immediately, with the session they already had, for up to `OPENRBI_SESSION_TTL_SECONDS`. `PUT /admin/users/{id}/role` now revokes the user's sessions when the role actually changes, and `USER_ROLE_CHANGED` records `sessions_revoked`. The Admin Portal's role dialog says so.
